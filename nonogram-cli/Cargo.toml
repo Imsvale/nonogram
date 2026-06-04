@@ -1,0 +1,12 @@
+[package]
+name = "nonogram-cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nonogram-core         = { path = "../nonogram-core" }
+nonogram-propagation  = { path = "../nonogram-propagation" }
+nonogram-graph-search = { path = "../nonogram-graph-search" }
+nonogram-human        = { path = "../nonogram-human" }
+clap  = { version = "4", features = ["derive"] }
+anyhow = "1"

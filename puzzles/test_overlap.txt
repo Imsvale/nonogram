@@ -1,0 +1,9 @@
+# Overlap technique cases
+
+Test empty|0,0,0,0,0/0,0,0,0,0|0000000000000000000000000
+Test full|5,5,5,5,5/5,5,5,5,5|1111111111111111111111111
+
+# Cols 1,3 are empty; rows are all sparse single-filled runs.
+# Not uniquely solvable — used to validate that overlap correctly marks the
+# centre cell of cols 0,2,4 as Filled (slack=2 in a 5-cell line with clue [3]).
+Test overlap|3,0,3,0,3/1,1 1,1 1 1,1 1,1

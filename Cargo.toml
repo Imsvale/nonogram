@@ -1,0 +1,11 @@
+[workspace]
+members = [
+    "nonogram-core",
+    "nonogram-propagation",
+    "nonogram-graph-search",
+    "nonogram-human",
+    "nonogram-cli",
+    "nonogram-convert",
+    "nonogram-gui",
+]
+resolver = "2"

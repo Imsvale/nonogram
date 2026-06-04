@@ -1,0 +1,250 @@
+//! Shared types, puzzle parser, and solver trait for the nonogram workspace.
+//!
+//! Every crate in the workspace depends on this one. It owns the puzzle
+//! *definition* (clues, dimensions, optional known solution) but contains no
+//! solving logic — that lives entirely inside the individual solver crates.
+
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use thiserror::Error;
+
+// ---------------------------------------------------------------------------
+// Cell state
+// ---------------------------------------------------------------------------
+
+/// The three-valued state of a single grid cell.
+///
+/// Corresponds to the domain terminology: `Filled` = Shaded, `Empty` = Blank.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CellState {
+    Unknown,
+    Filled,
+    Empty,
+}
+
+// ---------------------------------------------------------------------------
+// Puzzle definition (immutable)
+// ---------------------------------------------------------------------------
+
+/// Immutable puzzle definition: dimensions, clues, optional known solution.
+///
+/// Contains no solving state. Each solver constructs its own internal working
+/// representation from a `&Puzzle`.
+#[derive(Clone, Debug)]
+pub struct Puzzle {
+    pub name: String,
+    pub width: usize,
+    pub height: usize,
+    /// `row_clues[r]` is the clue list for row `r`.
+    pub row_clues: Vec<Vec<u32>>,
+    /// `col_clues[c]` is the clue list for column `c`.
+    pub col_clues: Vec<Vec<u32>>,
+    /// Known solution for test validation; absent for unsolved puzzles.
+    /// Flat, row-major. `1` = Filled, `0` = Empty in the source file.
+    pub solution: Option<Vec<CellState>>,
+}
+
+// ---------------------------------------------------------------------------
+// Line identifier
+// ---------------------------------------------------------------------------
+
+/// Identifies a row or column — used in solve steps and solver internals.
+#[derive(Clone, Copy, Debug)]
+pub enum LineId {
+    Row(usize),
+    Col(usize),
+}
+
+// ---------------------------------------------------------------------------
+// Solve result and step tracing
+// ---------------------------------------------------------------------------
+
+/// One logical deduction or branching decision made during solving.
+///
+/// Solvers that support tracing populate this; others return an empty `steps`
+/// vec. The GUI / investigation layer can replay steps to show the reasoning.
+#[derive(Clone, Debug)]
+pub struct SolveStep {
+    /// Human-readable description of what happened (e.g. "overlap on row 3").
+    pub description: String,
+    /// The line this step acted on, if applicable.
+    pub line: Option<LineId>,
+    /// Cells whose state changed as a result of this step: (row, col, new_state).
+    pub cells_changed: Vec<(usize, usize, CellState)>,
+}
+
+/// The final outcome of a solve attempt.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Outcome {
+    /// Every cell was determined and the solution is consistent.
+    Solved,
+    /// The solver made no further progress but the grid is incomplete.
+    Stuck,
+    /// A contradiction was detected — no valid solution exists (or the solver
+    /// found one while searching and confirmed there is none).
+    NoSolution,
+}
+
+/// Everything a solver returns: outcome, final grid state, and optional trace.
+#[derive(Clone, Debug)]
+pub struct SolveResult {
+    pub outcome: Outcome,
+    /// Flat row-major grid. Empty `Vec` when `outcome == NoSolution`.
+    pub grid: Vec<CellState>,
+    /// Ordered trace of deductions. Empty if the solver does not support tracing.
+    pub steps: Vec<SolveStep>,
+    /// `true` when the solve was cut short by a `CancelToken`. The grid and steps
+    /// hold whatever was deduced before the abort; `outcome` will be `Stuck`.
+    pub aborted: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Cancellation
+// ---------------------------------------------------------------------------
+
+/// Cloneable cancellation token. Clone before spawning a solver task; call
+/// `cancel()` from the controlling thread to request cooperative abort.
+///
+/// Solvers check `ctx.cancel.is_cancelled()` at natural loop boundaries and
+/// return early with `SolveResult { aborted: true, .. }` when set.
+#[derive(Clone, Default)]
+pub struct CancelToken(Arc<AtomicBool>);
+
+impl CancelToken {
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
+    pub fn reset(&self) {
+        self.0.store(false, Ordering::Relaxed);
+    }
+}
+
+/// Context passed to `Solver::solve_with`. Extensible without further trait changes.
+#[derive(Clone, Default)]
+pub struct SolveContext {
+    pub cancel: CancelToken,
+}
+
+// ---------------------------------------------------------------------------
+// Solver trait
+// ---------------------------------------------------------------------------
+
+pub trait Solver {
+    fn solve(&self, puzzle: &Puzzle) -> SolveResult;
+
+    /// Solve with cancellation support. Override to respect `ctx.cancel`;
+    /// the default delegates to `solve` and ignores the context, so existing
+    /// implementations compile unchanged.
+    fn solve_with(&self, puzzle: &Puzzle, ctx: &SolveContext) -> SolveResult {
+        let _ = ctx;
+        self.solve(puzzle)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Parser
+// ---------------------------------------------------------------------------
+
+/// Errors that can occur while parsing a puzzle file.
+#[derive(Error, Debug)]
+pub enum ParseError {
+    #[error("missing clue section")]
+    MissingClues,
+    #[error("empty puzzle name")]
+    EmptyName,
+    #[error("invalid clue number: {0}")]
+    InvalidClue(String),
+    #[error("solution length {got} does not match grid {expected}")]
+    SolutionLength { got: usize, expected: usize },
+}
+
+/// Parse a comma-delimited group of line clues.
+///
+/// `"3,1 2,5"` → `[[3], [1, 2], [5]]`.
+fn parse_clue_group(s: &str) -> Result<Vec<Vec<u32>>, ParseError> {
+    s.split(',')
+        .map(|line_clues| {
+            line_clues
+                .split_whitespace()
+                .map(|n| n.parse::<u32>().map_err(|_| ParseError::InvalidClue(n.to_string())))
+                .collect()
+        })
+        .collect()
+}
+
+/// Strip zero sentinels: `[0]` → `[]` (entirely empty line).
+fn normalize_clues(clues: Vec<Vec<u32>>) -> Vec<Vec<u32>> {
+    clues
+        .into_iter()
+        .map(|mut c| {
+            if c.iter().any(|&n| n == 0) {
+                c.retain(|&n| n != 0);
+            }
+            c
+        })
+        .collect()
+}
+
+/// Read and parse every puzzle from a UTF-8 text file.
+///
+/// Lines starting with `#` and blank lines are skipped.
+/// Format: `name|col_clues/row_clues[|solution]`
+pub fn parse_file(path: &str) -> Result<Vec<Puzzle>, anyhow::Error> {
+    let content = std::fs::read_to_string(path)?;
+    let mut puzzles = Vec::new();
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let parts: Vec<&str> = line.splitn(3, '|').collect();
+        if parts.len() < 2 {
+            return Err(ParseError::MissingClues.into());
+        }
+
+        let name = parts[0].trim().to_string();
+        if name.is_empty() {
+            return Err(ParseError::EmptyName.into());
+        }
+
+        let clue_parts: Vec<&str> = parts[1].trim().splitn(2, '/').collect();
+        if clue_parts.len() != 2 {
+            return Err(ParseError::MissingClues.into());
+        }
+
+        let col_clues = normalize_clues(parse_clue_group(clue_parts[0])?);
+        let row_clues = normalize_clues(parse_clue_group(clue_parts[1])?);
+
+        let width = col_clues.len();
+        let height = row_clues.len();
+
+        let solution = if parts.len() == 3 {
+            let sol: Result<Vec<CellState>, _> = parts[2]
+                .trim()
+                .chars()
+                .map(|c| match c {
+                    '1' => Ok(CellState::Filled),
+                    '0' => Ok(CellState::Empty),
+                    _ => Err(ParseError::InvalidClue(c.to_string())),
+                })
+                .collect();
+            let sol = sol?;
+            if sol.len() != width * height {
+                return Err(
+                    ParseError::SolutionLength { got: sol.len(), expected: width * height }.into(),
+                );
+            }
+            Some(sol)
+        } else {
+            None
+        };
+
+        puzzles.push(Puzzle { name, width, height, row_clues, col_clues, solution });
+    }
+
+    Ok(puzzles)
+}
