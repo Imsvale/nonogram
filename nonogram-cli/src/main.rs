@@ -29,6 +29,10 @@ struct Cli {
     /// Which solver to use (default: propagation).
     #[arg(short, long, value_enum, default_value = "propagation")]
     solver: SolverChoice,
+
+    /// Suppress all stdout output.
+    #[arg(short, long)]
+    quiet: bool,
 }
 
 fn print_grid(puzzle: &Puzzle, grid: &[CellState], complete: bool) {
@@ -52,7 +56,8 @@ fn verify(puzzle: &Puzzle, grid: &[CellState]) -> Option<Vec<(usize, usize)>> {
     if mismatches.is_empty() { None } else { Some(mismatches) }
 }
 
-fn run_puzzle(solver: &dyn Solver, puzzle: &Puzzle) {
+fn run_puzzle(solver: &dyn Solver, puzzle: &Puzzle, quiet: bool) {
+    if quiet { solver.solve(puzzle, &SolveContext::default()); return; }
     println!("=== {} ({}×{}) ===", puzzle.name, puzzle.width, puzzle.height);
     let result = solver.solve(puzzle, &SolveContext::default());
     match result.outcome {
@@ -88,7 +93,7 @@ fn main() -> Result<()> {
     };
 
     for puzzle in &puzzles {
-        run_puzzle(solver.as_ref(), puzzle);
+        run_puzzle(solver.as_ref(), puzzle, cli.quiet);
     }
 
     Ok(())
