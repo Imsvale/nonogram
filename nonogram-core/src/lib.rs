@@ -121,7 +121,7 @@ impl CancelToken {
     }
 }
 
-/// Context passed to `Solver::solve_with`. Extensible without further trait changes.
+/// Context passed to `Solver::solve`. Extensible without further trait changes.
 #[derive(Clone, Default)]
 pub struct SolveContext {
     pub cancel: CancelToken,
@@ -132,15 +132,7 @@ pub struct SolveContext {
 // ---------------------------------------------------------------------------
 
 pub trait Solver {
-    fn solve(&self, puzzle: &Puzzle) -> SolveResult;
-
-    /// Solve with cancellation support. Override to respect `ctx.cancel`;
-    /// the default delegates to `solve` and ignores the context, so existing
-    /// implementations compile unchanged.
-    fn solve_with(&self, puzzle: &Puzzle, ctx: &SolveContext) -> SolveResult {
-        let _ = ctx;
-        self.solve(puzzle)
-    }
+    fn solve(&self, puzzle: &Puzzle, ctx: &SolveContext) -> SolveResult;
 }
 
 // ---------------------------------------------------------------------------

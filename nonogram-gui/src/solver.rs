@@ -20,9 +20,9 @@ impl SolverKind {
 
     pub fn solve(self, puzzle: &Puzzle, ctx: &SolveContext) -> SolveResult {
         match self {
-            Self::Propagation => PropagationSolver.solve_with(puzzle, ctx),
-            Self::GraphSearch => GraphSearchSolver.solve_with(puzzle, ctx),
-            Self::Human       => HumanSolver.solve_with(puzzle, ctx),
+            Self::Propagation => PropagationSolver.solve(puzzle, ctx),
+            Self::GraphSearch => GraphSearchSolver.solve(puzzle, ctx),
+            Self::Human       => HumanSolver.solve(puzzle, ctx),
         }
     }
 }

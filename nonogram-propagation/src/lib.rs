@@ -530,11 +530,7 @@ fn solve_internal(state: &mut SolverState, ctx: &SolveContext) -> (Outcome, bool
 pub struct PropagationSolver;
 
 impl Solver for PropagationSolver {
-    fn solve(&self, puzzle: &Puzzle) -> SolveResult {
-        self.solve_with(puzzle, &SolveContext::default())
-    }
-
-    fn solve_with(&self, puzzle: &Puzzle, ctx: &SolveContext) -> SolveResult {
+    fn solve(&self, puzzle: &Puzzle, ctx: &SolveContext) -> SolveResult {
         let mut state = SolverState::new(puzzle);
         let (outcome, aborted) = solve_internal(&mut state, ctx);
         SolveResult { outcome, grid: state.cells, steps: vec![], aborted }

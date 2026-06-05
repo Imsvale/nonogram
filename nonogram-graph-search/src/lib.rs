@@ -352,21 +352,7 @@ impl SearchState {
 pub struct GraphSearchSolver;
 
 impl Solver for GraphSearchSolver {
-    fn solve(&self, puzzle: &Puzzle) -> SolveResult {
-        let state = SearchState::from_puzzle(puzzle);
-        let (result, _nodes, _) = state.solve_counted(&CancelToken::default());
-        match result {
-            Some((flat, steps)) => SolveResult {
-                outcome: Outcome::Solved,
-                grid: flat.into_iter().map(to_state).collect(),
-                steps,
-                aborted: false,
-            },
-            None => SolveResult { outcome: Outcome::NoSolution, grid: vec![], steps: vec![], aborted: false },
-        }
-    }
-
-    fn solve_with(&self, puzzle: &Puzzle, ctx: &SolveContext) -> SolveResult {
+    fn solve(&self, puzzle: &Puzzle, ctx: &SolveContext) -> SolveResult {
         let state = SearchState::from_puzzle(puzzle);
         let (result, _nodes, aborted) = state.solve_counted(&ctx.cancel);
         match result {

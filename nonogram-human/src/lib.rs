@@ -9,7 +9,7 @@ use nonogram_core::{Outcome, Puzzle, Solver, SolveResult};
 pub struct HumanSolver;
 
 impl Solver for HumanSolver {
-    fn solve(&self, _puzzle: &Puzzle) -> SolveResult {
+    fn solve(&self, _puzzle: &Puzzle, _ctx: &nonogram_core::SolveContext) -> SolveResult {
         SolveResult { outcome: Outcome::Stuck, grid: vec![], steps: vec![], aborted: false }
     }
 }

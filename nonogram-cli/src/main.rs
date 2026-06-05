@@ -54,7 +54,7 @@ fn verify(puzzle: &Puzzle, grid: &[CellState]) -> Option<Vec<(usize, usize)>> {
 
 fn run_puzzle(solver: &dyn Solver, puzzle: &Puzzle) {
     println!("=== {} ({}×{}) ===", puzzle.name, puzzle.width, puzzle.height);
-    let result = solver.solve_with(puzzle, &SolveContext::default());
+    let result = solver.solve(puzzle, &SolveContext::default());
     match result.outcome {
         Outcome::Solved => {
             println!("Solved.");
