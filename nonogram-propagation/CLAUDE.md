@@ -61,6 +61,10 @@ This solver was implemented with AI assistance. The pass logic is correct and we
 3. Obey the termination invariant.
 4. Add a puzzle to `puzzles/` that requires the technique.
 
+## Ownership
+
+This crate is owned by **Claude-Propagation**. For cross-crate changes or design questions involving `nonogram-core`, coordinate with **Claude-Main**.
+
 ## Git Commits
 
 **Before committing, verify scope.**

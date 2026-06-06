@@ -49,6 +49,10 @@ impl Solver for GraphSearchSolver { ... }
 - Clue arithmetic stays in `usize`. Do not change internal clue storage to `u32` — the cast at `from_puzzle` is the intended isolation point.
 - The MRV priority and propagation logic are the core performance levers. Profile before changing the heap ordering or propagation loop.
 
+## Ownership
+
+This crate is owned by **Claude-graph**. For cross-crate changes or design questions involving `nonogram-core`, coordinate with **Claude-Main**.
+
 ## Git Commits
 
 **Before committing, verify scope.**

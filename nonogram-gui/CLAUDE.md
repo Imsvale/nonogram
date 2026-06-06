@@ -155,6 +155,10 @@ The grid is wrapped in a `scrollable` — large puzzles (e.g. 40×20) scroll bot
 - **Scrollable direction**: the puzzle grid scrollable defaults to vertical only. For wide puzzles, add `.direction(scrollable::Direction::Both { ... })` if needed.
 - **No theming**: uses iced's default light theme.
 
+## Ownership
+
+This crate is owned by **Claude-GUI**. For cross-crate changes or design questions involving `nonogram-core`, coordinate with **Claude-Main**.
+
 ## Git Commits
 
 **Before committing, verify scope.**

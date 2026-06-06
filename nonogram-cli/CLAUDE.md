@@ -40,6 +40,10 @@ let solver: Box<dyn Solver> = match cli.solver {
 - Puzzle parsing — goes in `nonogram-core::parse_file`
 - Shared types — go in `nonogram-core`
 
+## Ownership
+
+This crate is owned by **Claude-CLI**. For cross-crate changes or design questions involving `nonogram-core`, coordinate with **Claude-Main**.
+
 ## Git Commits
 
 **Before committing, verify scope.**

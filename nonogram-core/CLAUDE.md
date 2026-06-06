@@ -33,6 +33,10 @@ All solver crates implement this. The trait is deliberately thin: input is `&Puz
 ### `parse_file(path: &str) -> Result<Vec<Puzzle>, anyhow::Error>`
 File format: `name|col_clues/row_clues[|solution]`. Clue groups are comma-separated; numbers within a group are space-separated. `0` normalises to an empty clue list. The optional solution field is a flat binary string (`1`=Filled, `0`=Empty).
 
+## Ownership
+
+This crate is owned by **Claude-Main**, who also holds workspace-wide oversight responsibility. See the root `CLAUDE.md` for the full ownership map and oversight mandate.
+
 ## Git Commits
 
 **Changes to this crate are almost always cross-cutting** — every solver crate and the GUI depend on it. Do not commit from here without verifying that all downstream crates still compile.

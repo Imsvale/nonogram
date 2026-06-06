@@ -36,6 +36,10 @@ the solver will catch it if it's a real contradiction.
 2. Write a `convert_<format>(content: &str, name_prefix: &str)` function.
 3. Add the match arm in `main`.
 
+## Ownership
+
+This crate is owned by **Claude-Convert**. For cross-crate changes or design questions involving `nonogram-core`, coordinate with **Claude-Main**.
+
 ## Git Commits
 
 **Before committing, verify scope.**

@@ -31,6 +31,10 @@ impl Solver for HumanSolver { ... }
 
 The stub currently returns `Outcome::Stuck` for all inputs. Replace the body of `solve` when ready.
 
+## Ownership
+
+This crate is owned by **Claude-Human**. For cross-crate changes or design questions involving `nonogram-core`, coordinate with **Claude-Main**.
+
 ## Git Commits
 
 **Before committing, verify scope.**
