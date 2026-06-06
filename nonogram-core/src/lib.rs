@@ -178,6 +178,8 @@ pub enum ParseError {
     InvalidClue(String),
     #[error("solution length {got} does not match grid {expected}")]
     SolutionLength { got: usize, expected: usize },
+    #[error("row clues sum to {row_total} but column clues sum to {col_total}")]
+    ClueTotalMismatch { row_total: u32, col_total: u32 },
 }
 
 /// Parse a comma-delimited group of line clues.
@@ -238,6 +240,12 @@ pub fn parse_file(path: &str) -> Result<Vec<Puzzle>, anyhow::Error> {
 
         let col_clues = normalize_clues(parse_clue_group(clue_parts[0])?);
         let row_clues = normalize_clues(parse_clue_group(clue_parts[1])?);
+
+        let row_total: u32 = row_clues.iter().flat_map(|r| r.iter()).sum();
+        let col_total: u32 = col_clues.iter().flat_map(|c| c.iter()).sum();
+        if row_total != col_total {
+            return Err(ParseError::ClueTotalMismatch { row_total, col_total }.into());
+        }
 
         let width = col_clues.len();
         let height = row_clues.len();
