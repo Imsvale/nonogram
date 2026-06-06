@@ -10,7 +10,7 @@
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
-use nonogram_core::{CancelToken, CellState, LineId, Outcome, Puzzle, Solver, SolveContext, SolveResult, SolveStep};
+use nonogram_core::{AllSolutions, CancelToken, CellState, ExhaustiveSolver, LineId, Outcome, Puzzle, Solver, SolveContext, SolveResult, SolveStep};
 
 // ---------------------------------------------------------------------------
 // Internal cell type (private to this crate)
@@ -343,6 +343,66 @@ impl SearchState {
         }
         (None, pushed, false)
     }
+
+    fn solve_all_counted(&self, cancel: &CancelToken) -> (Vec<(Vec<Cell>, Vec<SolveStep>)>, usize, usize, bool) {
+        let mut grid = vec![Cell::Unknown; self.rows * self.cols];
+        let mut steps: Vec<SolveStep> = Vec::new();
+        let mut expanded = 0usize;
+        let mut pushed = 0usize;
+        let mut solutions: Vec<(Vec<Cell>, Vec<SolveStep>)> = Vec::new();
+
+        if !self.propagate(&mut grid, &mut steps) { return (solutions, expanded, pushed, false); }
+        if self.is_complete(&grid) {
+            if self.check(&grid) { solutions.push((grid, steps)); }
+            return (solutions, expanded, pushed, false);
+        }
+
+        let mut heap: BinaryHeap<Reverse<Node>> = BinaryHeap::new();
+        heap.push(Reverse(Node { min_count: self.min_completion_count(&grid), grid, steps }));
+        pushed += 1;
+
+        while let Some(Reverse(node)) = heap.pop() {
+            expanded += 1;
+            if cancel.is_cancelled() {
+                return (solutions, expanded, pushed, true);
+            }
+            let Some((line, completions)) = self.most_constrained(&node.grid) else { continue; };
+            for completion in completions {
+                let mut grid = node.grid.clone();
+                let mut steps = node.steps.clone();
+
+                let line_id = match line { Line::Row(r) => LineId::Row(r), Line::Col(c) => LineId::Col(c) };
+                let cells_changed: Vec<(usize, usize, CellState)> = match line {
+                    Line::Row(r) => completion.iter().enumerate()
+                        .filter(|&(c, &v)| grid[r * self.cols + c] != v)
+                        .map(|(c, &v)| (r, c, to_state(v)))
+                        .collect(),
+                    Line::Col(col) => completion.iter().enumerate()
+                        .filter(|&(r, &v)| grid[r * self.cols + col] != v)
+                        .map(|(r, &v)| (r, col, to_state(v)))
+                        .collect(),
+                };
+                if !cells_changed.is_empty() {
+                    let desc = match line_id {
+                        LineId::Row(r) => format!("row {}: branch", r),
+                        LineId::Col(c) => format!("col {}: branch", c),
+                    };
+                    steps.push(SolveStep { description: desc, line: Some(line_id), cells_changed });
+                }
+
+                self.apply_line(&mut grid, line, &completion);
+                if !self.propagate(&mut grid, &mut steps) { continue; }
+                if self.is_complete(&grid) {
+                    if self.check(&grid) { solutions.push((grid, steps)); }
+                    continue;
+                }
+                let min_count = self.min_completion_count(&grid);
+                heap.push(Reverse(Node { min_count, grid, steps }));
+                pushed += 1;
+            }
+        }
+        (solutions, expanded, pushed, false)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -370,5 +430,19 @@ impl Solver for GraphSearchSolver {
             },
             None => SolveResult { outcome: Outcome::NoSolution, grid: vec![], steps: vec![], aborted: false },
         }
+    }
+}
+
+impl ExhaustiveSolver for GraphSearchSolver {
+    fn solve_all(&self, puzzle: &Puzzle, ctx: &SolveContext) -> AllSolutions {
+        let state = SearchState::from_puzzle(puzzle);
+        let (found, nodes_expanded, nodes_pushed, aborted) = state.solve_all_counted(&ctx.cancel);
+        let solutions = found.into_iter().map(|(flat, steps)| SolveResult {
+            outcome: Outcome::Solved,
+            grid: flat.into_iter().map(to_state).collect(),
+            steps,
+            aborted: false,
+        }).collect();
+        AllSolutions { solutions, nodes_expanded, nodes_pushed, aborted }
     }
 }

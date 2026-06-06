@@ -147,8 +147,10 @@ pub trait Solver {
 pub struct AllSolutions {
     /// Every valid solution found, each with its own grid and step trace.
     pub solutions: Vec<SolveResult>,
-    /// Heap nodes expanded during the search.
+    /// Heap nodes popped and expanded (completions generated).
     pub nodes_expanded: usize,
+    /// Heap nodes pushed (candidates generated). High push:expand ratio → wide branching.
+    pub nodes_pushed: usize,
     /// `true` if the search was cut short by the `CancelToken`.
     pub aborted: bool,
 }
