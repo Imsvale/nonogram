@@ -37,6 +37,10 @@ struct Cli {
     /// Enumerate all solutions (graph-search only).
     #[arg(long)]
     all: bool,
+
+    /// Solve only puzzle N from the file (1-indexed).
+    #[arg(short, long)]
+    number: Option<usize>,
 }
 
 fn print_grid(puzzle: &Puzzle, grid: &[CellState], complete: bool) {
@@ -120,7 +124,14 @@ fn run_puzzle_all(puzzle: &Puzzle, result: &AllSolutions, quiet: bool) {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let puzzles = parse_file(&cli.file)?;
+    let mut puzzles = parse_file(&cli.file)?;
+
+    if let Some(n) = cli.number {
+        if n == 0 || n > puzzles.len() {
+            anyhow::bail!("puzzle number {n} is out of range (file contains {} puzzle(s))", puzzles.len());
+        }
+        puzzles = vec![puzzles.remove(n - 1)];
+    }
 
     if cli.all {
         match cli.solver {
