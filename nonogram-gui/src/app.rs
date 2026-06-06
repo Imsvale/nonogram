@@ -11,7 +11,7 @@ use iced::{
     Color, Element, Event, Font, Length, Subscription, Task, Theme,
 };
 use iced_fonts::bootstrap::{self, Bootstrap};
-use nonogram_core::{parse_file, CancelToken, CellState, Outcome, Puzzle, SolveContext, SolveResult};
+use nonogram_core::{parse_file, AllSolutions, CancelToken, CellState, Outcome, Puzzle, SolveContext, SolveResult};
 
 use crate::convert::convert_letter_content;
 use crate::solver::SolverKind;
@@ -101,6 +101,8 @@ pub struct App {
     files: Vec<LoadedFile>,
     selected: HashSet<Key>,
     results: HashMap<(Key, SolverKind), SolveResult>,
+    all_solutions: HashMap<(Key, SolverKind), AllSolutions>,
+    solution_index: usize,
     solver: SolverKind,
     focused: Option<Key>,
     status: String,
@@ -144,6 +146,12 @@ pub enum Message {
     SolveAll,
     SolveDone(SolverKind, Vec<(Key, SolveResult)>),
 
+    // Exhaustive search
+    FindAllSelected,
+    FindAllDone(SolverKind, Vec<(Key, AllSolutions)>),
+    SolutionPrev,
+    SolutionNext,
+
     // Step navigation
     StepFirst,
     StepBack,
@@ -184,7 +192,9 @@ impl App {
             files: Vec::new(),
             selected: HashSet::new(),
             results: HashMap::new(),
-            solver: SolverKind::Propagation,
+            all_solutions: HashMap::new(),
+            solution_index: 0,
+            solver: SolverKind::GraphSearch,
             focused: None,
             status: String::from("Loading default puzzle files…"),
             busy: true,
@@ -193,7 +203,7 @@ impl App {
             cancel: CancelToken::default(),
             modifiers: keyboard::Modifiers::default(),
             last_anchor: None,
-            theme: Theme::Light,
+            theme: Theme::Dark,
         };
 
         let task = Task::perform(
@@ -447,7 +457,12 @@ impl App {
                 }
                 self.focused = Some(key);
                 self.replaying = false;
-                self.step_cursor = self.results.get(&(key, self.solver))
+                // Prefer the last solution from exhaustive results if available
+                let all = self.all_solutions.get(&(key, self.solver));
+                self.solution_index = all.map(|a| a.solutions.len().saturating_sub(1)).unwrap_or(0);
+                self.step_cursor = all
+                    .and_then(|a| a.solutions.get(self.solution_index))
+                    .or_else(|| self.results.get(&(key, self.solver)))
                     .map(|r| r.steps.len())
                     .unwrap_or(0);
                 Task::none()
@@ -463,8 +478,11 @@ impl App {
             Message::SolverChanged(kind) => {
                 self.solver = kind;
                 self.replaying = false;
-                self.step_cursor = self.focused
-                    .and_then(|key| self.results.get(&(key, kind)))
+                let all = self.focused.and_then(|key| self.all_solutions.get(&(key, kind)));
+                self.solution_index = all.map(|a| a.solutions.len().saturating_sub(1)).unwrap_or(0);
+                self.step_cursor = all
+                    .and_then(|a| a.solutions.get(self.solution_index))
+                    .or_else(|| self.focused.and_then(|key| self.results.get(&(key, kind))))
                     .map(|r| r.steps.len())
                     .unwrap_or(0);
                 Task::none()
@@ -552,6 +570,91 @@ impl App {
                 Task::none()
             }
 
+            // ── Exhaustive search ─────────────────────────────────────────
+            Message::FindAllSelected => {
+                if !self.solver.supports_exhaustive() { return Task::none(); }
+                let to_solve: Vec<(Key, Puzzle)> = self.selected.iter()
+                    .filter_map(|&(fi, pi)| {
+                        self.files.get(fi)?.puzzles.get(pi).map(|p| ((fi, pi), p.clone()))
+                    })
+                    .collect();
+                if to_solve.is_empty() { return Task::none(); }
+                let solver = self.solver;
+                self.cancel.reset();
+                let ctx = SolveContext { cancel: self.cancel.clone() };
+                self.busy = true;
+                self.status = format!("Finding all solutions for {} puzzle(s)…", to_solve.len());
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            to_solve.into_iter()
+                                .filter_map(|(key, puzzle)| {
+                                    solver.solve_all(&puzzle, &ctx).map(|r| (key, r))
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .await
+                        .unwrap_or_default()
+                    },
+                    move |results| Message::FindAllDone(solver, results),
+                )
+            }
+
+            Message::FindAllDone(solver_kind, results) => {
+                let total: usize = results.iter().map(|(_, r)| r.solutions.len()).sum();
+                let expanded: usize = results.iter().map(|(_, r)| r.nodes_expanded).sum();
+                let pushed: usize = results.iter().map(|(_, r)| r.nodes_pushed).sum();
+                let aborted = results.iter().any(|(_, r)| r.aborted);
+                for (key, result) in results {
+                    if Some(key) == self.focused && solver_kind == self.solver {
+                        self.solution_index = result.solutions.len().saturating_sub(1);
+                        self.step_cursor = result.solutions
+                            .get(self.solution_index)
+                            .map(|r| r.steps.len())
+                            .unwrap_or(0);
+                    }
+                    self.all_solutions.insert((key, solver_kind), result);
+                }
+                self.busy = false;
+                self.status = if aborted {
+                    format!("{total} solution(s) found (aborted) — expanded: {expanded}, pushed: {pushed}")
+                } else {
+                    format!("{total} solution(s) found — expanded: {expanded}, pushed: {pushed}")
+                };
+                Task::none()
+            }
+
+            Message::SolutionPrev => {
+                if self.solution_index > 0 {
+                    self.solution_index -= 1;
+                    self.replaying = false;
+                    if let Some(key) = self.focused {
+                        self.step_cursor = self.all_solutions.get(&(key, self.solver))
+                            .and_then(|a| a.solutions.get(self.solution_index))
+                            .map(|r| r.steps.len())
+                            .unwrap_or(0);
+                    }
+                }
+                Task::none()
+            }
+
+            Message::SolutionNext => {
+                if let Some(key) = self.focused {
+                    let max_idx = self.all_solutions.get(&(key, self.solver))
+                        .map(|a| a.solutions.len().saturating_sub(1))
+                        .unwrap_or(0);
+                    if self.solution_index < max_idx {
+                        self.solution_index += 1;
+                        self.replaying = false;
+                        self.step_cursor = self.all_solutions.get(&(key, self.solver))
+                            .and_then(|a| a.solutions.get(self.solution_index))
+                            .map(|r| r.steps.len())
+                            .unwrap_or(0);
+                    }
+                }
+                Task::none()
+            }
+
             // ── Step navigation ───────────────────────────────────────────
             Message::StepFirst => {
                 self.step_cursor = 0;
@@ -564,14 +667,14 @@ impl App {
             }
             Message::StepForward => {
                 if let Some(key) = self.focused {
-                    let max = self.results.get(&(key, self.solver)).map(|r| r.steps.len()).unwrap_or(0);
+                    let max = self.active_steps_len(key);
                     self.step_cursor = (self.step_cursor + 1).min(max);
                 }
                 Task::none()
             }
             Message::StepLast => {
                 if let Some(key) = self.focused {
-                    let max = self.results.get(&(key, self.solver)).map(|r| r.steps.len()).unwrap_or(0);
+                    let max = self.active_steps_len(key);
                     self.step_cursor = max;
                 }
                 Task::none()
@@ -580,7 +683,7 @@ impl App {
                 self.replaying = !self.replaying;
                 if self.replaying {
                     if let Some(key) = self.focused {
-                        let max = self.results.get(&(key, self.solver)).map(|r| r.steps.len()).unwrap_or(0);
+                        let max = self.active_steps_len(key);
                         if self.step_cursor >= max {
                             self.step_cursor = 0;
                         }
@@ -592,7 +695,7 @@ impl App {
             }
             Message::ReplayTick => {
                 if let Some(key) = self.focused {
-                    let max = self.results.get(&(key, self.solver)).map(|r| r.steps.len()).unwrap_or(0);
+                    let max = self.active_steps_len(key);
                     if self.step_cursor >= max {
                         self.replaying = false;
                     } else {
@@ -672,6 +775,14 @@ impl App {
             Space::with_width(Length::Fixed(12.0)),
             solve_sel,
             solve_all,
+            {
+                let b = button("Find All");
+                if self.solver.supports_exhaustive() && !self.selected.is_empty() && !self.busy {
+                    b.on_press(Message::FindAllSelected)
+                } else {
+                    b
+                }
+            },
             abort,
         ]
         .spacing(8)
@@ -684,20 +795,33 @@ impl App {
 
     fn view_left_panel(&self) -> Element<'_, Message> {
         // ── List toolbar ──
+        let total_puzzles: usize = self.files.iter().map(|f| f.puzzles.len()).sum();
+        let all_selected = total_puzzles > 0
+            && self.files.iter().enumerate().all(|(fi, f)| {
+                (0..f.puzzles.len()).all(|pi| self.selected.contains(&(fi, pi)))
+            });
+        let any_collapsed = self.files.iter().any(|f| f.collapsed);
+
+        let collapse_toggle: Element<Message> = if any_collapsed {
+            button(bi(Bootstrap::ChevronDoubleRight).size(11))
+                .on_press(Message::ExpandAll)
+                .padding([3, 6])
+                .into()
+        } else {
+            button(bi(Bootstrap::ChevronDoubleDown).size(11))
+                .on_press(Message::CollapseAll)
+                .padding([3, 6])
+                .into()
+        };
+
         let list_toolbar = container(
             row![
-                button(
-                    row![bi(Bootstrap::CheckLg).size(11), text("All").size(12)]
-                        .spacing(3).align_y(Vertical::Center)
-                ).on_press(Message::SelectAll).padding([3, 6]),
-                button(text("None").size(12)).on_press(Message::DeselectAll).padding([3, 6]),
+                checkbox("", all_selected)
+                    .on_toggle(|v| if v { Message::SelectAll } else { Message::DeselectAll }),
+                bi(Bootstrap::CheckAll).size(14),
                 Space::with_width(Length::Fill),
-                button(bi(Bootstrap::ChevronDown).size(11))
-                    .on_press(Message::ExpandAll).padding([3, 6]),
-                button(bi(Bootstrap::ChevronRight).size(11))
-                    .on_press(Message::CollapseAll).padding([3, 6]),
+                collapse_toggle,
             ]
-            .spacing(4)
             .padding([4, 8])
             .align_y(Vertical::Center),
         )
@@ -845,11 +969,16 @@ impl App {
 
         let key = (fi, pi);
         let result = self.results.get(&(key, self.solver));
+        let all = self.all_solutions.get(&(key, self.solver));
+        // Active result: prefer the selected solution from exhaustive results
+        let active: Option<&SolveResult> = all
+            .and_then(|a| a.solutions.get(self.solution_index))
+            .or(result);
 
         // Determine the grid state to display (owned so it outlives the closures below)
         let grid_data: Option<Vec<CellState>> = {
             let cursor = self.step_cursor;
-            result.map(|r| {
+            active.map(|r| {
                 if !r.steps.is_empty() && cursor < r.steps.len() {
                     grid_at_step(puzzle, r, cursor)
                 } else {
@@ -859,50 +988,50 @@ impl App {
         };
 
         // Status indicator for the header
-        let status_el: Element<Message> = if let Some(res) = result {
+        let status_el: Element<Message> = if let Some(a) = all {
+            let n = a.solutions.len();
+            let suffix = if a.aborted { " (aborted)" } else { "" };
+            match n {
+                0 => row![
+                    bi(Bootstrap::XLg).size(13).color(Color::from_rgb(0.78, 0.08, 0.08)),
+                    text(format!("No solutions{suffix}")).size(13),
+                ].spacing(4).align_y(Vertical::Center).into(),
+                1 => row![
+                    bi(Bootstrap::CheckLg).size(13).color(Color::from_rgb(0.08, 0.55, 0.08)),
+                    text(format!("Unique solution{suffix}")).size(13),
+                ].spacing(4).align_y(Vertical::Center).into(),
+                _ => row![
+                    bi(Bootstrap::DashLg).size(13).color(Color::from_rgb(0.65, 0.45, 0.0)),
+                    text(format!("{n} solutions — ambiguous{suffix}")).size(13),
+                ].spacing(4).align_y(Vertical::Center).into(),
+            }
+        } else if let Some(res) = result {
             match (res.outcome, res.aborted) {
                 (Outcome::Solved, _) => row![
                     bi(Bootstrap::CheckLg).size(13).color(Color::from_rgb(0.08, 0.55, 0.08)),
                     text("Solved").size(13),
-                ]
-                .spacing(4)
-                .align_y(Vertical::Center)
-                .into(),
+                ].spacing(4).align_y(Vertical::Center).into(),
                 (_, true) => {
                     let filled = res.grid.iter().filter(|&&c| c != CellState::Unknown).count();
-                    let total = puzzle.width * puzzle.height;
                     row![
                         bi(Bootstrap::XCircleFill).size(13).color(Color::from_rgb(0.75, 0.38, 0.0)),
-                        text(format!("Aborted ({filled}/{total})")).size(13),
-                    ]
-                    .spacing(4)
-                    .align_y(Vertical::Center)
-                    .into()
+                        text(format!("Aborted ({filled}/{}", puzzle.width * puzzle.height)).size(13),
+                    ].spacing(4).align_y(Vertical::Center).into()
                 }
                 (Outcome::Stuck, _) => {
                     let filled = res.grid.iter().filter(|&&c| c != CellState::Unknown).count();
-                    let total = puzzle.width * puzzle.height;
                     row![
                         bi(Bootstrap::DashLg).size(13).color(Color::from_rgb(0.65, 0.45, 0.0)),
-                        text(format!("Partial ({filled}/{total})")).size(13),
-                    ]
-                    .spacing(4)
-                    .align_y(Vertical::Center)
-                    .into()
+                        text(format!("Partial ({filled}/{}", puzzle.width * puzzle.height)).size(13),
+                    ].spacing(4).align_y(Vertical::Center).into()
                 }
                 (Outcome::NoSolution, _) => row![
                     bi(Bootstrap::XLg).size(13).color(Color::from_rgb(0.78, 0.08, 0.08)),
                     text("No solution").size(13),
-                ]
-                .spacing(4)
-                .align_y(Vertical::Center)
-                .into(),
+                ].spacing(4).align_y(Vertical::Center).into(),
             }
         } else {
-            text("Not yet solved")
-                .size(13)
-                .color(Color::from_rgb(0.45, 0.45, 0.45))
-                .into()
+            text("Not yet solved").size(13).color(Color::from_rgb(0.45, 0.45, 0.45)).into()
         };
 
         let header = row![
@@ -932,8 +1061,38 @@ impl App {
         items.push(header.into());
         items.push(horizontal_rule(1).into());
 
-        // Step navigation bar (only when a result with steps exists)
-        if let Some(res) = result {
+        // Solution navigation bar (only when exhaustive results exist)
+        if let Some(a) = all {
+            let n = a.solutions.len();
+            if n > 0 {
+                let idx = self.solution_index.min(n.saturating_sub(1));
+                let can_prev = idx > 0;
+                let can_next = idx + 1 < n;
+                let sol_nav = row![
+                    {
+                        let b = button(bi(Bootstrap::ChevronLeft).size(13)).padding([2, 5]);
+                        if can_prev { b.on_press(Message::SolutionPrev) } else { b }
+                    },
+                    text(format!("Solution {} / {n}", idx + 1)).size(12),
+                    {
+                        let b = button(bi(Bootstrap::ChevronRight).size(13)).padding([2, 5]);
+                        if can_next { b.on_press(Message::SolutionNext) } else { b }
+                    },
+                    Space::with_width(Length::Fixed(12.0)),
+                    text(format!("nodes expanded: {}", a.nodes_expanded))
+                        .size(11)
+                        .color(Color::from_rgb(0.45, 0.45, 0.45)),
+                ]
+                .spacing(4)
+                .padding([5, 12])
+                .align_y(Vertical::Center);
+                items.push(sol_nav.into());
+                items.push(horizontal_rule(1).into());
+            }
+        }
+
+        // Step navigation bar (only when the active result has steps)
+        if let Some(res) = active {
             if !res.steps.is_empty() {
                 let total = res.steps.len();
                 let cursor = self.step_cursor.min(total);
@@ -1114,6 +1273,15 @@ impl App {
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
+
+    // Steps length of the currently active result (exhaustive preferred over single).
+    fn active_steps_len(&self, key: Key) -> usize {
+        self.all_solutions.get(&(key, self.solver))
+            .and_then(|a| a.solutions.get(self.solution_index))
+            .or_else(|| self.results.get(&(key, self.solver)))
+            .map(|r| r.steps.len())
+            .unwrap_or(0)
+    }
 
     // Select all puzzles between `from` and `to` (inclusive) in document order.
     fn select_range(&mut self, from: Key, to: Key) {
