@@ -82,6 +82,9 @@ pub enum Outcome {
     /// A contradiction was detected — no valid solution exists (or the solver
     /// found one while searching and confirmed there is none).
     NoSolution,
+    /// The puzzle is structurally invalid and was not attempted.
+    /// Examples: row and column clue totals differ; a clue exceeds the line length.
+    InvalidPuzzle,
 }
 
 /// Everything a solver returns: outcome, final grid state, and optional trace.

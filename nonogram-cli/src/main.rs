@@ -85,7 +85,8 @@ fn run_puzzle(solver: &dyn Solver, puzzle: &Puzzle, quiet: bool) {
             println!("Stuck — partial grid:");
             if !result.grid.is_empty() { print_grid(puzzle, &result.grid, false); }
         }
-        Outcome::NoSolution => println!("No solution found."),
+        Outcome::NoSolution    => println!("No solution found."),
+        Outcome::InvalidPuzzle => println!("Invalid puzzle — structural contradiction, not attempted."),
     }
     println!();
 }
