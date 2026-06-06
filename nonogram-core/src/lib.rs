@@ -136,6 +136,32 @@ pub trait Solver {
 }
 
 // ---------------------------------------------------------------------------
+// Exhaustive search
+// ---------------------------------------------------------------------------
+
+/// All solutions found by an exhaustive search.
+///
+/// `solutions.len()` is the outcome: 0 = no solution, 1 = unique, ≥2 = ambiguous.
+/// When `aborted` is true the search was cancelled early and `solutions` is partial.
+#[derive(Clone, Debug)]
+pub struct AllSolutions {
+    /// Every valid solution found, each with its own grid and step trace.
+    pub solutions: Vec<SolveResult>,
+    /// Heap nodes expanded during the search.
+    pub nodes_expanded: usize,
+    /// `true` if the search was cut short by the `CancelToken`.
+    pub aborted: bool,
+}
+
+/// Implemented by solvers capable of enumerating all solutions to a puzzle.
+///
+/// Currently only `GraphSearchSolver`. The propagation and human solvers
+/// cannot enumerate solutions without fundamental rethinking.
+pub trait ExhaustiveSolver {
+    fn solve_all(&self, puzzle: &Puzzle, ctx: &SolveContext) -> AllSolutions;
+}
+
+// ---------------------------------------------------------------------------
 // Parser
 // ---------------------------------------------------------------------------
 
