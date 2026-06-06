@@ -8,7 +8,7 @@
 
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
-use nonogram_core::{AllSolutions, CellState, ExhaustiveSolver, Outcome, Puzzle, Solver, SolveContext, parse_file};
+use nonogram_core::{AllSolutions, CellState, ExhaustiveSolver, Outcome, ParsedPuzzle, Puzzle, Solver, SolveContext, parse_file};
 use nonogram_graph_search::GraphSearchSolver;
 use nonogram_human::HumanSolver;
 use nonogram_propagation::PropagationSolver;
@@ -86,7 +86,7 @@ fn run_puzzle(solver: &dyn Solver, puzzle: &Puzzle, quiet: bool) {
             if !result.grid.is_empty() { print_grid(puzzle, &result.grid, false); }
         }
         Outcome::NoSolution    => println!("No solution found."),
-        Outcome::InvalidPuzzle => println!("Invalid puzzle — structural contradiction, not attempted."),
+        Outcome::InvalidPuzzle(reason) => println!("Invalid puzzle — {reason}"),
     }
     println!();
 }
@@ -142,9 +142,14 @@ fn main() -> Result<()> {
             SolverChoice::Human       => { eprintln!("error: --all is not supported by the 'human' solver; use --solver graph-search"); std::process::exit(1); }
         }
         let solver = GraphSearchSolver;
-        for puzzle in &puzzles {
-            let result = solver.solve_all(puzzle, &SolveContext::default());
-            run_puzzle_all(puzzle, &result, cli.quiet);
+        for entry in &puzzles {
+            match entry {
+                ParsedPuzzle::Valid(p) => {
+                    let result = solver.solve_all(p, &SolveContext::default());
+                    run_puzzle_all(p, &result, cli.quiet);
+                }
+                ParsedPuzzle::Invalid { name, reason } => eprintln!("[INVALID] {name} — {reason}"),
+            }
         }
         return Ok(());
     }
@@ -155,8 +160,11 @@ fn main() -> Result<()> {
         SolverChoice::Human       => Box::new(HumanSolver),
     };
 
-    for puzzle in &puzzles {
-        run_puzzle(solver.as_ref(), puzzle, cli.quiet);
+    for entry in &puzzles {
+        match entry {
+            ParsedPuzzle::Valid(p) => run_puzzle(solver.as_ref(), p, cli.quiet),
+            ParsedPuzzle::Invalid { name, reason } => eprintln!("[INVALID] {name} — {reason}"),
+        }
     }
 
     Ok(())
