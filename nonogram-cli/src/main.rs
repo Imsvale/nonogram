@@ -128,7 +128,8 @@ fn main() -> Result<()> {
 
     if let Some(n) = cli.number {
         if n == 0 || n > puzzles.len() {
-            anyhow::bail!("puzzle number {n} is out of range (file contains {} puzzle(s))", puzzles.len());
+            eprintln!("error: puzzle number {n} is out of range (file contains {} puzzle(s))", puzzles.len());
+            std::process::exit(1);
         }
         puzzles = vec![puzzles.remove(n - 1)];
     }
@@ -136,8 +137,8 @@ fn main() -> Result<()> {
     if cli.all {
         match cli.solver {
             SolverChoice::GraphSearch => {}
-            SolverChoice::Propagation => anyhow::bail!("--all is not supported by the 'propagation' solver; use --solver graph-search"),
-            SolverChoice::Human       => anyhow::bail!("--all is not supported by the 'human' solver; use --solver graph-search"),
+            SolverChoice::Propagation => { eprintln!("error: --all is not supported by the 'propagation' solver; use --solver graph-search"); std::process::exit(1); }
+            SolverChoice::Human       => { eprintln!("error: --all is not supported by the 'human' solver; use --solver graph-search"); std::process::exit(1); }
         }
         let solver = GraphSearchSolver;
         for puzzle in &puzzles {
