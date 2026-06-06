@@ -8,7 +8,7 @@
 
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
-use nonogram_core::{CellState, Outcome, Puzzle, Solver, SolveContext, parse_file};
+use nonogram_core::{AllSolutions, CellState, ExhaustiveSolver, Outcome, Puzzle, Solver, SolveContext, parse_file};
 use nonogram_graph_search::GraphSearchSolver;
 use nonogram_human::HumanSolver;
 use nonogram_propagation::PropagationSolver;
@@ -33,6 +33,10 @@ struct Cli {
     /// Suppress all stdout output.
     #[arg(short, long)]
     quiet: bool,
+
+    /// Enumerate all solutions (graph-search only).
+    #[arg(long)]
+    all: bool,
 }
 
 fn print_grid(puzzle: &Puzzle, grid: &[CellState], complete: bool) {
@@ -82,9 +86,55 @@ fn run_puzzle(solver: &dyn Solver, puzzle: &Puzzle, quiet: bool) {
     println!();
 }
 
+fn run_puzzle_all(puzzle: &Puzzle, result: &AllSolutions, quiet: bool) {
+    if quiet { return; }
+    let n = result.solutions.len();
+    if n == 0 {
+        println!("=== {} ({}×{}) ===", puzzle.name, puzzle.width, puzzle.height);
+        if result.aborted { println!("Search aborted — no solution found yet."); }
+        else { println!("No solution found."); }
+        println!();
+        return;
+    }
+    for (i, sol) in result.solutions.iter().enumerate() {
+        println!("=== {} ({}×{}) — solution {}/{n} ===", puzzle.name, puzzle.width, puzzle.height, i + 1);
+        print_grid(puzzle, &sol.grid, true);
+        match verify(puzzle, &sol.grid) {
+            Some(mm) => {
+                println!("WRONG: {} cell(s) differ from known solution:", mm.len());
+                for (r, c) in mm { println!("  row={r} col={c}"); }
+            }
+            None if puzzle.solution.is_some() => println!("Verified correct."),
+            None => {}
+        }
+        println!();
+    }
+    let label = if n == 1 { "solution" } else { "solutions" };
+    if result.aborted {
+        println!("{n} {label} found (search aborted).  nodes_expanded: {}", result.nodes_expanded);
+    } else {
+        println!("{n} {label} found.  nodes_expanded: {}", result.nodes_expanded);
+    }
+    println!();
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let puzzles = parse_file(&cli.file)?;
+
+    if cli.all {
+        match cli.solver {
+            SolverChoice::GraphSearch => {}
+            SolverChoice::Propagation => anyhow::bail!("--all is not supported by the 'propagation' solver; use --solver graph-search"),
+            SolverChoice::Human       => anyhow::bail!("--all is not supported by the 'human' solver; use --solver graph-search"),
+        }
+        let solver = GraphSearchSolver;
+        for puzzle in &puzzles {
+            let result = solver.solve_all(puzzle, &SolveContext::default());
+            run_puzzle_all(puzzle, &result, cli.quiet);
+        }
+        return Ok(());
+    }
 
     let solver: Box<dyn Solver> = match cli.solver {
         SolverChoice::Propagation => Box::new(PropagationSolver),
