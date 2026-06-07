@@ -8,7 +8,7 @@
 
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
-use nonogram_core::{AllSolutions, CellState, ExhaustiveSolver, Outcome, ParsedPuzzle, Puzzle, Solver, SolveContext, parse_file};
+use nonogram_core::{AllSolutions, CellState, ExhaustiveSolver, ParsedPuzzle, Puzzle, SolutionState, Solver, SolveContext, parse_file};
 use nonogram_graph_search::GraphSearchSolver;
 use nonogram_human::HumanSolver;
 use nonogram_propagation::PropagationSolver;
@@ -68,8 +68,8 @@ fn run_puzzle(solver: &dyn Solver, puzzle: &Puzzle, quiet: bool) {
     if quiet { solver.solve(puzzle, &SolveContext::default()); return; }
     println!("=== {} ({}×{}) ===", puzzle.name, puzzle.width, puzzle.height);
     let result = solver.solve(puzzle, &SolveContext::default());
-    match result.outcome {
-        Outcome::Solved => {
+    match &result.state {
+        SolutionState::Complete => {
             println!("Solved.");
             print_grid(puzzle, &result.grid, true);
             match verify(puzzle, &result.grid) {
@@ -81,12 +81,19 @@ fn run_puzzle(solver: &dyn Solver, puzzle: &Puzzle, quiet: bool) {
                 None => {}
             }
         }
-        Outcome::Stuck => {
-            println!("Stuck — partial grid:");
-            if !result.grid.is_empty() { print_grid(puzzle, &result.grid, false); }
+        SolutionState::Partial => {
+            println!("Partial — no further progress:");
+            print_grid(puzzle, &result.grid, false);
         }
-        Outcome::NoSolution    => println!("No solution found."),
-        Outcome::InvalidPuzzle(reason) => println!("Invalid puzzle — {reason}"),
+        SolutionState::Unsolvable => {
+            println!("No solution exists.");
+            print_grid(puzzle, &result.grid, false);
+        }
+        SolutionState::Aborted => {
+            println!("Aborted — partial grid:");
+            print_grid(puzzle, &result.grid, false);
+        }
+        SolutionState::Invalid(reason) => println!("Invalid puzzle — {reason}"),
     }
     println!();
 }
