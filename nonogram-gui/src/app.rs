@@ -11,7 +11,7 @@ use iced::{
     Color, Element, Event, Font, Length, Subscription, Task, Theme,
 };
 use iced_fonts::bootstrap::{self, Bootstrap};
-use nonogram_core::{parse_file, AllSolutions, CancelToken, CellState, Outcome, ParsedPuzzle, Puzzle, SolveContext, SolveResult};
+use nonogram_core::{parse_file, AllSolutions, CancelToken, CellState, ParsedPuzzle, Puzzle, SolveContext, SolveResult, SolutionState};
 
 use crate::convert::convert_letter_content;
 use crate::solver::SolverKind;
@@ -571,8 +571,8 @@ impl App {
 
             Message::SolveDone(solver_kind, results) => {
                 let n = results.len();
-                let solved = results.iter().filter(|(_, r)| r.outcome == Outcome::Solved).count();
-                let aborted = results.iter().filter(|(_, r)| r.aborted).count();
+                let solved = results.iter().filter(|(_, r)| r.state == SolutionState::Complete).count();
+                let aborted = results.iter().filter(|(_, r)| r.state == SolutionState::Aborted).count();
                 for (key, result) in results {
                     if Some(key) == self.focused && solver_kind == self.solver {
                         self.step_cursor = result.steps.len();
@@ -904,12 +904,12 @@ impl App {
                         ParsedPuzzle::Valid(puzzle) => {
                             let is_sel = self.selected.contains(&key);
 
-                            let badge_icon: Option<Bootstrap> = self.results.get(&(key, self.solver)).map(|r| match (r.outcome.clone(), r.aborted) {
-                                (Outcome::Solved, _)           => Bootstrap::CheckLg,
-                                (_, true)                      => Bootstrap::XCircleFill,
-                                (Outcome::Stuck, _)            => Bootstrap::DashLg,
-                                (Outcome::NoSolution, _)       => Bootstrap::XLg,
-                                (Outcome::InvalidPuzzle(_), _) => Bootstrap::XLg,
+                            let badge_icon: Option<Bootstrap> = self.results.get(&(key, self.solver)).map(|r| match &r.state {
+                                SolutionState::Complete    => Bootstrap::CheckLg,
+                                SolutionState::Aborted     => Bootstrap::XCircleFill,
+                                SolutionState::Partial     => Bootstrap::DashLg,
+                                SolutionState::Unsolvable  => Bootstrap::XLg,
+                                SolutionState::Invalid(_)  => Bootstrap::ExclamationCircleFill,
                             });
 
                             let btn_content: Element<Message> = if let Some(icon) = badge_icon {
@@ -1096,12 +1096,11 @@ impl App {
             .or(result);
 
         // Determine the grid state to display (owned so it outlives the closures below).
-        // NoSolution results have grid: vec![] — treat as None so view_grid isn't
-        // handed an empty slice it would index into.
+        // Invalid results have grid: vec![] — treat as None. All other states populate the grid.
         let grid_data: Option<Vec<CellState>> = {
             let cursor = self.step_cursor;
             active.and_then(|r| {
-                if r.grid.is_empty() { return None; }
+                if matches!(r.state, SolutionState::Invalid(_)) { return None; }
                 Some(if !r.steps.is_empty() && cursor < r.steps.len() {
                     grid_at_step(puzzle, r, cursor)
                 } else {
@@ -1129,30 +1128,30 @@ impl App {
                 ].spacing(4).align_y(Vertical::Center).into(),
             }
         } else if let Some(res) = result {
-            match (res.outcome.clone(), res.aborted) {
-                (Outcome::Solved, _) => row![
+            match &res.state {
+                SolutionState::Complete => row![
                     bi(Bootstrap::CheckLg).size(13).color(Color::from_rgb(0.08, 0.55, 0.08)),
                     text("Solved").size(13),
                 ].spacing(4).align_y(Vertical::Center).into(),
-                (_, true) => {
+                SolutionState::Aborted => {
                     let filled = res.grid.iter().filter(|&&c| c != CellState::Unknown).count();
                     row![
                         bi(Bootstrap::XCircleFill).size(13).color(Color::from_rgb(0.75, 0.38, 0.0)),
-                        text(format!("Aborted ({filled}/{}", puzzle.width * puzzle.height)).size(13),
+                        text(format!("Aborted ({filled}/{})", puzzle.width * puzzle.height)).size(13),
                     ].spacing(4).align_y(Vertical::Center).into()
                 }
-                (Outcome::Stuck, _) => {
+                SolutionState::Partial => {
                     let filled = res.grid.iter().filter(|&&c| c != CellState::Unknown).count();
                     row![
                         bi(Bootstrap::DashLg).size(13).color(Color::from_rgb(0.65, 0.45, 0.0)),
-                        text(format!("Partial ({filled}/{}", puzzle.width * puzzle.height)).size(13),
+                        text(format!("Partial ({filled}/{})", puzzle.width * puzzle.height)).size(13),
                     ].spacing(4).align_y(Vertical::Center).into()
                 }
-                (Outcome::NoSolution, _) => row![
+                SolutionState::Unsolvable => row![
                     bi(Bootstrap::XLg).size(13).color(Color::from_rgb(0.78, 0.08, 0.08)),
                     text("No solution").size(13),
                 ].spacing(4).align_y(Vertical::Center).into(),
-                (Outcome::InvalidPuzzle(reason), _) => row![
+                SolutionState::Invalid(reason) => row![
                     bi(Bootstrap::ExclamationCircleFill).size(13).color(Color::from_rgb(0.75, 0.38, 0.0)),
                     text(format!("Invalid — {reason}")).size(13),
                 ].spacing(4).align_y(Vertical::Center).into(),
@@ -1314,13 +1313,13 @@ impl App {
                 let key = (fi, pi);
                 let Some(result) = self.results.get(&(key, self.solver)) else { continue };
 
-                let (status_icon, status_color, status_text) = match (result.outcome.clone(), result.aborted) {
-                    (Outcome::Solved, _) => (
+                let (status_icon, status_color, status_text) = match &result.state {
+                    SolutionState::Complete => (
                         Bootstrap::CheckLg,
                         Color::from_rgb(0.08, 0.55, 0.08),
                         String::from("Solved"),
                     ),
-                    (_, true) => {
+                    SolutionState::Aborted => {
                         let filled = result.grid.iter()
                             .filter(|&&c| c != CellState::Unknown).count();
                         (
@@ -1329,7 +1328,7 @@ impl App {
                             format!("Aborted ({}/{})", filled, puzzle.width * puzzle.height),
                         )
                     }
-                    (Outcome::Stuck, _) => {
+                    SolutionState::Partial => {
                         let filled = result.grid.iter()
                             .filter(|&&c| c != CellState::Unknown).count();
                         (
@@ -1338,12 +1337,12 @@ impl App {
                             format!("Partial ({}/{})", filled, puzzle.width * puzzle.height),
                         )
                     }
-                    (Outcome::NoSolution, _) => (
+                    SolutionState::Unsolvable => (
                         Bootstrap::XLg,
                         Color::from_rgb(0.78, 0.08, 0.08),
                         String::from("No solution"),
                     ),
-                    (Outcome::InvalidPuzzle(reason), _) => (
+                    SolutionState::Invalid(reason) => (
                         Bootstrap::ExclamationCircleFill,
                         Color::from_rgb(0.75, 0.38, 0.0),
                         format!("Invalid — {reason}"),
