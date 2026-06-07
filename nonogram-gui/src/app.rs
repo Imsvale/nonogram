@@ -11,7 +11,7 @@ use iced::{
     Color, Element, Event, Font, Length, Subscription, Task, Theme,
 };
 use iced_fonts::bootstrap::{self, Bootstrap};
-use nonogram_core::{parse_file, AllSolutions, CancelToken, CellState, Outcome, Puzzle, SolveContext, SolveResult};
+use nonogram_core::{parse_file, AllSolutions, CancelToken, CellState, Outcome, ParsedPuzzle, Puzzle, SolveContext, SolveResult};
 
 use crate::convert::convert_letter_content;
 use crate::solver::SolverKind;
@@ -89,7 +89,7 @@ pub type Key = (usize, usize); // (file_idx, puzzle_idx)
 pub struct LoadedFile {
     pub path: String,
     pub name: String,
-    pub puzzles: Vec<Puzzle>,
+    pub puzzles: Vec<ParsedPuzzle>,
     pub collapsed: bool,
 }
 
@@ -130,9 +130,9 @@ pub enum Message {
     ConvertClicked,
     FileChosen(Option<String>),
     ConvertChosen(Option<String>),
-    FileLoaded(String, String, Vec<Puzzle>),
-    ConvertLoaded(String, Vec<Puzzle>),
-    DefaultsLoaded(Vec<(String, String, Vec<Puzzle>)>),
+    FileLoaded(String, String, Vec<ParsedPuzzle>),
+    ConvertLoaded(String, Vec<ParsedPuzzle>),
+    DefaultsLoaded(Vec<(String, String, Vec<ParsedPuzzle>)>),
 
     // Selection
     PuzzleToggled(Key, bool),
@@ -319,7 +319,8 @@ impl App {
                     async move {
                         let content = std::fs::read_to_string(&p2)
                             .map_err(|e| e.to_string())?;
-                        let puzzles = convert_letter_content(&content, &name);
+                        let puzzles = convert_letter_content(&content, &name)
+                            .into_iter().map(ParsedPuzzle::Valid).collect();
                         Ok::<_, String>((name, puzzles))
                     },
                     |r| match r {
@@ -331,8 +332,13 @@ impl App {
             Message::ConvertChosen(None) => Task::none(),
 
             Message::FileLoaded(path, name, puzzles) => {
-                let n = puzzles.len();
-                self.status = format!("Loaded {n} puzzle(s) from {name}");
+                let n_valid = puzzles.iter().filter(|e| e.is_valid()).count();
+                let n_invalid = puzzles.len() - n_valid;
+                self.status = if n_invalid > 0 {
+                    format!("Loaded {n_valid} puzzle(s) from {name} ({n_invalid} invalid)")
+                } else {
+                    format!("Loaded {n_valid} puzzle(s) from {name}")
+                };
                 self.busy = false;
                 if !self.files.iter().any(|f| f.path == path) {
                     self.files.push(LoadedFile { path, name, puzzles, collapsed: false });
@@ -341,8 +347,8 @@ impl App {
             }
 
             Message::ConvertLoaded(name, puzzles) => {
-                let n = puzzles.len();
-                self.status = format!("Converted {n} puzzle(s) as \"{name}\"");
+                let n_valid = puzzles.iter().filter(|e| e.is_valid()).count();
+                self.status = format!("Converted {n_valid} puzzle(s) as \"{name}\"");
                 self.busy = false;
                 let display = format!("{name} (converted)");
                 self.files.push(LoadedFile {
@@ -355,9 +361,18 @@ impl App {
             }
 
             Message::DefaultsLoaded(list) => {
-                let total: usize = list.iter().map(|(_, _, p)| p.len()).sum();
-                self.status = if total > 0 {
-                    format!("Loaded {total} puzzle(s) from puzzles/")
+                let total_valid: usize = list.iter()
+                    .map(|(_, _, p)| p.iter().filter(|e| e.is_valid()).count())
+                    .sum();
+                let total_invalid: usize = list.iter()
+                    .map(|(_, _, p)| p.iter().filter(|e| !e.is_valid()).count())
+                    .sum();
+                self.status = if total_valid > 0 {
+                    if total_invalid > 0 {
+                        format!("Loaded {total_valid} puzzle(s) from puzzles/ ({total_invalid} invalid)")
+                    } else {
+                        format!("Loaded {total_valid} puzzle(s) from puzzles/")
+                    }
                 } else {
                     "No default puzzles found in puzzles/".into()
                 };
@@ -373,8 +388,8 @@ impl App {
             // ── List toolbar ──────────────────────────────────────────────
             Message::SelectAll => {
                 for fi in 0..self.files.len() {
-                    for pi in 0..self.files[fi].puzzles.len() {
-                        self.selected.insert((fi, pi));
+                    for (pi, entry) in self.files[fi].puzzles.iter().enumerate() {
+                        if entry.is_valid() { self.selected.insert((fi, pi)); }
                     }
                 }
                 Task::none()
@@ -423,8 +438,8 @@ impl App {
 
             Message::FileToggled(fi, checked) => {
                 if fi < self.files.len() {
-                    let n = self.files[fi].puzzles.len();
-                    for pi in 0..n {
+                    for (pi, entry) in self.files[fi].puzzles.iter().enumerate() {
+                        if !entry.is_valid() { continue; }
                         if checked { self.selected.insert((fi, pi)); }
                         else { self.selected.remove(&(fi, pi)); }
                     }
@@ -433,26 +448,33 @@ impl App {
             }
 
             Message::PuzzleFocused(key) => {
+                let (fi, pi) = key;
+                let is_valid = self.files.get(fi)
+                    .and_then(|f| f.puzzles.get(pi))
+                    .map(|e| e.is_valid())
+                    .unwrap_or(false);
                 let shift = self.modifiers.shift();
                 let ctrl  = self.modifiers.control() || self.modifiers.logo();
-                match (shift, ctrl) {
-                    (false, false) => {
-                        self.selected.clear();
-                        self.selected.insert(key);
-                        self.last_anchor = Some(key);
-                    }
-                    (false, true) => {
-                        if self.selected.contains(&key) {
-                            self.selected.remove(&key);
-                        } else {
+                if is_valid {
+                    match (shift, ctrl) {
+                        (false, false) => {
+                            self.selected.clear();
                             self.selected.insert(key);
                             self.last_anchor = Some(key);
                         }
-                    }
-                    (true, _) => {
-                        let anchor = self.last_anchor.unwrap_or(key);
-                        if !ctrl { self.selected.clear(); }
-                        self.select_range(anchor, key);
+                        (false, true) => {
+                            if self.selected.contains(&key) {
+                                self.selected.remove(&key);
+                            } else {
+                                self.selected.insert(key);
+                                self.last_anchor = Some(key);
+                            }
+                        }
+                        (true, _) => {
+                            let anchor = self.last_anchor.unwrap_or(key);
+                            if !ctrl { self.selected.clear(); }
+                            self.select_range(anchor, key);
+                        }
                     }
                 }
                 self.focused = Some(key);
@@ -491,7 +513,7 @@ impl App {
             Message::SolveSelected => {
                 let to_solve: Vec<(Key, Puzzle)> = self.selected.iter()
                     .filter_map(|&(fi, pi)| {
-                        self.files.get(fi)?.puzzles.get(pi).map(|p| ((fi, pi), p.clone()))
+                        self.files.get(fi)?.puzzles.get(pi)?.as_puzzle().map(|p| ((fi, pi), p.clone()))
                     })
                     .collect();
 
@@ -520,7 +542,8 @@ impl App {
             Message::SolveAll => {
                 let to_solve: Vec<(Key, Puzzle)> = self.files.iter().enumerate()
                     .flat_map(|(fi, f)| {
-                        f.puzzles.iter().enumerate().map(move |(pi, p)| ((fi, pi), p.clone()))
+                        f.puzzles.iter().enumerate()
+                            .filter_map(move |(pi, e)| e.as_puzzle().map(|p| ((fi, pi), p.clone())))
                     })
                     .collect();
 
@@ -575,7 +598,7 @@ impl App {
                 if !self.solver.supports_exhaustive() { return Task::none(); }
                 let to_solve: Vec<(Key, Puzzle)> = self.selected.iter()
                     .filter_map(|&(fi, pi)| {
-                        self.files.get(fi)?.puzzles.get(pi).map(|p| ((fi, pi), p.clone()))
+                        self.files.get(fi)?.puzzles.get(pi)?.as_puzzle().map(|p| ((fi, pi), p.clone()))
                     })
                     .collect();
                 if to_solve.is_empty() { return Task::none(); }
@@ -746,7 +769,7 @@ impl App {
         };
         let solve_all = {
             let b = button("Solve All");
-            let has = self.files.iter().any(|f| !f.puzzles.is_empty());
+            let has = self.files.iter().any(|f| f.puzzles.iter().any(|e| e.is_valid()));
             if has && !self.busy { b.on_press(Message::SolveAll) } else { b }
         };
         let abort = {
@@ -795,10 +818,14 @@ impl App {
 
     fn view_left_panel(&self) -> Element<'_, Message> {
         // ── List toolbar ──
-        let total_puzzles: usize = self.files.iter().map(|f| f.puzzles.len()).sum();
-        let all_selected = total_puzzles > 0
+        let total_valid: usize = self.files.iter()
+            .map(|f| f.puzzles.iter().filter(|e| e.is_valid()).count())
+            .sum();
+        let all_selected = total_valid > 0
             && self.files.iter().enumerate().all(|(fi, f)| {
-                (0..f.puzzles.len()).all(|pi| self.selected.contains(&(fi, pi)))
+                f.puzzles.iter().enumerate()
+                    .filter(|(_, e)| e.is_valid())
+                    .all(|(pi, _)| self.selected.contains(&(fi, pi)))
             });
         let any_collapsed = self.files.iter().any(|f| f.collapsed);
 
@@ -840,12 +867,18 @@ impl App {
         }
 
         for (fi, file) in self.files.iter().enumerate() {
-            let sel_count = (0..file.puzzles.len())
-                .filter(|&pi| self.selected.contains(&(fi, pi)))
+            let valid_count = file.puzzles.iter().filter(|e| e.is_valid()).count();
+            let sel_count = file.puzzles.iter().enumerate()
+                .filter(|(pi, e)| e.is_valid() && self.selected.contains(&(fi, *pi)))
                 .count();
-            let all_sel = sel_count == file.puzzles.len() && !file.puzzles.is_empty();
+            let all_sel = valid_count > 0 && sel_count == valid_count;
 
             let chevron = if file.collapsed { Bootstrap::ChevronRight } else { Bootstrap::ChevronDown };
+            let count_label = if file.puzzles.len() > valid_count {
+                format!("{sel_count}/{valid_count} (+{} invalid)", file.puzzles.len() - valid_count)
+            } else {
+                format!("{sel_count}/{valid_count}")
+            };
             let file_row = row![
                 button(bi(chevron).size(11))
                     .on_press(Message::FileCollapseToggled(fi))
@@ -854,7 +887,7 @@ impl App {
                 checkbox("", all_sel).on_toggle(move |c| Message::FileToggled(fi, c)),
                 text(file.name.as_str()).size(13),
                 Space::with_width(Length::Fill),
-                text(format!("{sel_count}/{}", file.puzzles.len())).size(11),
+                text(count_label).size(11),
             ]
             .spacing(4)
             .padding([4, 8])
@@ -863,62 +896,115 @@ impl App {
             items.push(container(file_row).style(style_header_row).into());
 
             if !file.collapsed {
-                for (pi, puzzle) in file.puzzles.iter().enumerate() {
+                for (pi, entry) in file.puzzles.iter().enumerate() {
                     let key = (fi, pi);
-                    let is_sel = self.selected.contains(&key);
                     let is_focused = self.focused == Some(key);
 
-                    let badge_icon: Option<Bootstrap> = self.results.get(&(key, self.solver)).map(|r| match (r.outcome, r.aborted) {
-                        (Outcome::Solved, _)     => Bootstrap::CheckLg,
-                        (_, true)                => Bootstrap::XCircleFill,
-                        (Outcome::Stuck, _)      => Bootstrap::DashLg,
-                        (Outcome::NoSolution, _) => Bootstrap::XLg,
-                    });
+                    match entry {
+                        ParsedPuzzle::Valid(puzzle) => {
+                            let is_sel = self.selected.contains(&key);
 
-                    let btn_content: Element<Message> = if let Some(icon) = badge_icon {
-                        row![text(puzzle.name.as_str()).size(13), bi(icon).size(11)]
-                            .spacing(4).align_y(Vertical::Center).into()
-                    } else {
-                        text(puzzle.name.as_str()).size(13).into()
-                    };
+                            let badge_icon: Option<Bootstrap> = self.results.get(&(key, self.solver)).map(|r| match (r.outcome.clone(), r.aborted) {
+                                (Outcome::Solved, _)           => Bootstrap::CheckLg,
+                                (_, true)                      => Bootstrap::XCircleFill,
+                                (Outcome::Stuck, _)            => Bootstrap::DashLg,
+                                (Outcome::NoSolution, _)       => Bootstrap::XLg,
+                                (Outcome::InvalidPuzzle(_), _) => Bootstrap::XLg,
+                            });
 
-                    let name_btn = button(btn_content)
-                        .on_press(Message::PuzzleFocused(key))
-                        .style(move |theme: &Theme, status| {
-                            let p = theme.extended_palette();
-                            if is_focused {
-                                button::Style {
-                                    background: Some(p.primary.strong.color.into()),
-                                    text_color: p.primary.strong.text,
-                                    border: iced::Border::default(),
-                                    shadow: iced::Shadow::default(),
-                                }
+                            let btn_content: Element<Message> = if let Some(icon) = badge_icon {
+                                row![text(puzzle.name.as_str()).size(13), bi(icon).size(11)]
+                                    .spacing(4).align_y(Vertical::Center).into()
                             } else {
-                                button::Style {
-                                    background: match status {
-                                        button::Status::Hovered => Some(p.primary.weak.color.into()),
-                                        _ => None,
-                                    },
-                                    text_color: p.background.base.text,
-                                    border: iced::Border::default(),
-                                    shadow: iced::Shadow::default(),
+                                text(puzzle.name.as_str()).size(13).into()
+                            };
+
+                            let name_btn = button(btn_content)
+                                .on_press(Message::PuzzleFocused(key))
+                                .style(move |theme: &Theme, status| {
+                                    let p = theme.extended_palette();
+                                    if is_focused {
+                                        button::Style {
+                                            background: Some(p.primary.strong.color.into()),
+                                            text_color: p.primary.strong.text,
+                                            border: iced::Border::default(),
+                                            shadow: iced::Shadow::default(),
+                                        }
+                                    } else {
+                                        button::Style {
+                                            background: match status {
+                                                button::Status::Hovered => Some(p.primary.weak.color.into()),
+                                                _ => None,
+                                            },
+                                            text_color: p.background.base.text,
+                                            border: iced::Border::default(),
+                                            shadow: iced::Shadow::default(),
+                                        }
+                                    }
+                                })
+                                .padding([2, 6]);
+
+                            let puzzle_row = row![
+                                Space::with_width(Length::Fixed(20.0)),
+                                checkbox("", is_sel).on_toggle(move |c| Message::PuzzleToggled(key, c)),
+                                name_btn,
+                                Space::with_width(Length::Fill),
+                                text(format!("{}x{}", puzzle.width, puzzle.height)).size(10),
+                            ]
+                            .spacing(4)
+                            .padding([2, 6])
+                            .align_y(Vertical::Center);
+
+                            items.push(container(puzzle_row).style(style_panel).into());
+                        }
+
+                        ParsedPuzzle::Invalid { name, .. } => {
+                            let name_btn = button(
+                                row![
+                                    bi(Bootstrap::ExclamationCircleFill).size(11)
+                                        .color(Color::from_rgb(0.75, 0.38, 0.0)),
+                                    text(name.as_str()).size(13),
+                                ]
+                                .spacing(4)
+                                .align_y(Vertical::Center),
+                            )
+                            .on_press(Message::PuzzleFocused(key))
+                            .style(move |theme: &Theme, status| {
+                                let p = theme.extended_palette();
+                                if is_focused {
+                                    button::Style {
+                                        background: Some(p.primary.strong.color.into()),
+                                        text_color: p.primary.strong.text,
+                                        border: iced::Border::default(),
+                                        shadow: iced::Shadow::default(),
+                                    }
+                                } else {
+                                    button::Style {
+                                        background: match status {
+                                            button::Status::Hovered => Some(p.primary.weak.color.into()),
+                                            _ => None,
+                                        },
+                                        text_color: Color::from_rgb(0.75, 0.38, 0.0),
+                                        border: iced::Border::default(),
+                                        shadow: iced::Shadow::default(),
+                                    }
                                 }
-                            }
-                        })
-                        .padding([2, 6]);
+                            })
+                            .padding([2, 6]);
 
-                    let puzzle_row = row![
-                        Space::with_width(Length::Fixed(20.0)),
-                        checkbox("", is_sel).on_toggle(move |c| Message::PuzzleToggled(key, c)),
-                        name_btn,
-                        Space::with_width(Length::Fill),
-                        text(format!("{}x{}", puzzle.width, puzzle.height)).size(10),
-                    ]
-                    .spacing(4)
-                    .padding([2, 6])
-                    .align_y(Vertical::Center);
+                            // No checkbox — invalid puzzles cannot be selected
+                            let puzzle_row = row![
+                                Space::with_width(Length::Fixed(20.0)),
+                                Space::with_width(Length::Fixed(22.0)), // checkbox placeholder
+                                name_btn,
+                            ]
+                            .spacing(4)
+                            .padding([2, 6])
+                            .align_y(Vertical::Center);
 
-                    items.push(container(puzzle_row).style(style_panel).into());
+                            items.push(container(puzzle_row).style(style_panel).into());
+                        }
+                    }
                 }
             }
 
@@ -963,9 +1049,43 @@ impl App {
         let Some(file) = self.files.get(fi) else {
             return text("(missing file)").into();
         };
-        let Some(puzzle) = file.puzzles.get(pi) else {
-            return text("(missing puzzle)").into();
+        let entry = match file.puzzles.get(pi) {
+            Some(e) => e,
+            None => return text("(missing puzzle)").into(),
         };
+
+        // Invalid puzzle — show header + reason, no grid
+        if let ParsedPuzzle::Invalid { name, reason } = entry {
+            return column![
+                row![
+                    button(
+                        row![bi(Bootstrap::ArrowLeft).size(13), text("Back").size(13)]
+                            .spacing(4).align_y(Vertical::Center),
+                    ).on_press(Message::Unfocus),
+                    Space::with_width(Length::Fixed(12.0)),
+                    text(name.as_str()).size(16),
+                    Space::with_width(Length::Fill),
+                    row![
+                        bi(Bootstrap::ExclamationCircleFill).size(13)
+                            .color(Color::from_rgb(0.75, 0.38, 0.0)),
+                        text("Invalid puzzle").size(13),
+                    ].spacing(4).align_y(Vertical::Center),
+                ].spacing(4).padding(10).align_y(Vertical::Center),
+                horizontal_rule(1),
+                container(
+                    text(reason.to_string()).size(13)
+                        .color(Color::from_rgb(0.55, 0.55, 0.55))
+                )
+                .padding(20)
+                .width(Length::Fill)
+                .height(Length::Fill),
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+        }
+
+        let ParsedPuzzle::Valid(puzzle) = entry else { unreachable!() };
 
         let key = (fi, pi);
         let result = self.results.get(&(key, self.solver));
@@ -975,15 +1095,18 @@ impl App {
             .and_then(|a| a.solutions.get(self.solution_index))
             .or(result);
 
-        // Determine the grid state to display (owned so it outlives the closures below)
+        // Determine the grid state to display (owned so it outlives the closures below).
+        // NoSolution results have grid: vec![] — treat as None so view_grid isn't
+        // handed an empty slice it would index into.
         let grid_data: Option<Vec<CellState>> = {
             let cursor = self.step_cursor;
-            active.map(|r| {
-                if !r.steps.is_empty() && cursor < r.steps.len() {
+            active.and_then(|r| {
+                if r.grid.is_empty() { return None; }
+                Some(if !r.steps.is_empty() && cursor < r.steps.len() {
                     grid_at_step(puzzle, r, cursor)
                 } else {
                     r.grid.clone()
-                }
+                })
             })
         };
 
@@ -1006,7 +1129,7 @@ impl App {
                 ].spacing(4).align_y(Vertical::Center).into(),
             }
         } else if let Some(res) = result {
-            match (res.outcome, res.aborted) {
+            match (res.outcome.clone(), res.aborted) {
                 (Outcome::Solved, _) => row![
                     bi(Bootstrap::CheckLg).size(13).color(Color::from_rgb(0.08, 0.55, 0.08)),
                     text("Solved").size(13),
@@ -1028,6 +1151,10 @@ impl App {
                 (Outcome::NoSolution, _) => row![
                     bi(Bootstrap::XLg).size(13).color(Color::from_rgb(0.78, 0.08, 0.08)),
                     text("No solution").size(13),
+                ].spacing(4).align_y(Vertical::Center).into(),
+                (Outcome::InvalidPuzzle(reason), _) => row![
+                    bi(Bootstrap::ExclamationCircleFill).size(13).color(Color::from_rgb(0.75, 0.38, 0.0)),
+                    text(format!("Invalid — {reason}")).size(13),
                 ].spacing(4).align_y(Vertical::Center).into(),
             }
         } else {
@@ -1182,11 +1309,12 @@ impl App {
         rows.push(horizontal_rule(1).into());
 
         for (fi, file) in self.files.iter().enumerate() {
-            for (pi, puzzle) in file.puzzles.iter().enumerate() {
+            for (pi, entry) in file.puzzles.iter().enumerate() {
+                let Some(puzzle) = entry.as_puzzle() else { continue };
                 let key = (fi, pi);
                 let Some(result) = self.results.get(&(key, self.solver)) else { continue };
 
-                let (status_icon, status_color, status_text) = match (result.outcome, result.aborted) {
+                let (status_icon, status_color, status_text) = match (result.outcome.clone(), result.aborted) {
                     (Outcome::Solved, _) => (
                         Bootstrap::CheckLg,
                         Color::from_rgb(0.08, 0.55, 0.08),
@@ -1214,6 +1342,11 @@ impl App {
                         Bootstrap::XLg,
                         Color::from_rgb(0.78, 0.08, 0.08),
                         String::from("No solution"),
+                    ),
+                    (Outcome::InvalidPuzzle(reason), _) => (
+                        Bootstrap::ExclamationCircleFill,
+                        Color::from_rgb(0.75, 0.38, 0.0),
+                        format!("Invalid — {reason}"),
                     ),
                 };
 
@@ -1286,7 +1419,11 @@ impl App {
     // Select all puzzles between `from` and `to` (inclusive) in document order.
     fn select_range(&mut self, from: Key, to: Key) {
         let all: Vec<Key> = self.files.iter().enumerate()
-            .flat_map(|(fi, f)| f.puzzles.iter().enumerate().map(move |(pi, _)| (fi, pi)))
+            .flat_map(|(fi, f)| {
+                f.puzzles.iter().enumerate()
+                    .filter(|(_, e)| e.is_valid())
+                    .map(move |(pi, _)| (fi, pi))
+            })
             .collect();
         let a = all.iter().position(|&k| k == from);
         let b = all.iter().position(|&k| k == to);
