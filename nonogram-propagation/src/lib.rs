@@ -6,7 +6,7 @@
 //! been updated to use `nonogram-core`.
 
 use std::collections::VecDeque;
-use nonogram_core::{CellState, LineId, Outcome, Puzzle, Solver, SolveContext, SolveResult};
+use nonogram_core::{CellState, LineId, Puzzle, Solver, SolveContext, SolveResult, SolutionState, SolveStep};
 
 // ---------------------------------------------------------------------------
 // LineMeta — solver-internal bookkeeping, not part of the public API
@@ -81,6 +81,26 @@ impl<'a> SolverState<'a> {
 // ---------------------------------------------------------------------------
 // Cell-write helper
 // ---------------------------------------------------------------------------
+
+fn diff_cells(
+    before: &[CellState],
+    after: &[CellState],
+    line_id: LineId,
+) -> Vec<(usize, usize, CellState)> {
+    before.iter().zip(after.iter()).enumerate()
+        .filter_map(|(i, (&b, &a))| {
+            if b != a {
+                let (row, col) = match line_id {
+                    LineId::Row(r) => (r, i),
+                    LineId::Col(c) => (i, c),
+                };
+                Some((row, col, a))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
 
 fn set_cell(cells: &mut [CellState], idx: usize, val: CellState) -> Result<bool, ()> {
     match cells[idx] {
@@ -433,31 +453,60 @@ fn run_core_passes(cells: &mut [CellState], meta: &mut LineMeta) -> Result<bool,
     Ok(t | p | o | e | r | x | d)
 }
 
-fn run_passes_on_line(cells: &mut [CellState], meta: &mut LineMeta) -> Result<bool, ()> {
-    let c = run_core_passes(cells, meta)?;
-    let s = split(cells, meta)?;
-    Ok(c | s)
+fn run_and_trace(
+    cells: &mut [CellState],
+    meta: &mut LineMeta,
+    line_id: LineId,
+    steps: &mut Vec<SolveStep>,
+) -> Result<bool, ()> {
+    macro_rules! trace {
+        ($name:expr, $expr:expr) => {{
+            let before = cells.to_vec();
+            let changed = $expr;
+            if changed {
+                let cc = diff_cells(&before, cells, line_id);
+                if !cc.is_empty() {
+                    let label = match line_id {
+                        LineId::Row(r) => format!("row {r}: {}", $name),
+                        LineId::Col(c) => format!("col {c}: {}", $name),
+                    };
+                    steps.push(SolveStep { description: label, line: Some(line_id), cells_changed: cc });
+                }
+            }
+            changed
+        }};
+    }
+
+    let t = trim(cells, meta);
+    let p = trace!("preprocess",   preprocess(cells, meta)?);
+    let o = trace!("overlap",      overlap(cells, meta)?);
+    let e = trace!("edge_forcing", edge_forcing(cells, meta)?);
+    let r = trace!("completed_run",completed_run(cells, meta)?);
+    let x = trace!("extend",       extend(cells, meta)?);
+    let d = trace!("delim",        delim(cells, meta)?);
+    let s = trace!("split",        split(cells, meta)?);
+    Ok(t | p | o | e | r | x | d | s)
 }
 
 // ---------------------------------------------------------------------------
 // Internal solve function
 // ---------------------------------------------------------------------------
 
-fn solve_internal(state: &mut SolverState, ctx: &SolveContext) -> (Outcome, bool) {
+fn solve_internal(state: &mut SolverState, ctx: &SolveContext, steps: &mut Vec<SolveStep>) -> SolutionState {
     let width  = state.puzzle.width;
     let height = state.puzzle.height;
 
     for r in 0..height {
         let mut row = state.row_slice(r).to_vec();
-        if run_passes_on_line(&mut row, &mut state.row_meta[r]).is_err() {
-            return (Outcome::NoSolution, false);
+        if run_and_trace(&mut row, &mut state.row_meta[r], LineId::Row(r), steps).is_err() {
+            return SolutionState::Unsolvable;
         }
         state.row_slice_mut(r).copy_from_slice(&row);
     }
     for c in 0..width {
         let mut col = state.col_vec(c);
-        if run_passes_on_line(&mut col, &mut state.col_meta[c]).is_err() {
-            return (Outcome::NoSolution, false);
+        if run_and_trace(&mut col, &mut state.col_meta[c], LineId::Col(c), steps).is_err() {
+            return SolutionState::Unsolvable;
         }
         state.write_col(c, &col);
     }
@@ -472,16 +521,16 @@ fn solve_internal(state: &mut SolverState, ctx: &SolveContext) -> (Outcome, bool
 
     while let Some(line_id) = queue.pop_front() {
         if ctx.cancel.is_cancelled() {
-            return (Outcome::Stuck, true);
+            return SolutionState::Aborted;
         }
         let changed = match line_id {
             LineId::Row(r) => {
                 if state.row_meta[r].complete { continue; }
                 let mut row = state.row_slice(r).to_vec();
-                let result = run_passes_on_line(&mut row, &mut state.row_meta[r]);
+                let result = run_and_trace(&mut row, &mut state.row_meta[r], LineId::Row(r), steps);
                 state.row_slice_mut(r).copy_from_slice(&row);
                 match result {
-                    Err(()) => return (Outcome::NoSolution, false),
+                    Err(()) => return SolutionState::Unsolvable,
                     Ok(c)   => c,
                 }
             }
@@ -489,11 +538,11 @@ fn solve_internal(state: &mut SolverState, ctx: &SolveContext) -> (Outcome, bool
                 if state.col_meta[c].complete { continue; }
                 let mut col  = state.col_vec(c);
                 let orig     = col.clone();
-                let result   = run_passes_on_line(&mut col, &mut state.col_meta[c]);
+                let result   = run_and_trace(&mut col, &mut state.col_meta[c], LineId::Col(c), steps);
                 let actually_changed = col != orig;
                 state.write_col(c, &col);
                 match result {
-                    Err(()) => return (Outcome::NoSolution, false),
+                    Err(()) => return SolutionState::Unsolvable,
                     Ok(_)   => actually_changed,
                 }
             }
@@ -515,12 +564,11 @@ fn solve_internal(state: &mut SolverState, ctx: &SolveContext) -> (Outcome, bool
         }
     }
 
-    let outcome = if state.cells.iter().all(|&c| c != CellState::Unknown) {
-        Outcome::Solved
+    if state.cells.iter().all(|&c| c != CellState::Unknown) {
+        SolutionState::Complete
     } else {
-        Outcome::Stuck
-    };
-    (outcome, false)
+        SolutionState::Partial
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -531,8 +579,14 @@ pub struct PropagationSolver;
 
 impl Solver for PropagationSolver {
     fn solve(&self, puzzle: &Puzzle, ctx: &SolveContext) -> SolveResult {
-        let mut state = SolverState::new(puzzle);
-        let (outcome, aborted) = solve_internal(&mut state, ctx);
-        SolveResult { outcome, grid: state.cells, steps: vec![], aborted }
+        let row_total: u32 = puzzle.row_clues.iter().flat_map(|r| r.iter()).sum();
+        let col_total: u32 = puzzle.col_clues.iter().flat_map(|c| c.iter()).sum();
+        if row_total != col_total {
+            return SolveResult { state: SolutionState::Invalid(format!("row clues sum to {row_total} but column clues sum to {col_total}")), grid: vec![], steps: vec![] };
+        }
+        let mut solver_state = SolverState::new(puzzle);
+        let mut steps = Vec::new();
+        let state = solve_internal(&mut solver_state, ctx, &mut steps);
+        SolveResult { state, grid: solver_state.cells, steps }
     }
 }
