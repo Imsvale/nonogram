@@ -7,7 +7,7 @@
 | `nonogram-core` | lib | Shared types, parser, `Solver` trait — no solving logic | **Claude-Main** |
 | `nonogram-propagation` | lib | Technique-driven constraint propagation solver | **Claude-Propagation** |
 | `nonogram-graph-search` | lib | Best-first search with MRV heuristic | **Claude-graph** |
-| `nonogram-human` | lib | Author-written human-logic solver (AI-free implementation) | **Claude-Human** |
+| `nonogram-human` | lib | Author-written human-logic solver (AI-free implementation) | **User (human author)** |
 | `nonogram-cli` | bin | CLI entry point; dispatches to any solver | **Claude-CLI** |
 | `nonogram-convert` | bin | Format converter; letter-encoded → native `name\|col/row` | **Claude-Convert** |
 | `nonogram-gui` | bin | iced 0.13 graphical front-end | **Claude-GUI** |

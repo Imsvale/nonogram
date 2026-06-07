@@ -33,7 +33,16 @@ The stub currently returns `Outcome::Stuck` for all inputs. Replace the body of 
 
 ## Ownership
 
-This crate is owned by **Claude-Human**. For cross-crate changes or design questions involving `nonogram-core`, coordinate with **Claude-Main**.
+This crate is owned by the **human author (user)**. There is no Claude-Human agent.
+
+**What Claude agents may do here:**
+- Adapt type bindings and stub signatures to compile against `nonogram-core` changes (e.g. renaming fields, updating imports). These are mechanical and should be reviewed by the user before committing.
+- Discuss approaches or review logic on request.
+
+**What Claude agents must not do:**
+- Implement any solving logic. Everything inside `HumanSolver::solve` and any helpers it calls is written exclusively by the author.
+
+For cross-crate changes or design questions involving `nonogram-core`, the user is the point of contact for this crate. Discussion files that would normally ping a crate owner should note "User (human author)" instead.
 
 ## Git Commits
 
