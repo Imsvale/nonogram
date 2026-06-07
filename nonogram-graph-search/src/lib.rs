@@ -411,8 +411,19 @@ impl SearchState {
 
 pub struct GraphSearchSolver;
 
+fn clue_totals_match(puzzle: &Puzzle) -> bool {
+    let row_total: u32 = puzzle.row_clues.iter().flat_map(|r| r.iter()).sum();
+    let col_total: u32 = puzzle.col_clues.iter().flat_map(|c| c.iter()).sum();
+    row_total == col_total
+}
+
 impl Solver for GraphSearchSolver {
     fn solve(&self, puzzle: &Puzzle, ctx: &SolveContext) -> SolveResult {
+        if !clue_totals_match(puzzle) {
+            let row_total: u32 = puzzle.row_clues.iter().flat_map(|r| r.iter()).sum();
+            let col_total: u32 = puzzle.col_clues.iter().flat_map(|c| c.iter()).sum();
+            return SolveResult { outcome: Outcome::InvalidPuzzle(format!("row clues sum to {row_total} but column clues sum to {col_total}")), grid: vec![], steps: vec![], aborted: false };
+        }
         let state = SearchState::from_puzzle(puzzle);
         let (result, _nodes, aborted) = state.solve_counted(&ctx.cancel);
         match result {
@@ -435,6 +446,9 @@ impl Solver for GraphSearchSolver {
 
 impl ExhaustiveSolver for GraphSearchSolver {
     fn solve_all(&self, puzzle: &Puzzle, ctx: &SolveContext) -> AllSolutions {
+        if !clue_totals_match(puzzle) {
+            return AllSolutions { solutions: vec![], nodes_expanded: 0, nodes_pushed: 0, aborted: false };
+        }
         let state = SearchState::from_puzzle(puzzle);
         let (found, nodes_expanded, nodes_pushed, aborted) = state.solve_all_counted(&ctx.cancel);
         let solutions = found.into_iter().map(|(flat, steps)| SolveResult {
