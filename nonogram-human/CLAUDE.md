@@ -35,14 +35,14 @@ The stub currently returns `Outcome::Stuck` for all inputs. Replace the body of 
 
 This crate is owned by the **human author (user)**. There is no Claude-Human agent.
 
-**What Claude agents may do here:**
-- Adapt type bindings and stub signatures to compile against `nonogram-core` changes (e.g. renaming fields, updating imports). These are mechanical and should be reviewed by the user before committing.
+**What Claude-Main may do here:**
+- Make required superficial interface changes to keep the crate compiling against `nonogram-core`: updating imports, renaming fields in `SolveResult` literals, adapting trait method signatures. These changes are mechanical ripple effects of core changes and Claude-Main owns them as part of cross-cutting commit responsibility.
 - Discuss approaches or review logic on request.
 
-**What Claude agents must not do:**
-- Implement any solving logic. Everything inside `HumanSolver::solve` and any helpers it calls is written exclusively by the author.
+**What no Claude agent may do:**
+- Touch any solving logic or internals. Everything inside `HumanSolver::solve` and any helpers it calls is written exclusively by the author.
 
-For cross-crate changes or design questions involving `nonogram-core`, the user is the point of contact for this crate. Discussion files that would normally ping a crate owner should note "User (human author)" instead.
+The user monitors all discussions and is always aware of interface changes made here. No explicit ping is needed before Claude-Main makes a superficial interface fix.
 
 ## Git Commits
 
