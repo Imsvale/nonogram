@@ -72,32 +72,37 @@ pub struct SolveStep {
     pub cells_changed: Vec<(usize, usize, CellState)>,
 }
 
-/// The final outcome of a solve attempt.
+/// The state of a solve attempt.
+///
+/// Variants are mutually exclusive and exhaustive. Every solve ends in exactly one.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Outcome {
-    /// Every cell was determined and the solution is consistent.
-    Solved,
-    /// The solver made no further progress but the grid is incomplete.
-    Stuck,
-    /// A contradiction was detected — no valid solution exists (or the solver
-    /// found one while searching and confirmed there is none).
-    NoSolution,
-    /// The puzzle is structurally invalid and was not attempted.
+pub enum SolutionState {
+    /// Every cell was determined and the grid is consistent.
+    Complete,
+    /// The solver ran out of techniques; solvability is unknown.
+    /// A stronger solver may make further progress.
+    Partial,
+    /// The search space was exhausted — no valid grid exists. This is a proof.
+    /// The returned grid holds all cells that propagation determined before the contradiction.
+    Unsolvable,
+    /// The solve was interrupted by a `CancelToken`.
+    /// The returned grid is valid partial progress up to the abort point.
+    Aborted,
+    /// The puzzle is structurally malformed; no solve was attempted.
     /// The string describes the specific contradiction.
-    InvalidPuzzle(String),
+    Invalid(String),
 }
 
-/// Everything a solver returns: outcome, final grid state, and optional trace.
+/// Everything a solver returns: solution state, final grid, and optional trace.
+///
+/// `grid` is always populated except when `state == Invalid`, where it is empty.
 #[derive(Clone, Debug)]
 pub struct SolveResult {
-    pub outcome: Outcome,
-    /// Flat row-major grid. Empty `Vec` when `outcome == NoSolution`.
+    pub state: SolutionState,
+    /// Flat row-major grid. Empty only when `state == Invalid`.
     pub grid: Vec<CellState>,
     /// Ordered trace of deductions. Empty if the solver does not support tracing.
     pub steps: Vec<SolveStep>,
-    /// `true` when the solve was cut short by a `CancelToken`. The grid and steps
-    /// hold whatever was deduced before the abort; `outcome` will be `Stuck`.
-    pub aborted: bool,
 }
 
 // ---------------------------------------------------------------------------
