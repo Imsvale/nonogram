@@ -10,7 +10,7 @@
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
-use nonogram_core::{AllSolutions, CancelToken, CellState, ExhaustiveSolver, LineId, Outcome, Puzzle, Solver, SolveContext, SolveResult, SolveStep};
+use nonogram_core::{AllSolutions, CancelToken, CellState, ExhaustiveSolver, LineId, Puzzle, Solver, SolveContext, SolveResult, SolveStep, SolutionState};
 
 // ---------------------------------------------------------------------------
 // Internal cell type (private to this crate)
@@ -168,6 +168,7 @@ impl PartialOrd for Node {
 #[derive(Clone, Copy)]
 enum Line { Row(usize), Col(usize) }
 
+
 impl SearchState {
     /// Cascade intersection-forced cells until stable. Returns false on conflict.
     /// Appends one SolveStep per line that produces at least one forced cell.
@@ -287,15 +288,26 @@ impl SearchState {
         true
     }
 
-    fn solve_counted(&self, cancel: &CancelToken) -> (Option<(Vec<Cell>, Vec<SolveStep>)>, usize, bool) {
+    fn solve_counted(&self, cancel: &CancelToken) -> (SolutionState, Vec<Cell>, Vec<SolveStep>, usize) {
         let mut grid = vec![Cell::Unknown; self.rows * self.cols];
         let mut steps: Vec<SolveStep> = Vec::new();
         let mut pushed = 0usize;
 
-        if !self.propagate(&mut grid, &mut steps) { return (None, pushed, false); }
-        if self.is_complete(&grid) {
-            return if self.check(&grid) { (Some((grid, steps)), pushed, false) } else { (None, pushed, false) };
+        if !self.propagate(&mut grid, &mut steps) {
+            return (SolutionState::Unsolvable, grid, steps, pushed);
         }
+        if self.is_complete(&grid) {
+            return if self.check(&grid) {
+                (SolutionState::Complete, grid, steps, pushed)
+            } else {
+                (SolutionState::Unsolvable, grid, steps, pushed)
+            };
+        }
+
+        // Save the post-propagation state: the definitive progress that holds
+        // regardless of which branch is taken. Returned if the heap exhausts.
+        let partial_grid = grid.clone();
+        let partial_steps = steps.clone();
 
         let mut heap: BinaryHeap<Reverse<Node>> = BinaryHeap::new();
         heap.push(Reverse(Node { min_count: self.min_completion_count(&grid), grid, steps }));
@@ -303,7 +315,7 @@ impl SearchState {
 
         while let Some(Reverse(node)) = heap.pop() {
             if cancel.is_cancelled() {
-                return (Some((node.grid, node.steps)), pushed, true);
+                return (SolutionState::Aborted, node.grid, node.steps, pushed);
             }
             let Some((line, completions)) = self.most_constrained(&node.grid) else { continue; };
             for completion in completions {
@@ -333,7 +345,9 @@ impl SearchState {
                 self.apply_line(&mut grid, line, &completion);
                 if !self.propagate(&mut grid, &mut steps) { continue; }
                 if self.is_complete(&grid) {
-                    if self.check(&grid) { return (Some((grid, steps)), pushed, false); }
+                    if self.check(&grid) {
+                        return (SolutionState::Complete, grid, steps, pushed);
+                    }
                     continue;
                 }
                 let min_count = self.min_completion_count(&grid);
@@ -341,7 +355,7 @@ impl SearchState {
                 pushed += 1;
             }
         }
-        (None, pushed, false)
+        (SolutionState::Unsolvable, partial_grid, partial_steps, pushed)
     }
 
     fn solve_all_counted(&self, cancel: &CancelToken) -> (Vec<(Vec<Cell>, Vec<SolveStep>)>, usize, usize, bool) {
@@ -422,25 +436,11 @@ impl Solver for GraphSearchSolver {
         if !clue_totals_match(puzzle) {
             let row_total: u32 = puzzle.row_clues.iter().flat_map(|r| r.iter()).sum();
             let col_total: u32 = puzzle.col_clues.iter().flat_map(|c| c.iter()).sum();
-            return SolveResult { outcome: Outcome::InvalidPuzzle(format!("row clues sum to {row_total} but column clues sum to {col_total}")), grid: vec![], steps: vec![], aborted: false };
+            return SolveResult { state: SolutionState::Invalid(format!("row clues sum to {row_total} but column clues sum to {col_total}")), grid: vec![], steps: vec![] };
         }
-        let state = SearchState::from_puzzle(puzzle);
-        let (result, _nodes, aborted) = state.solve_counted(&ctx.cancel);
-        match result {
-            Some((flat, steps)) if !aborted => SolveResult {
-                outcome: Outcome::Solved,
-                grid: flat.into_iter().map(to_state).collect(),
-                steps,
-                aborted: false,
-            },
-            Some((flat, steps)) => SolveResult {
-                outcome: Outcome::Stuck,
-                grid: flat.into_iter().map(to_state).collect(),
-                steps,
-                aborted: true,
-            },
-            None => SolveResult { outcome: Outcome::NoSolution, grid: vec![], steps: vec![], aborted: false },
-        }
+        let search = SearchState::from_puzzle(puzzle);
+        let (state, grid, steps, _nodes) = search.solve_counted(&ctx.cancel);
+        SolveResult { state, grid: grid.into_iter().map(to_state).collect(), steps }
     }
 }
 
@@ -452,10 +452,9 @@ impl ExhaustiveSolver for GraphSearchSolver {
         let state = SearchState::from_puzzle(puzzle);
         let (found, nodes_expanded, nodes_pushed, aborted) = state.solve_all_counted(&ctx.cancel);
         let solutions = found.into_iter().map(|(flat, steps)| SolveResult {
-            outcome: Outcome::Solved,
+            state: SolutionState::Complete,
             grid: flat.into_iter().map(to_state).collect(),
             steps,
-            aborted: false,
         }).collect();
         AllSolutions { solutions, nodes_expanded, nodes_pushed, aborted }
     }
