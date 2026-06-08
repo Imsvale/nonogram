@@ -1,0 +1,13 @@
+[package]
+name = "katana-img-import"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "katana-img-import"
+path = "src/main.rs"
+
+[dependencies]
+image       = "0.25"
+ureq        = { version = "2", features = ["json"] }
+serde_json  = "1"
