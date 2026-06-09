@@ -1,4 +1,4 @@
-pub fn format_puzzle(name: &str, grid: &[Vec<bool>]) -> String {
+pub fn format_puzzle(name: &str, answer: &str, grid: &[Vec<bool>]) -> String {
     let rows = grid.len() as u32;
     let cols = grid.first().map_or(0, |r| r.len() as u32);
 
@@ -11,14 +11,20 @@ pub fn format_puzzle(name: &str, grid: &[Vec<bool>]) -> String {
         .map(|row| runs(row.iter().copied()))
         .collect();
 
-    format!("{}|{}/{}", name, fmt_clue_list(&col_clues), fmt_clue_list(&row_clues))
+    format!(
+        "{};C:{}/R:{};{}",
+        name,
+        fmt_clue_list(&col_clues),
+        fmt_clue_list(&row_clues),
+        answer,
+    )
 }
 
 fn fmt_clue_list(clues: &[Vec<u32>]) -> String {
     clues.iter()
         .map(|c| c.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(" "))
         .collect::<Vec<_>>()
-        .join(",")
+        .join("|")
 }
 
 fn runs(cells: impl Iterator<Item = bool>) -> Vec<u32> {
