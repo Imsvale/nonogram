@@ -80,6 +80,9 @@ fn run_puzzle(solver: &dyn Solver, puzzle: &Puzzle, quiet: bool) {
                 None if puzzle.solution.is_some() => println!("Verified correct."),
                 None => {}
             }
+            if let Some(ans) = &puzzle.answer {
+                println!("Answer: {ans}");
+            }
         }
         SolutionState::Partial => {
             println!("Partial — no further progress:");
