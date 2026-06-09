@@ -32,6 +32,8 @@ pub enum CellState {
 #[derive(Clone, Debug)]
 pub struct Puzzle {
     pub name: String,
+    /// The real title, revealed after solving. `None` if not provided in the file.
+    pub answer: Option<String>,
     pub width: usize,
     pub height: usize,
     /// `row_clues[r]` is the clue list for row `r`.
@@ -184,6 +186,8 @@ pub enum ParseError {
     EmptyName,
     #[error("invalid clue number: {0}")]
     InvalidClue(String),
+    #[error("clue section missing C: or R: prefix: \"{0}\"")]
+    InvalidClueSection(String),
     #[error("solution length {got} does not match grid {expected}")]
     SolutionLength { got: usize, expected: usize },
     #[error("row clues sum to {row_total} but column clues sum to {col_total}")]
@@ -219,11 +223,11 @@ impl ParsedPuzzle {
     }
 }
 
-/// Parse a comma-delimited group of line clues.
+/// Parse a pipe-delimited clue section (after stripping the `C:` or `R:` prefix).
 ///
-/// `"3,1 2,5"` → `[[3], [1, 2], [5]]`.
-fn parse_clue_group(s: &str) -> Result<Vec<Vec<u32>>, ParseError> {
-    s.split(',')
+/// `"3 1|1 1 1|5"` → `[[3, 1], [1, 1, 1], [5]]`.
+fn parse_pipe_group(s: &str) -> Result<Vec<Vec<u32>>, ParseError> {
+    s.split('|')
         .map(|line_clues| {
             line_clues
                 .split_whitespace()
@@ -231,6 +235,18 @@ fn parse_clue_group(s: &str) -> Result<Vec<Vec<u32>>, ParseError> {
                 .collect()
         })
         .collect()
+}
+
+/// Strip the `C:` or `R:` prefix from a clue section string.
+fn split_section_prefix(s: &str) -> Result<(char, &str), ParseError> {
+    let s = s.trim();
+    if let Some(rest) = s.strip_prefix("C:") {
+        Ok(('C', rest))
+    } else if let Some(rest) = s.strip_prefix("R:") {
+        Ok(('R', rest))
+    } else {
+        Err(ParseError::InvalidClueSection(s.chars().take(20).collect()))
+    }
 }
 
 /// Strip zero sentinels: `[0]` → `[]` (entirely empty line).
@@ -246,19 +262,37 @@ fn normalize_clues(clues: Vec<Vec<u32>>) -> Vec<Vec<u32>> {
         .collect()
 }
 
-/// Parse one `name|col_clues/row_clues[|solution]` line into a `Puzzle`.
+/// Parse one puzzle line in the format:
+/// `name;C:col_clues/R:row_clues[;answer[;solution]]`
+///
+/// Field count determines optional fields:
+/// - 2: name + clues only
+/// - 3: name + clues + answer (no solution)
+/// - 4: name + clues + answer (may be empty) + solution
+///
+/// `C:` and `R:` prefixes are mandatory; either order is accepted.
+/// Clue groups within each section are `|`-separated; values within a group are space-separated.
 fn parse_puzzle_line(line: &str) -> Result<Puzzle, ParseError> {
-    let parts: Vec<&str> = line.splitn(3, '|').collect();
+    let parts: Vec<&str> = line.splitn(4, ';').collect();
     if parts.len() < 2 { return Err(ParseError::MissingClues); }
 
     let name = parts[0].trim().to_string();
     if name.is_empty() { return Err(ParseError::EmptyName); }
 
-    let clue_parts: Vec<&str> = parts[1].trim().splitn(2, '/').collect();
-    if clue_parts.len() != 2 { return Err(ParseError::MissingClues); }
+    let sections: Vec<&str> = parts[1].trim().splitn(2, '/').collect();
+    if sections.len() != 2 { return Err(ParseError::MissingClues); }
 
-    let col_clues = normalize_clues(parse_clue_group(clue_parts[0])?);
-    let row_clues = normalize_clues(parse_clue_group(clue_parts[1])?);
+    let (a_tag, a_str) = split_section_prefix(sections[0])?;
+    let (b_tag, b_str) = split_section_prefix(sections[1])?;
+
+    let (col_clues, row_clues) = match (a_tag, b_tag) {
+        ('C', 'R') => (parse_pipe_group(a_str)?, parse_pipe_group(b_str)?),
+        ('R', 'C') => (parse_pipe_group(b_str)?, parse_pipe_group(a_str)?),
+        _ => return Err(ParseError::InvalidClueSection(parts[1].chars().take(20).collect())),
+    };
+
+    let col_clues = normalize_clues(col_clues);
+    let row_clues = normalize_clues(row_clues);
 
     let row_total: u32 = row_clues.iter().flat_map(|r| r.iter()).sum();
     let col_total: u32 = col_clues.iter().flat_map(|c| c.iter()).sum();
@@ -269,8 +303,13 @@ fn parse_puzzle_line(line: &str) -> Result<Puzzle, ParseError> {
     let width = col_clues.len();
     let height = row_clues.len();
 
-    let solution = if parts.len() == 3 {
-        let sol: Result<Vec<CellState>, _> = parts[2]
+    let answer = parts.get(2).and_then(|s| {
+        let s = s.trim();
+        if s.is_empty() { None } else { Some(s.to_string()) }
+    });
+
+    let solution = if parts.len() == 4 {
+        let sol: Result<Vec<CellState>, _> = parts[3]
             .trim()
             .chars()
             .map(|c| match c {
@@ -288,7 +327,7 @@ fn parse_puzzle_line(line: &str) -> Result<Puzzle, ParseError> {
         None
     };
 
-    Ok(Puzzle { name, width, height, row_clues, col_clues, solution })
+    Ok(Puzzle { name, answer, width, height, row_clues, col_clues, solution })
 }
 
 /// Read and parse every puzzle from a UTF-8 text file.
@@ -297,7 +336,13 @@ fn parse_puzzle_line(line: &str) -> Result<Puzzle, ParseError> {
 /// as `Err`; structural invalidity in a single puzzle yields `ParsedPuzzle::Invalid`
 /// for that entry and parsing continues to the next line.
 ///
-/// Format: `name|col_clues/row_clues[|solution]`
+/// Format: `name;C:col_clues/R:row_clues[;answer[;solution]]`
+///
+/// - Fields are `;`-separated (up to 4).
+/// - The clue section uses `C:` / `R:` prefixes (either order); clue groups within
+///   each section are `|`-separated; values within a group are space-separated.
+/// - `answer` is the real title, revealed after solving. Empty string is treated as absent.
+/// - `solution` is a flat binary string (`1`=Filled, `0`=Empty). Present only in field 4.
 pub fn parse_file(path: &str) -> Result<Vec<ParsedPuzzle>, anyhow::Error> {
     let content = std::fs::read_to_string(path)?;
     let mut results = Vec::new();
@@ -309,7 +354,7 @@ pub fn parse_file(path: &str) -> Result<Vec<ParsedPuzzle>, anyhow::Error> {
         match parse_puzzle_line(line) {
             Ok(puzzle) => results.push(ParsedPuzzle::Valid(puzzle)),
             Err(reason) => {
-                let name = line.splitn(2, '|').next()
+                let name = line.splitn(2, ';').next()
                     .map(|s| s.trim())
                     .filter(|s| !s.is_empty())
                     .map(|s| s.to_string())

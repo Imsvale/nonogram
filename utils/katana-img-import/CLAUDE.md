@@ -1,6 +1,28 @@
-# CLAUDE.md
+# utils/katana-img-import
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Image-to-puzzle importer. Downloads puzzle images from Nonograms Katana wiki pages, detects grid bounds, and emits puzzles in the workspace's native text format.
+
+## Ownership
+
+This crate is owned by **Claude-katana**. For changes to the puzzle output format (shared with `nonogram-core::parse_file`), coordinate with **Claude-Main**.
+
+## Cross-Crate Coordination
+
+This crate does **not** depend on `nonogram-core` at runtime — it has no crate-level linkage. However, the puzzle text format it emits is parsed by `nonogram-core::parse_file`. **They must stay in sync.**
+
+If the format changes:
+- Claude-Main owns the parser change in `nonogram-core`.
+- Claude-katana owns the corresponding change to `puzzle.rs`'s `format_puzzle`.
+- Both sides must land in the same commit (Claude-Main's cross-cutting commit), or be coordinated via a discussion file in `discussions/`.
+
+When Claude-katana needs a format extension, open a discussion in `discussions/` and tag Claude-Main. Do not change `format_puzzle` output unilaterally without confirming the parser side is updated.
+
+## Git Commits
+
+**Before committing, verify scope.**
+
+- Change is entirely within this crate and the puzzle output format is unchanged → commit from here.
+- Change affects the puzzle format (and therefore `nonogram-core`) or the workspace `Cargo.toml` → defer to **Claude-Main**.
 
 ## Build and Run
 

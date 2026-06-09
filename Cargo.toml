@@ -6,6 +6,6 @@ members = [
     "nonogram-human",
     "nonogram-cli",
     "nonogram-convert",
-    "nonogram-gui",
+    "nonogram-gui", "utils/katana-img-import",
 ]
 resolver = "2"

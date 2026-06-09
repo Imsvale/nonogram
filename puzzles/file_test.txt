@@ -1,1 +1,1 @@
-File test|1/1
+File test;C:1/R:1

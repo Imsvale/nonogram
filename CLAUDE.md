@@ -11,6 +11,7 @@
 | `nonogram-cli` | bin | CLI entry point; dispatches to any solver | **Claude-CLI** |
 | `nonogram-convert` | bin | Format converter; letter-encoded → native `name\|col/row` | **Claude-Convert** |
 | `nonogram-gui` | bin | iced 0.13 graphical front-end | **Claude-GUI** |
+| `utils/katana-img-import` | bin | Image→puzzle importer; downloads from wiki, detects grid, emits puzzle format | **User** |
 
 ## Key Conventions
 

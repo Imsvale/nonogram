@@ -49,6 +49,7 @@ pub fn convert_letter_content(content: &str, name_prefix: &str) -> Vec<Puzzle> {
         let height = row_clues.len();
         Some(Puzzle {
             name: format!("{} {}", name_prefix, i + 1),
+            answer: None,
             width,
             height,
             row_clues,
