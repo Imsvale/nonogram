@@ -158,7 +158,7 @@ fn main() -> Result<()> {
                     let result = solver.solve_all(p, &SolveContext::default());
                     run_puzzle_all(p, &result, cli.quiet);
                 }
-                ParsedPuzzle::Invalid { name, reason } => eprintln!("[INVALID] {name} — {reason}"),
+                ParsedPuzzle::Invalid { name, reason, .. } => eprintln!("[INVALID] {name} — {reason}"),
             }
         }
         return Ok(());
@@ -173,7 +173,7 @@ fn main() -> Result<()> {
     for entry in &puzzles {
         match entry {
             ParsedPuzzle::Valid(p) => run_puzzle(solver.as_ref(), p, cli.quiet),
-            ParsedPuzzle::Invalid { name, reason } => eprintln!("[INVALID] {name} — {reason}"),
+            ParsedPuzzle::Invalid { name, reason, .. } => eprintln!("[INVALID] {name} — {reason}"),
         }
     }
 

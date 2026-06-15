@@ -202,7 +202,11 @@ pub enum ParseError {
 #[derive(Debug, Clone)]
 pub enum ParsedPuzzle {
     Valid(Puzzle),
-    Invalid { name: String, reason: ParseError },
+    /// Structurally invalid puzzle entry. `puzzle` is `Some` when the clue
+    /// structure parsed successfully but the totals mismatched — the `Puzzle`
+    /// is fully formed except for that inconsistency. `puzzle` is `None` for
+    /// hard parse failures (missing sections, bad tokens, etc.).
+    Invalid { name: String, reason: ParseError, puzzle: Option<Puzzle> },
 }
 
 impl ParsedPuzzle {
@@ -294,12 +298,6 @@ fn parse_puzzle_line(line: &str) -> Result<Puzzle, ParseError> {
     let col_clues = normalize_clues(col_clues);
     let row_clues = normalize_clues(row_clues);
 
-    let row_total: u32 = row_clues.iter().flat_map(|r| r.iter()).sum();
-    let col_total: u32 = col_clues.iter().flat_map(|c| c.iter()).sum();
-    if row_total != col_total {
-        return Err(ParseError::ClueTotalMismatch { row_total, col_total });
-    }
-
     let width = col_clues.len();
     let height = row_clues.len();
 
@@ -352,14 +350,27 @@ pub fn parse_file(path: &str) -> Result<Vec<ParsedPuzzle>, anyhow::Error> {
         if line.is_empty() || line.starts_with('#') { continue; }
 
         match parse_puzzle_line(line) {
-            Ok(puzzle) => results.push(ParsedPuzzle::Valid(puzzle)),
+            Ok(puzzle) => {
+                let row_total: u32 = puzzle.row_clues.iter().flat_map(|r| r.iter()).sum();
+                let col_total: u32 = puzzle.col_clues.iter().flat_map(|c| c.iter()).sum();
+                if row_total != col_total {
+                    let reason = ParseError::ClueTotalMismatch { row_total, col_total };
+                    results.push(ParsedPuzzle::Invalid {
+                        name: puzzle.name.clone(),
+                        reason,
+                        puzzle: Some(puzzle),
+                    });
+                } else {
+                    results.push(ParsedPuzzle::Valid(puzzle));
+                }
+            }
             Err(reason) => {
                 let name = line.splitn(2, ';').next()
                     .map(|s| s.trim())
                     .filter(|s| !s.is_empty())
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| line.chars().take(40).collect());
-                results.push(ParsedPuzzle::Invalid { name, reason });
+                results.push(ParsedPuzzle::Invalid { name, reason, puzzle: None });
             }
         }
     }

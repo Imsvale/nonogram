@@ -8,7 +8,10 @@ nonogram-core         = { path = "../nonogram-core" }
 nonogram-propagation  = { path = "../nonogram-propagation" }
 nonogram-graph-search = { path = "../nonogram-graph-search" }
 nonogram-human        = { path = "../nonogram-human" }
-iced   = { version = "0.13", features = ["tokio"] }
-rfd    = "0.15"
-tokio  = { version = "1", features = ["rt-multi-thread"] }
-iced_fonts = { version = "0.1.1", features = ["bootstrap"] }
+iced         = { version = "0.13", features = ["tokio"] }
+rfd          = "0.15"
+tokio        = { version = "1", features = ["rt-multi-thread"] }
+iced_fonts   = { version = "0.1.1", features = ["bootstrap"] }
+directories  = "5"
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"

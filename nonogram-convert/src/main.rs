@@ -235,7 +235,7 @@ fn decode_letter_line(line: &str) -> Result<Vec<Vec<u32>>, String> {
 // Output formatting
 // ---------------------------------------------------------------------------
 
-/// `[[1,5],[3],[2,2]]` → `"1 5,3,2 2"`. An empty inner `Vec` becomes `"0"`.
+/// `[[1,5],[3],[2,2]]` → `"1 5|3|2 2"`. An empty inner `Vec` becomes `"0"`.
 fn clues_to_str(clues: &[Vec<u32>]) -> String {
     clues
         .iter()
@@ -247,7 +247,7 @@ fn clues_to_str(clues: &[Vec<u32>]) -> String {
             }
         })
         .collect::<Vec<_>>()
-        .join(",")
+        .join("|")
 }
 
 fn clue_sum(clues: &[Vec<u32>]) -> u32 {
@@ -264,7 +264,7 @@ fn emit(name_prefix: &str, num: usize, col_clues: &[Vec<u32>], row_clues: &[Vec<
              input may be transposed or malformed."
         );
     }
-    println!("{} {}|{}/{}", name_prefix, num, clues_to_str(col_clues), clues_to_str(row_clues));
+    println!("{} {};C:{}/R:{}", name_prefix, num, clues_to_str(col_clues), clues_to_str(row_clues));
 }
 
 // ---------------------------------------------------------------------------
