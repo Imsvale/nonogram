@@ -384,6 +384,8 @@ pub struct App {
     // Interactive grid
     manual_grids: HashMap<Key, Vec<CellState>>,
     drag_state: Option<CellState>,
+    // Trial mode: each entry is (snapshot_before_tier, first_cell_changed_in_tier)
+    trial_stack: HashMap<Key, Vec<(Vec<CellState>, Option<(usize, usize)>)>>,
     // Settings
     cell_settings: CellSettings,
     show_settings: bool,
@@ -475,6 +477,13 @@ pub enum Message {
     SettingIcon(u8, Option<Bootstrap>),
     SettingClueBg(u8, f32),
 
+    // Trial mode
+    TrialEnter,
+    TrialReject,
+
+    // Clipboard
+    CopyPuzzleString(Key),
+
     // Spoiler reveal
     RevealAnswer(Key),
 
@@ -506,6 +515,7 @@ impl App {
             theme: Theme::Dark,
             manual_grids: HashMap::new(),
             drag_state: None,
+            trial_stack: HashMap::new(),
             cell_settings: load_settings(),
             show_settings: false,
             revealed_answers: HashSet::new(),
@@ -1110,6 +1120,14 @@ impl App {
                 };
                 mg[row * w + col] = target;
                 self.drag_state = Some(target);
+                // Record origin cell for the current trial tier (first click only)
+                if let Some(stack) = self.trial_stack.get_mut(&key) {
+                    if let Some((_, origin)) = stack.last_mut() {
+                        if origin.is_none() {
+                            *origin = Some((row, col));
+                        }
+                    }
+                }
                 Task::none()
             }
 
@@ -1176,6 +1194,52 @@ impl App {
 
             Message::RevealAnswer(key) => {
                 self.revealed_answers.insert(key);
+                Task::none()
+            }
+
+            Message::TrialEnter => {
+                if let Some(key) = self.focused {
+                    let (fi, pi) = key;
+                    let Some((w, h)) = self.files.get(fi)
+                        .and_then(|f| f.puzzles.get(pi))
+                        .and_then(|e| e.as_puzzle())
+                        .map(|p| (p.width, p.height))
+                    else { return Task::none(); };
+                    // Snapshot = current displayed state
+                    let snapshot = self.manual_grids.get(&key).cloned()
+                        .or_else(|| self.compute_display_grid(key))
+                        .unwrap_or_else(|| vec![CellState::Unknown; w * h]);
+                    // Ensure manual_grids has this state so future clicks go into it
+                    self.manual_grids.entry(key).or_insert_with(|| snapshot.clone());
+                    self.trial_stack.entry(key).or_default().push((snapshot, None));
+                }
+                Task::none()
+            }
+
+            Message::CopyPuzzleString(key) => {
+                let (fi, pi) = key;
+                let Some(puzzle) = self.files.get(fi)
+                    .and_then(|f| f.puzzles.get(pi))
+                    .and_then(|e| match e {
+                        nonogram_core::ParsedPuzzle::Valid(p) => Some(p),
+                        nonogram_core::ParsedPuzzle::Invalid { puzzle: Some(p), .. } => Some(p),
+                        _ => None,
+                    })
+                else { return Task::none(); };
+                iced::clipboard::write(puzzle_to_file_string(puzzle))
+            }
+
+            Message::TrialReject => {
+                if let Some(key) = self.focused {
+                    if let Some(stack) = self.trial_stack.get_mut(&key) {
+                        if let Some((snapshot, _)) = stack.pop() {
+                            self.manual_grids.insert(key, snapshot);
+                        }
+                        if stack.is_empty() {
+                            self.trial_stack.remove(&key);
+                        }
+                    }
+                }
                 Task::none()
             }
 
@@ -1595,12 +1659,14 @@ impl App {
                 // Clue-total mismatch: we have the full puzzle structure, so
                 // show the grid below the warning (sums will highlight in orange).
                 let display_grid = self.manual_grids.get(&key).cloned();
+                let trial_info: &[(Vec<CellState>, Option<(usize, usize)>)] =
+                    self.trial_stack.get(&key).map(|v| v.as_slice()).unwrap_or(&[]);
                 return column![
                     header,
                     horizontal_rule(1),
                     container(reason_banner).padding([8, 16]).width(Length::Fill),
                     horizontal_rule(1),
-                    container(view_grid(puzzle, display_grid, key, &self.cell_settings))
+                    container(view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info))
                         .padding(Padding { left: 16.0, ..Padding::ZERO })
                         .width(Length::Fill)
                         .height(Length::Fill),
@@ -1726,6 +1792,13 @@ impl App {
             text("Not yet solved").size(13).color(Color::from_rgb(0.45, 0.45, 0.45)).into()
         };
 
+        let copy_btn = button(
+            row![bi(Bootstrap::Clipboard).size(12), text("Copy").size(12)]
+                .spacing(4).align_y(Vertical::Center),
+        )
+        .on_press(Message::CopyPuzzleString(key))
+        .padding([2, 8]);
+
         let header = container(
             row![
                 back_btn,
@@ -1735,6 +1808,7 @@ impl App {
                 text(format!("{}x{}", puzzle.width, puzzle.height))
                     .size(13)
                     .color(Color::from_rgb(0.4, 0.4, 0.4)),
+                copy_btn,
                 Space::with_width(Length::Fill),
                 status_el,
             ]
@@ -1862,8 +1936,11 @@ impl App {
             }
         }
 
+        let trial_info: &[(Vec<CellState>, Option<(usize, usize)>)] =
+            self.trial_stack.get(&key).map(|v| v.as_slice()).unwrap_or(&[]);
+
         items.push(
-            container(view_grid(puzzle, display_grid, key, &self.cell_settings))
+            container(view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info))
                 .padding(Padding { left: 16.0, ..Padding::ZERO })
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -2205,6 +2282,66 @@ impl App {
 }
 
 // ---------------------------------------------------------------------------
+// Puzzle → canonical file-format string
+// ---------------------------------------------------------------------------
+
+fn puzzle_to_file_string(puzzle: &Puzzle) -> String {
+    let encode = |clues: &[Vec<u32>]| -> String {
+        clues.iter()
+            .map(|g| if g.is_empty() { "0".into() } else { g.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(" ") })
+            .collect::<Vec<_>>()
+            .join("|")
+    };
+    let mut s = format!("{};C:{}/R:{}", puzzle.name, encode(&puzzle.col_clues), encode(&puzzle.row_clues));
+    match (&puzzle.answer, &puzzle.solution) {
+        (Some(ans), Some(sol)) => {
+            s.push(';'); s.push_str(ans);
+            s.push(';');
+            for st in sol { s.push(if *st == CellState::Filled { '1' } else { '0' }); }
+        }
+        (Some(ans), None) => { s.push(';'); s.push_str(ans); }
+        (None, Some(sol))  => {
+            s.push_str(";;");
+            for st in sol { s.push(if *st == CellState::Filled { '1' } else { '0' }); }
+        }
+        (None, None) => {}
+    }
+    s
+}
+
+// ---------------------------------------------------------------------------
+// Trial mode color palette
+//
+// tier 1–5 filled and empty colors; tiers above 5 cycle via modulo.
+// ---------------------------------------------------------------------------
+
+const TRIAL_FILLED: &[(f32, f32, f32)] = &[
+    (0.25, 0.32, 0.58), // tier 1: steel blue
+    (0.45, 0.22, 0.55), // tier 2: purple
+    (0.18, 0.48, 0.38), // tier 3: teal
+    (0.55, 0.38, 0.18), // tier 4: amber
+    (0.50, 0.20, 0.28), // tier 5: crimson
+];
+
+const TRIAL_EMPTY: &[(f32, f32, f32)] = &[
+    (0.86, 0.91, 0.99), // tier 1: light blue
+    (0.94, 0.88, 0.99), // tier 2: light lavender
+    (0.88, 0.98, 0.93), // tier 3: light teal
+    (0.99, 0.95, 0.84), // tier 4: light amber
+    (0.99, 0.88, 0.91), // tier 5: light pink
+];
+
+fn trial_filled_color(tier: usize) -> Color {
+    let (r, g, b) = TRIAL_FILLED[(tier - 1) % TRIAL_FILLED.len()];
+    Color::from_rgb(r, g, b)
+}
+
+fn trial_empty_color(tier: usize) -> Color {
+    let (r, g, b) = TRIAL_EMPTY[(tier - 1) % TRIAL_EMPTY.len()];
+    Color::from_rgb(r, g, b)
+}
+
+// ---------------------------------------------------------------------------
 // Puzzle grid renderer (interactive)
 //
 // Layout:
@@ -2225,6 +2362,7 @@ fn view_grid<'a>(
     grid: Option<Vec<CellState>>,
     key: Key,
     settings: &'a CellSettings,
+    trial: &'a [(Vec<CellState>, Option<(usize, usize)>)],
 ) -> Element<'a, Message> {
     const C: f32 = 26.0;  // cell size px
     const N: f32 = 22.0;  // clue-number cell px
@@ -2427,21 +2565,86 @@ fn view_grid<'a>(
             let lp = if c % 5 == 0 { 2.0_f32 } else { 1.0 };
             let vc = if c % 5 == 0 { border_maj } else { border_min };
 
-            let state    = grid.as_ref().map(|g| g[r * w + c]).unwrap_or(CellState::Unknown);
-            let vis      = settings.visual_for(state);
-            let bg       = vis.color;
-            let icon     = vis.icon;
-            let icon_col = vis.icon_color();
+            let state = grid.as_ref().map(|g| g[r * w + c]).unwrap_or(CellState::Unknown);
+            let idx   = r * w + c;
 
-            let cell_face: Element<'a, Message> = if let Some(ic) = icon {
-                container(bi(ic).size(C * 0.55).color(icon_col))
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .align_x(Horizontal::Center)
-                    .align_y(Vertical::Center)
-                    .style(move |_| container::Style { background: Some(bg.into()), ..Default::default() })
-                    .into()
+            // Deepest trial tier that changed this cell (0 = base).
+            let tier: usize = if !trial.is_empty() && state != CellState::Unknown {
+                trial.iter().enumerate().rev()
+                    .find_map(|(i, (snap, _))| {
+                        if snap.get(idx).copied().unwrap_or(CellState::Unknown) != state {
+                            Some(i + 1)
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(0)
             } else {
+                0
+            };
+
+            // Is this cell the first-changed origin of a trial tier?
+            let origin_tier: Option<usize> = trial.iter().enumerate()
+                .find_map(|(i, (_, orig))| if *orig == Some((r, c)) { Some(i + 1) } else { None });
+
+            let bg = if tier > 0 {
+                match state {
+                    CellState::Filled  => trial_filled_color(tier),
+                    CellState::Empty   => trial_empty_color(tier),
+                    CellState::Unknown => settings.visual_for(state).color,
+                }
+            } else {
+                settings.visual_for(state).color
+            };
+
+            let cell_face: Element<'a, Message> = if let Some(t) = origin_tier {
+                match state {
+                    CellState::Empty => {
+                        // Small tier number in bottom-right corner
+                        container(
+                            container(text(t.to_string()).size(9).color(Color::from_rgb(0.3, 0.3, 0.45)))
+                                .align_x(Horizontal::Right)
+                                .align_y(Vertical::Bottom)
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .padding(Padding { right: 2.0, bottom: 1.0, ..Padding::ZERO })
+                        )
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .style(move |_| container::Style { background: Some(bg.into()), ..Default::default() })
+                        .into()
+                    }
+                    _ => {
+                        // Centered white tier number
+                        container(text(t.to_string()).size(13).color(Color::WHITE))
+                            .width(Length::Fill)
+                            .height(Length::Fill)
+                            .align_x(Horizontal::Center)
+                            .align_y(Vertical::Center)
+                            .style(move |_| container::Style { background: Some(bg.into()), ..Default::default() })
+                            .into()
+                    }
+                }
+            } else if tier == 0 {
+                let vis = settings.visual_for(state);
+                if let Some(ic) = vis.icon {
+                    let icon_col = vis.icon_color();
+                    container(bi(ic).size(C * 0.55).color(icon_col))
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .align_x(Horizontal::Center)
+                        .align_y(Vertical::Center)
+                        .style(move |_| container::Style { background: Some(bg.into()), ..Default::default() })
+                        .into()
+                } else {
+                    container(Space::new(0.0, 0.0))
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .style(move |_| container::Style { background: Some(bg.into()), ..Default::default() })
+                        .into()
+                }
+            } else {
+                // Trial cell (non-origin): colored background only
                 container(Space::new(0.0, 0.0))
                     .width(Length::Fill)
                     .height(Length::Fill)
@@ -2599,6 +2802,41 @@ fn view_grid<'a>(
         cells.push(solid!(sum_w, N, clue_bg)); // bottom-right corner
 
         all_rows.push(row(cells).into());
+    }
+
+    // ── Trial controls, appended inside the scrollable immediately below grid
+    {
+        let trial_tier = trial.len();
+        let enter_label = if trial_tier == 0 { "Trial" } else { "Deeper" };
+        let enter_btn = button(text(enter_label).size(12))
+            .on_press(Message::TrialEnter)
+            .padding([2, 8]);
+        let reject_btn = if trial_tier > 0 {
+            button(text("Reject trial").size(12))
+                .on_press(Message::TrialReject)
+                .padding([2, 8])
+        } else {
+            button(text("Reject trial").size(12)).padding([2, 8])
+        };
+        let tier_label: Element<'a, Message> = if trial_tier > 0 {
+            let (r, g, b) = TRIAL_FILLED[(trial_tier - 1) % TRIAL_FILLED.len()];
+            text(format!("Tier {trial_tier}")).size(12)
+                .color(Color::from_rgb(r, g, b))
+                .into()
+        } else {
+            Space::with_width(Length::Shrink).into()
+        };
+        all_rows.push(horizontal_rule(1).into());
+        all_rows.push(
+            container(
+                row![enter_btn, reject_btn, Space::with_width(Length::Fixed(8.0)), tier_label]
+                    .spacing(6)
+                    .padding([8, 0])
+                    .align_y(Vertical::Center),
+            )
+            .width(Length::Fill)
+            .into()
+        );
     }
 
     scrollable(container(column(all_rows)).padding(Padding { top: 16.0, right: 16.0, bottom: 16.0, left: 0.0 }))
