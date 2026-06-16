@@ -873,7 +873,9 @@ impl App {
                     .or_else(|| self.results.get(&(key, self.solver)))
                     .map(|r| r.steps.len())
                     .unwrap_or(0);
-                Task::none()
+                let init = widget::scrollable::AbsoluteOffset { x: PAN_CENTER, y: PAN_CENTER };
+                let offset = *self.grid_scroll_offset.entry(key).or_insert(init);
+                widget::scrollable::scroll_to(grid_scroll_id(), offset)
             }
 
             Message::Unfocus => {
@@ -1185,8 +1187,8 @@ impl App {
                 if self.pan_dragging {
                     if let Some((dx, dy)) = delta {
                         if let Some(key) = self.focused {
-                            let zero = widget::scrollable::AbsoluteOffset { x: 0.0, y: 0.0 };
-                            let entry = self.grid_scroll_offset.entry(key).or_insert(zero);
+                            let init = widget::scrollable::AbsoluteOffset { x: PAN_CENTER, y: PAN_CENTER };
+                            let entry = self.grid_scroll_offset.entry(key).or_insert(init);
                             entry.x = (entry.x + dx).max(0.0);
                             entry.y = (entry.y + dy).max(0.0);
                             let offset = *entry;
@@ -2368,6 +2370,12 @@ fn puzzle_to_file_string(puzzle: &Puzzle) -> String {
 // tier 1–5 filled and empty colors; tiers above 5 cycle via modulo.
 // ---------------------------------------------------------------------------
 
+// Pixels of padding added on every side of the puzzle content so the user can
+// pan the grid in any direction (initial scroll is set to this value so the
+// puzzle appears flush with the viewport edge, with PAN_CENTER pixels of
+// available movement in the inward directions).
+const PAN_CENTER: f32 = 400.0;
+
 const TRIAL_FILLED: &[(f32, f32, f32)] = &[
     (0.25, 0.32, 0.58), // tier 1: steel blue
     (0.45, 0.22, 0.55), // tier 2: purple
@@ -2955,7 +2963,7 @@ fn view_grid<'a>(
         );
     }
 
-    scrollable(container(column(all_rows)).padding(Padding { top: 16.0, right: 16.0, bottom: 16.0, left: 0.0 }))
+    scrollable(container(column(all_rows)).padding(Padding { top: PAN_CENTER + 16.0, right: PAN_CENTER + 16.0, bottom: PAN_CENTER + 16.0, left: PAN_CENTER }))
         .id(grid_scroll_id())
         .on_scroll(|vp| Message::GridScrolled(vp.absolute_offset()))
         .direction(widget::scrollable::Direction::Both {
