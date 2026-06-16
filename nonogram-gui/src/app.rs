@@ -11,7 +11,7 @@ use iced::{
         button, checkbox, column, container, horizontal_rule, mouse_area,
         pick_list, row, scrollable, self as widget, slider, text, vertical_rule, Space,
     },
-    Color, Element, Event, Font, Length, Padding, Subscription, Task, Theme,
+    Color, Element, Event, Font, Length, Padding, Point, Subscription, Task, Theme,
 };
 use iced_fonts::bootstrap::{self, Bootstrap};
 use nonogram_core::{
@@ -386,6 +386,10 @@ pub struct App {
     drag_state: Option<CellState>,
     // Trial mode: each entry is (snapshot_before_tier, first_cell_changed_in_tier)
     trial_stack: HashMap<Key, Vec<(Vec<CellState>, Option<(usize, usize)>)>>,
+    // Grid pan/drag
+    pan_dragging: bool,
+    last_cursor_pos: Option<Point>,
+    grid_scroll_offset: HashMap<Key, widget::scrollable::AbsoluteOffset>,
     // Settings
     cell_settings: CellSettings,
     show_settings: bool,
@@ -484,6 +488,11 @@ pub enum Message {
     // Clipboard
     CopyPuzzleString(Key),
 
+    // Grid pan
+    PanStarted,
+    CursorMoved(Point),
+    GridScrolled(widget::scrollable::AbsoluteOffset),
+
     // Spoiler reveal
     RevealAnswer(Key),
 
@@ -516,6 +525,9 @@ impl App {
             manual_grids: HashMap::new(),
             drag_state: None,
             trial_stack: HashMap::new(),
+            pan_dragging: false,
+            last_cursor_pos: None,
+            grid_scroll_offset: HashMap::new(),
             cell_settings: load_settings(),
             show_settings: false,
             revealed_answers: HashSet::new(),
@@ -541,11 +553,19 @@ impl App {
             Subscription::none()
         };
 
-        let kbd_and_mouse = iced::event::listen_with(|event, _, _| match event {
+        let kbd_and_mouse = iced::event::listen_with(|event, status, _| match event {
             Event::Keyboard(keyboard::Event::ModifiersChanged(mods)) => {
                 Some(Message::ModifiersChanged(mods))
             }
             Event::Mouse(mouse::Event::ButtonReleased(_)) => Some(Message::DragEnded),
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
+                if status == iced::event::Status::Ignored =>
+            {
+                Some(Message::PanStarted)
+            }
+            Event::Mouse(mouse::Event::CursorMoved { position }) => {
+                Some(Message::CursorMoved(position))
+            }
             _ => None,
         });
 
@@ -1150,6 +1170,39 @@ impl App {
 
             Message::DragEnded => {
                 self.drag_state = None;
+                self.pan_dragging = false;
+                Task::none()
+            }
+
+            Message::PanStarted => {
+                self.pan_dragging = true;
+                Task::none()
+            }
+
+            Message::CursorMoved(pos) => {
+                let delta = self.last_cursor_pos.map(|last| (last.x - pos.x, last.y - pos.y));
+                self.last_cursor_pos = Some(pos);
+                if self.pan_dragging {
+                    if let Some((dx, dy)) = delta {
+                        if let Some(key) = self.focused {
+                            let zero = widget::scrollable::AbsoluteOffset { x: 0.0, y: 0.0 };
+                            let entry = self.grid_scroll_offset.entry(key).or_insert(zero);
+                            entry.x = (entry.x + dx).max(0.0);
+                            entry.y = (entry.y + dy).max(0.0);
+                            let offset = *entry;
+                            return widget::scrollable::scroll_to(grid_scroll_id(), offset);
+                        }
+                    }
+                }
+                Task::none()
+            }
+
+            Message::GridScrolled(offset) => {
+                if !self.pan_dragging {
+                    if let Some(key) = self.focused {
+                        self.grid_scroll_offset.insert(key, offset);
+                    }
+                }
                 Task::none()
             }
 
@@ -2357,6 +2410,10 @@ fn trial_empty_color(tier: usize) -> Color {
 //   - Outer right / bottom borders added only when W%5==0 / H%5==0.
 // ---------------------------------------------------------------------------
 
+fn grid_scroll_id() -> widget::scrollable::Id {
+    widget::scrollable::Id::new("puzzle-grid")
+}
+
 fn view_grid<'a>(
     puzzle: &'a Puzzle,
     grid: Option<Vec<CellState>>,
@@ -2463,8 +2520,67 @@ fn view_grid<'a>(
     {
         let mut cells: Vec<Element<'a, Message>> = Vec::new();
 
-        // Corner: no border
-        cells.push(solid!(row_clue_w, col_clue_h, clue_bg));
+        // Corner: minimap of current grid state
+        {
+            let cell_size = (row_clue_w / w as f32).min(col_clue_h / h as f32).max(1.0);
+            let map_w = cell_size * w as f32;
+            let map_h = cell_size * h as f32;
+            let pad_left = ((row_clue_w - map_w) / 2.0).max(0.0);
+            let pad_top  = ((col_clue_h - map_h) / 2.0).max(0.0);
+
+            let mut mini_rows: Vec<Element<'a, Message>> = Vec::new();
+            for mr in 0..h {
+                let mut mini_cells: Vec<Element<'a, Message>> = Vec::new();
+                for mc in 0..w {
+                    let state = grid.as_ref().map(|g| g[mr * w + mc]).unwrap_or(CellState::Unknown);
+                    let idx   = mr * w + mc;
+                    let tier: usize = if !trial.is_empty() && state != CellState::Unknown {
+                        trial.iter().enumerate().rev()
+                            .find_map(|(i, (snap, _))| {
+                                if snap.get(idx).copied().unwrap_or(CellState::Unknown) != state {
+                                    Some(i + 1)
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or(0)
+                    } else {
+                        0
+                    };
+                    let cell_color = if tier > 0 {
+                        match state {
+                            CellState::Filled  => trial_filled_color(tier),
+                            CellState::Empty   => trial_empty_color(tier),
+                            CellState::Unknown => settings.visual_for(state).color,
+                        }
+                    } else {
+                        settings.visual_for(state).color
+                    };
+                    mini_cells.push(
+                        container(Space::new(0.0, 0.0))
+                            .width(Length::Fixed(cell_size))
+                            .height(Length::Fixed(cell_size))
+                            .style(move |_| container::Style {
+                                background: Some(cell_color.into()),
+                                ..Default::default()
+                            })
+                            .into(),
+                    );
+                }
+                mini_rows.push(row(mini_cells).into());
+            }
+
+            cells.push(
+                container(
+                    container(column(mini_rows))
+                        .padding(Padding { top: pad_top, left: pad_left, ..Padding::ZERO }),
+                )
+                .width(Length::Fixed(row_clue_w))
+                .height(Length::Fixed(col_clue_h))
+                .style(move |_| container::Style { background: Some(clue_bg.into()), ..Default::default() })
+                .into(),
+            );
+        }
 
         for c in 0..w {
             let lp = if c % 5 == 0 { 2.0_f32 } else { 1.0 };
@@ -2829,7 +2945,7 @@ fn view_grid<'a>(
         all_rows.push(horizontal_rule(1).into());
         all_rows.push(
             container(
-                row![enter_btn, reject_btn, Space::with_width(Length::Fixed(8.0)), tier_label]
+                row![tier_label, Space::with_width(Length::Fill), enter_btn, reject_btn]
                     .spacing(6)
                     .padding([8, 0])
                     .align_y(Vertical::Center),
@@ -2840,6 +2956,8 @@ fn view_grid<'a>(
     }
 
     scrollable(container(column(all_rows)).padding(Padding { top: 16.0, right: 16.0, bottom: 16.0, left: 0.0 }))
+        .id(grid_scroll_id())
+        .on_scroll(|vp| Message::GridScrolled(vp.absolute_offset()))
         .direction(widget::scrollable::Direction::Both {
             vertical:   widget::scrollable::Scrollbar::default(),
             horizontal: widget::scrollable::Scrollbar::default(),
