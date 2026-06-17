@@ -61,6 +61,7 @@ pub struct CellSettings {
     pub filled: CellVisual,
     pub empty: CellVisual,
     pub clue_bg: Color,
+    pub sum_bg:  Color,
 }
 
 impl Default for CellSettings {
@@ -70,6 +71,7 @@ impl Default for CellSettings {
             filled:  CellVisual { color: Color::from_rgb(0.10, 0.10, 0.15), icon: None },
             empty:   CellVisual { color: Color::WHITE, icon: None },
             clue_bg: Color::from_rgb(0.97, 0.97, 0.97),
+            sum_bg:  Color::from_rgb(0.82, 0.82, 0.82),
         }
     }
 }
@@ -118,6 +120,7 @@ struct SavedCellVisual {
 }
 
 fn default_clue_bg_channel() -> f32 { 0.97 }
+fn default_sum_bg_channel()  -> f32 { 0.82 }
 
 #[derive(Serialize, Deserialize)]
 struct SavedSettings {
@@ -127,6 +130,9 @@ struct SavedSettings {
     #[serde(default = "default_clue_bg_channel")] clue_bg_r: f32,
     #[serde(default = "default_clue_bg_channel")] clue_bg_g: f32,
     #[serde(default = "default_clue_bg_channel")] clue_bg_b: f32,
+    #[serde(default = "default_sum_bg_channel")]  sum_bg_r:  f32,
+    #[serde(default = "default_sum_bg_channel")]  sum_bg_g:  f32,
+    #[serde(default = "default_sum_bg_channel")]  sum_bg_b:  f32,
 }
 
 fn icon_to_idx(icon: Option<Bootstrap>) -> usize {
@@ -177,6 +183,7 @@ fn load_settings() -> CellSettings {
         filled:  saved_to_visual(saved.filled),
         empty:   saved_to_visual(saved.empty),
         clue_bg: Color { r: saved.clue_bg_r, g: saved.clue_bg_g, b: saved.clue_bg_b, a: 1.0 },
+        sum_bg:  Color { r: saved.sum_bg_r,  g: saved.sum_bg_g,  b: saved.sum_bg_b,  a: 1.0 },
     }
 }
 
@@ -192,6 +199,9 @@ fn save_settings(settings: &CellSettings) {
         clue_bg_r: settings.clue_bg.r,
         clue_bg_g: settings.clue_bg.g,
         clue_bg_b: settings.clue_bg.b,
+        sum_bg_r:  settings.sum_bg.r,
+        sum_bg_g:  settings.sum_bg.g,
+        sum_bg_b:  settings.sum_bg.b,
     };
     if let Ok(json) = serde_json::to_string_pretty(&saved) {
         let _ = std::fs::write(&path, json);
@@ -480,6 +490,7 @@ pub enum Message {
     SettingColor(u8, u8, f32),
     SettingIcon(u8, Option<Bootstrap>),
     SettingClueBg(u8, f32),
+    SettingSumBg(u8, f32),
 
     // Trial mode
     TrialEnter,
@@ -1199,6 +1210,16 @@ impl App {
                     0 => self.cell_settings.clue_bg.r = value,
                     1 => self.cell_settings.clue_bg.g = value,
                     2 => self.cell_settings.clue_bg.b = value,
+                    _ => {}
+                }
+                save_settings(&self.cell_settings);
+                Task::none()
+            }
+            Message::SettingSumBg(channel, value) => {
+                match channel {
+                    0 => self.cell_settings.sum_bg.r = value,
+                    1 => self.cell_settings.sum_bg.g = value,
+                    2 => self.cell_settings.sum_bg.b = value,
                     _ => {}
                 }
                 save_settings(&self.cell_settings);
@@ -2238,6 +2259,49 @@ impl App {
             sections.push(horizontal_rule(1).into());
         }
 
+        // Clue sums background color section
+        {
+            let cb = self.cell_settings.sum_bg;
+            let color_preview = container(Space::new(Length::Fixed(32.0), Length::Fixed(32.0)))
+                .style(move |_| container::Style {
+                    background: Some(cb.into()),
+                    border: iced::Border {
+                        radius: 4.0.into(),
+                        color: Color::from_rgb(0.4, 0.4, 0.4),
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                });
+            let r_slider = slider(0.0_f32..=1.0, cb.r, move |v| Message::SettingSumBg(0, v))
+                .step(0.01_f32).width(Length::Fixed(140.0));
+            let g_slider = slider(0.0_f32..=1.0, cb.g, move |v| Message::SettingSumBg(1, v))
+                .step(0.01_f32).width(Length::Fixed(140.0));
+            let b_slider = slider(0.0_f32..=1.0, cb.b, move |v| Message::SettingSumBg(2, v))
+                .step(0.01_f32).width(Length::Fixed(140.0));
+            let color_row = row![
+                color_preview,
+                Space::with_width(Length::Fixed(12.0)),
+                column![
+                    row![text("R").size(11).width(Length::Fixed(12.0)), r_slider,
+                         text(format!("{:.2}", cb.r)).size(11)].spacing(4).align_y(Vertical::Center),
+                    row![text("G").size(11).width(Length::Fixed(12.0)), g_slider,
+                         text(format!("{:.2}", cb.g)).size(11)].spacing(4).align_y(Vertical::Center),
+                    row![text("B").size(11).width(Length::Fixed(12.0)), b_slider,
+                         text(format!("{:.2}", cb.b)).size(11)].spacing(4).align_y(Vertical::Center),
+                ].spacing(4),
+            ]
+            .align_y(Vertical::Center)
+            .spacing(0);
+            let section = container(
+                column![text("Clue sums background").size(13), color_row].spacing(8),
+            )
+            .style(style_panel)
+            .padding(12)
+            .width(Length::Fill);
+            sections.push(section.into());
+            sections.push(horizontal_rule(1).into());
+        }
+
         let content = column(sections).spacing(0);
 
         container(
@@ -2389,6 +2453,7 @@ fn view_grid<'a>(
     const N: f32 = 22.0;  // clue-number cell px
 
     let clue_bg    = settings.clue_bg;
+    let sum_bg     = settings.sum_bg;
     let border_min = Color::from_rgb(0.50, 0.53, 0.58);
     let border_maj = Color::from_rgb(0.28, 0.32, 0.44);
 
@@ -2546,7 +2611,7 @@ fn view_grid<'a>(
                 )
                 .width(Length::Fixed(row_clue_w))
                 .height(Length::Fixed(col_clue_h))
-                .style(move |_| container::Style { background: Some(clue_bg.into()), ..Default::default() })
+                .style(|_| container::Style { background: Some(Color::WHITE.into()), ..Default::default() })
                 .into(),
             );
         }
@@ -2601,7 +2666,7 @@ fn view_grid<'a>(
                     .align_x(Horizontal::Center)
                     .align_y(Vertical::Bottom)
                     .padding(Padding { bottom: 2.0, ..Padding::ZERO })
-                    .style(move |_| container::Style { background: Some(clue_bg.into()), ..Default::default() })
+                    .style(move |_| container::Style { background: Some(sum_bg.into()), ..Default::default() })
             };
             cells.push(
                 container(corner_inner)
@@ -2781,7 +2846,7 @@ fn view_grid<'a>(
                     .height(Length::Fill)
                     .align_x(Horizontal::Center)
                     .align_y(Vertical::Center)
-                    .style(move |_| container::Style { background: Some(clue_bg.into()), ..Default::default() })
+                    .style(move |_| container::Style { background: Some(sum_bg.into()), ..Default::default() })
             };
             cells.push(
                 container(rsum_inner)
@@ -2833,7 +2898,7 @@ fn view_grid<'a>(
                     .align_x(Horizontal::Right)
                     .align_y(Vertical::Center)
                     .padding(Padding { right: 4.0, ..Padding::ZERO })
-                    .style(move |_| container::Style { background: Some(clue_bg.into()), ..Default::default() })
+                    .style(move |_| container::Style { background: Some(sum_bg.into()), ..Default::default() })
             };
             cells.push(
                 container(corner_inner)
@@ -2870,7 +2935,7 @@ fn view_grid<'a>(
                     .height(Length::Fill)
                     .align_x(Horizontal::Center)
                     .align_y(Vertical::Center)
-                    .style(move |_| container::Style { background: Some(clue_bg.into()), ..Default::default() })
+                    .style(move |_| container::Style { background: Some(sum_bg.into()), ..Default::default() })
             };
             cells.push(
                 container(csum_inner)
@@ -2884,7 +2949,7 @@ fn view_grid<'a>(
 
         if right_border { cells.push(solid!(2.0, N, border_maj)); }
 
-        cells.push(solid!(sum_w, N, clue_bg)); // bottom-right corner
+        cells.push(solid!(sum_w, N, sum_bg)); // bottom-right corner
 
         all_rows.push(row(cells).into());
     }
