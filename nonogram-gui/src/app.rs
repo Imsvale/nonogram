@@ -201,6 +201,44 @@ fn config_path() -> Option<PathBuf> {
         .map(|pd| pd.config_dir().join("settings.json"))
 }
 
+fn solved_path() -> Option<PathBuf> {
+    ProjectDirs::from("", "nonogram", "nonogram-gui")
+        .map(|pd| pd.config_dir().join("solved.json"))
+}
+
+/// Returns `full_path` relative to the current working directory, using forward
+/// slashes. Falls back to the original string if it isn't under the cwd.
+fn relative_path(full_path: &str) -> String {
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Ok(rel) = Path::new(full_path).strip_prefix(&cwd) {
+            return rel.to_string_lossy().replace('\\', "/");
+        }
+    }
+    full_path.replace('\\', "/")
+}
+
+#[derive(Serialize, Deserialize)]
+struct SolvedEntry { path: String, name: String }
+
+fn load_solved() -> HashSet<(String, String)> {
+    let path = match solved_path() { Some(p) => p, None => return HashSet::new() };
+    let content = match std::fs::read_to_string(&path) { Ok(s) => s, Err(_) => return HashSet::new() };
+    let entries: Vec<SolvedEntry> = match serde_json::from_str(&content) { Ok(e) => e, Err(_) => return HashSet::new() };
+    entries.into_iter().map(|e| (e.path, e.name)).collect()
+}
+
+fn save_solved(solved: &HashSet<(String, String)>) {
+    let Some(path) = solved_path() else { return };
+    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+    let mut entries: Vec<SolvedEntry> = solved.iter()
+        .map(|(p, n)| SolvedEntry { path: p.clone(), name: n.clone() })
+        .collect();
+    entries.sort_by(|a, b| a.path.cmp(&b.path).then(a.name.cmp(&b.name)));
+    if let Ok(json) = serde_json::to_string_pretty(&entries) {
+        let _ = std::fs::write(&path, json);
+    }
+}
+
 fn load_settings() -> (CellSettings, AssistanceSettings) {
     let path = match config_path() {
         Some(p) => p,
@@ -471,6 +509,8 @@ pub struct App {
     show_export_menu: bool,
     // Answer reveal spoiler state
     revealed_answers: HashSet<Key>,
+    // Manually-solved puzzles: (relative_file_path, puzzle_name) — persisted across sessions
+    solved_manually: HashSet<(String, String)>,
     // Folder-level collapse state
     folder_collapsed: HashMap<String, bool>,
     // Incremental scan tracking
@@ -614,6 +654,7 @@ impl App {
             show_settings: false,
             show_export_menu: false,
             revealed_answers: HashSet::new(),
+            solved_manually: load_solved(),
             folder_collapsed: HashMap::new(),
             pending_scans: 0,
             scan_total: 0,
@@ -1255,6 +1296,16 @@ impl App {
                         }
                     }
                 }
+                // Detect full manual solve.
+                {
+                    let solved = self.files.get(fi)
+                        .and_then(|f| f.puzzles.get(pi).and_then(|e| e.as_puzzle())
+                            .zip(self.manual_grids.get(&key))
+                            .map(|(puzzle, grid)| (relative_path(&f.path), puzzle.name.clone(), is_puzzle_fully_solved(puzzle, grid))));
+                    if let Some((rel, name, true)) = solved {
+                        if self.solved_manually.insert((rel, name)) { save_solved(&self.solved_manually); }
+                    }
+                }
                 Task::none()
             }
 
@@ -1300,6 +1351,14 @@ impl App {
                                 }
                             }
                         }
+                    }
+                    // Detect full manual solve.
+                    let solved = self.files.get(fi)
+                        .and_then(|f| f.puzzles.get(pi).and_then(|e| e.as_puzzle())
+                            .zip(self.manual_grids.get(&key))
+                            .map(|(puzzle, grid)| (relative_path(&f.path), puzzle.name.clone(), is_puzzle_fully_solved(puzzle, grid))));
+                    if let Some((rel, name, true)) = solved {
+                        if self.solved_manually.insert((rel, name)) { save_solved(&self.solved_manually); }
                     }
                 }
                 Task::none()
@@ -1654,15 +1713,25 @@ impl App {
                 match entry {
                     ParsedPuzzle::Valid(puzzle) => {
                         let is_sel = self.selected.contains(&key);
-                        let badge_icon: Option<Bootstrap> = self.results.get(&(key, self.solver)).map(|r| match &r.state {
-                            SolutionState::Complete   => Bootstrap::CheckLg,
-                            SolutionState::Aborted    => Bootstrap::XCircleFill,
-                            SolutionState::Partial    => Bootstrap::DashLg,
-                            SolutionState::Unsolvable => Bootstrap::XLg,
-                            SolutionState::Invalid(_) => Bootstrap::ExclamationCircleFill,
-                        });
-                        let btn_content: Element<Message> = if let Some(icon) = badge_icon {
-                            row![text(puzzle.name.as_str()).size(13), bi(icon).size(11)]
+                        let manual_solved = self.solved_manually
+                            .contains(&(relative_path(&file.path), puzzle.name.clone()));
+                        let badge: Option<Element<Message>> = if manual_solved {
+                            Some(bi(Bootstrap::CheckCircleFill).size(11)
+                                .color(Color::from_rgb(0.0, 0.62, 0.24)).into())
+                        } else {
+                            self.results.get(&(key, self.solver)).map(|r| {
+                                let icon = match &r.state {
+                                    SolutionState::Complete   => Bootstrap::CheckLg,
+                                    SolutionState::Aborted    => Bootstrap::XCircleFill,
+                                    SolutionState::Partial    => Bootstrap::DashLg,
+                                    SolutionState::Unsolvable => Bootstrap::XLg,
+                                    SolutionState::Invalid(_) => Bootstrap::ExclamationCircleFill,
+                                };
+                                bi(icon).size(11).into()
+                            })
+                        };
+                        let btn_content: Element<Message> = if let Some(b) = badge {
+                            row![text(puzzle.name.as_str()).size(13), b]
                                 .spacing(4).align_y(Vertical::Center).into()
                         } else {
                             text(puzzle.name.as_str()).size(13).into()
@@ -1942,7 +2011,7 @@ impl App {
                     container(reason_banner).padding([8, 16]).width(Length::Fill),
                     horizontal_rule(1),
                     container(
-                        PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key)), pan_off)
+                        PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.solved_manually.contains(&(relative_path(&file.path), name.clone()))), pan_off)
                             .on_pan(move |v| Message::PanOffsetChanged(key, v)),
                     )
                     .padding(Padding { left: 16.0, ..Padding::ZERO })
@@ -2247,9 +2316,10 @@ impl App {
             self.trial_stack.get(&key).map(|v| v.as_slice()).unwrap_or(&[]);
 
         let pan_off = self.pan_offset.get(&key).copied().unwrap_or(Vector::ZERO);
+        let manually_solved = self.solved_manually.contains(&(relative_path(&file.path), puzzle.name.clone()));
         items.push(
             container(
-                PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key)), pan_off)
+                PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), manually_solved), pan_off)
                     .on_pan(move |v| Message::PanOffsetChanged(key, v)),
             )
             .padding(Padding { left: 16.0, ..Padding::ZERO })
@@ -2839,6 +2909,23 @@ fn export_puzprv3(
 // Assistance helpers
 // ---------------------------------------------------------------------------
 
+/// Returns true when the manual grid has all rows and columns fulfilled,
+/// meaning the Filled-cell pattern satisfies every clue. Unknown cells between
+/// filled runs are treated as separators (consistent with `check_line_fulfilled`).
+fn is_puzzle_fully_solved(puzzle: &Puzzle, grid: &[CellState]) -> bool {
+    let w = puzzle.width;
+    let h = puzzle.height;
+    for r in 0..h {
+        let cells: Vec<CellState> = (0..w).map(|c| grid[r * w + c]).collect();
+        if !check_line_fulfilled(&puzzle.row_clues[r], &cells) { return false; }
+    }
+    for c in 0..w {
+        let cells: Vec<CellState> = (0..h).map(|r| grid[r * w + c]).collect();
+        if !check_line_fulfilled(&puzzle.col_clues[c], &cells) { return false; }
+    }
+    true
+}
+
 /// Returns true if the runs of Filled cells (Unknown/Empty both act as gaps)
 /// exactly match `clues`. Unknown gaps between filled runs are treated as
 /// separators, so `[F U F]` with clue `[1,1]` matches.
@@ -2955,6 +3042,7 @@ fn view_grid<'a>(
     assistance: &'a AssistanceSettings,
     manual_dim_rows: Option<&'a HashSet<usize>>,
     manual_dim_cols: Option<&'a HashSet<usize>>,
+    manually_solved: bool,
 ) -> Element<'a, Message> {
     const C: f32 = 26.0;  // cell size px
     const N: f32 = 22.0;  // clue-number cell px
@@ -3604,7 +3692,20 @@ fn view_grid<'a>(
         );
     }
 
-    container(column(all_rows))
-        .padding(Padding { top: 16.0, right: 16.0, bottom: 16.0, left: 0.0 })
-        .into()
+    let grid_content = container(column(all_rows))
+        .padding(Padding { top: 16.0, right: 16.0, bottom: 16.0, left: 0.0 });
+
+    if manually_solved {
+        let badge = container(
+            bi(Bootstrap::CheckCircleFill).size(48).color(Color::from_rgb(0.0, 0.62, 0.24)),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Horizontal::Right)
+        .align_y(Vertical::Top)
+        .padding(Padding { top: 20.0, right: 20.0, ..Padding::ZERO });
+        stack([grid_content.into(), badge.into()]).into()
+    } else {
+        grid_content.into()
+    }
 }
