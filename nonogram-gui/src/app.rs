@@ -95,7 +95,7 @@ impl CellSettings {
     }
 }
 
-// Icons available for cell states in settings.
+// Master icon list — indices are stored in SavedSettings for persistence.
 const ICON_OPTIONS: &[Option<Bootstrap>] = &[
     None,
     Some(Bootstrap::CircleFill),
@@ -104,7 +104,39 @@ const ICON_OPTIONS: &[Option<Bootstrap>] = &[
     Some(Bootstrap::CheckLg),
     Some(Bootstrap::XLg),
     Some(Bootstrap::DashLg),
+    Some(Bootstrap::Dot),
 ];
+
+// Subset shown in the Filled cell icon picker.
+const FILLED_ICON_OPTIONS: &[Option<Bootstrap>] = &[
+    None,
+    Some(Bootstrap::CircleFill),
+    Some(Bootstrap::SquareFill),
+    Some(Bootstrap::DiamondFill),
+    Some(Bootstrap::CheckLg),
+    Some(Bootstrap::XLg),
+    Some(Bootstrap::DashLg),
+];
+
+// Subset shown in the Empty cell icon picker (no blank, no checkmark, adds dot).
+const EMPTY_ICON_OPTIONS: &[Option<Bootstrap>] = &[
+    Some(Bootstrap::CircleFill),
+    Some(Bootstrap::SquareFill),
+    Some(Bootstrap::DiamondFill),
+    Some(Bootstrap::XLg),
+    Some(Bootstrap::DashLg),
+    Some(Bootstrap::Dot),
+];
+
+// ---------------------------------------------------------------------------
+// Assistance settings
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Default)]
+pub struct AssistanceSettings {
+    pub auto_dim: bool,
+    pub auto_fill_empty: bool,
+}
 
 // ---------------------------------------------------------------------------
 // Settings persistence
@@ -133,6 +165,8 @@ struct SavedSettings {
     #[serde(default = "default_sum_bg_channel")]  sum_bg_r:  f32,
     #[serde(default = "default_sum_bg_channel")]  sum_bg_g:  f32,
     #[serde(default = "default_sum_bg_channel")]  sum_bg_b:  f32,
+    #[serde(default)] auto_dim: bool,
+    #[serde(default)] auto_fill_empty: bool,
 }
 
 fn icon_to_idx(icon: Option<Bootstrap>) -> usize {
@@ -165,29 +199,34 @@ fn config_path() -> Option<PathBuf> {
         .map(|pd| pd.config_dir().join("settings.json"))
 }
 
-fn load_settings() -> CellSettings {
+fn load_settings() -> (CellSettings, AssistanceSettings) {
     let path = match config_path() {
         Some(p) => p,
-        None    => return CellSettings::default(),
+        None    => return (CellSettings::default(), AssistanceSettings::default()),
     };
     let content = match std::fs::read_to_string(&path) {
         Ok(s)  => s,
-        Err(_) => return CellSettings::default(),
+        Err(_) => return (CellSettings::default(), AssistanceSettings::default()),
     };
     let saved: SavedSettings = match serde_json::from_str(&content) {
         Ok(s)  => s,
-        Err(_) => return CellSettings::default(),
+        Err(_) => return (CellSettings::default(), AssistanceSettings::default()),
     };
-    CellSettings {
+    let cell = CellSettings {
         unknown: saved_to_visual(saved.unknown),
         filled:  saved_to_visual(saved.filled),
         empty:   saved_to_visual(saved.empty),
         clue_bg: Color { r: saved.clue_bg_r, g: saved.clue_bg_g, b: saved.clue_bg_b, a: 1.0 },
         sum_bg:  Color { r: saved.sum_bg_r,  g: saved.sum_bg_g,  b: saved.sum_bg_b,  a: 1.0 },
-    }
+    };
+    let assist = AssistanceSettings {
+        auto_dim:        saved.auto_dim,
+        auto_fill_empty: saved.auto_fill_empty,
+    };
+    (cell, assist)
 }
 
-fn save_settings(settings: &CellSettings) {
+fn save_settings(settings: &CellSettings, assist: &AssistanceSettings) {
     let Some(path) = config_path() else { return };
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -202,6 +241,8 @@ fn save_settings(settings: &CellSettings) {
         sum_bg_r:  settings.sum_bg.r,
         sum_bg_g:  settings.sum_bg.g,
         sum_bg_b:  settings.sum_bg.b,
+        auto_dim:        assist.auto_dim,
+        auto_fill_empty: assist.auto_fill_empty,
     };
     if let Ok(json) = serde_json::to_string_pretty(&saved) {
         let _ = std::fs::write(&path, json);
@@ -402,6 +443,7 @@ pub struct App {
     pan_offset: HashMap<Key, Vector>,
     // Settings
     cell_settings: CellSettings,
+    assistance: AssistanceSettings,
     show_settings: bool,
     // Answer reveal spoiler state
     revealed_answers: HashSet<Key>,
@@ -491,6 +533,7 @@ pub enum Message {
     SettingIcon(u8, Option<Bootstrap>),
     SettingClueBg(u8, f32),
     SettingSumBg(u8, f32),
+    AssistToggle(u8),  // 0=auto_dim, 1=auto_fill_empty
 
     // Trial mode
     TrialEnter,
@@ -515,6 +558,7 @@ pub enum Message {
 
 impl App {
     pub fn new() -> (Self, Task<Message>) {
+        let (cell_settings, assistance) = load_settings();
         let app = App {
             files: Vec::new(),
             selected: HashSet::new(),
@@ -535,7 +579,8 @@ impl App {
             drag_state: None,
             trial_stack: HashMap::new(),
             pan_offset: HashMap::new(),
-            cell_settings: load_settings(),
+            cell_settings,
+            assistance,
             show_settings: false,
             revealed_answers: HashSet::new(),
             folder_collapsed: HashMap::new(),
@@ -1147,6 +1192,36 @@ impl App {
                         }
                     }
                 }
+                // Auto-fill empties when a line's clues become fulfilled.
+                if self.assistance.auto_fill_empty && target != CellState::Unknown {
+                    let no_solver = self.results.get(&(key, self.solver)).is_none()
+                        && self.all_solutions.get(&(key, self.solver)).is_none();
+                    if no_solver {
+                        let clue_data = self.files.get(fi)
+                            .and_then(|f| f.puzzles.get(pi))
+                            .and_then(|e| e.as_puzzle())
+                            .map(|p| (p.row_clues.clone(), p.col_clues.clone(), p.width, p.height));
+                        if let Some((row_clues, col_clues, w, h)) = clue_data {
+                            let mg = self.manual_grids.get_mut(&key).unwrap();
+                            let row_cells: Vec<CellState> = (0..w).map(|c| mg[row * w + c]).collect();
+                            if check_line_fulfilled(&row_clues[row], &row_cells) {
+                                for c in 0..w {
+                                    if mg[row * w + c] == CellState::Unknown {
+                                        mg[row * w + c] = CellState::Empty;
+                                    }
+                                }
+                            }
+                            let col_cells: Vec<CellState> = (0..h).map(|r| mg[r * w + col]).collect();
+                            if check_line_fulfilled(&col_clues[col], &col_cells) {
+                                for r in 0..h {
+                                    if mg[r * w + col] == CellState::Unknown {
+                                        mg[r * w + col] = CellState::Empty;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 Task::none()
             }
 
@@ -1161,6 +1236,36 @@ impl App {
                     if let Some(mg) = self.manual_grids.get_mut(&key) {
                         if row * w + col < mg.len() {
                             mg[row * w + col] = target;
+                        }
+                    }
+                    // Auto-fill empties when a line's clues become fulfilled.
+                    if self.assistance.auto_fill_empty && target != CellState::Unknown {
+                        let no_solver = self.results.get(&(key, self.solver)).is_none()
+                            && self.all_solutions.get(&(key, self.solver)).is_none();
+                        if no_solver {
+                            let clue_data = self.files.get(fi)
+                                .and_then(|f| f.puzzles.get(pi))
+                                .and_then(|e| e.as_puzzle())
+                                .map(|p| (p.row_clues.clone(), p.col_clues.clone(), p.width, p.height));
+                            if let Some((row_clues, col_clues, w, h)) = clue_data {
+                                let mg = self.manual_grids.get_mut(&key).unwrap();
+                                let row_cells: Vec<CellState> = (0..w).map(|c| mg[row * w + c]).collect();
+                                if check_line_fulfilled(&row_clues[row], &row_cells) {
+                                    for c in 0..w {
+                                        if mg[row * w + c] == CellState::Unknown {
+                                            mg[row * w + c] = CellState::Empty;
+                                        }
+                                    }
+                                }
+                                let col_cells: Vec<CellState> = (0..h).map(|r| mg[r * w + col]).collect();
+                                if check_line_fulfilled(&col_clues[col], &col_cells) {
+                                    for r in 0..h {
+                                        if mg[r * w + col] == CellState::Unknown {
+                                            mg[r * w + col] = CellState::Empty;
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1195,14 +1300,14 @@ impl App {
                         _ => {}
                     }
                 }
-                save_settings(&self.cell_settings);
+                save_settings(&self.cell_settings, &self.assistance);
                 Task::none()
             }
             Message::SettingIcon(state_idx, icon) => {
                 if let Some(vis) = self.cell_settings.visual_for_mut(state_idx) {
                     vis.icon = icon;
                 }
-                save_settings(&self.cell_settings);
+                save_settings(&self.cell_settings, &self.assistance);
                 Task::none()
             }
             Message::SettingClueBg(channel, value) => {
@@ -1212,7 +1317,7 @@ impl App {
                     2 => self.cell_settings.clue_bg.b = value,
                     _ => {}
                 }
-                save_settings(&self.cell_settings);
+                save_settings(&self.cell_settings, &self.assistance);
                 Task::none()
             }
             Message::SettingSumBg(channel, value) => {
@@ -1222,7 +1327,17 @@ impl App {
                     2 => self.cell_settings.sum_bg.b = value,
                     _ => {}
                 }
-                save_settings(&self.cell_settings);
+                save_settings(&self.cell_settings, &self.assistance);
+                Task::none()
+            }
+
+            Message::AssistToggle(idx) => {
+                match idx {
+                    0 => self.assistance.auto_dim        = !self.assistance.auto_dim,
+                    1 => self.assistance.auto_fill_empty = !self.assistance.auto_fill_empty,
+                    _ => {}
+                }
+                save_settings(&self.cell_settings, &self.assistance);
                 Task::none()
             }
 
@@ -1702,7 +1817,7 @@ impl App {
                     container(reason_banner).padding([8, 16]).width(Length::Fill),
                     horizontal_rule(1),
                     container(
-                        PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info), pan_off)
+                        PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance), pan_off)
                             .on_pan(move |v| Message::PanOffsetChanged(key, v)),
                     )
                     .padding(Padding { left: 16.0, ..Padding::ZERO })
@@ -1980,7 +2095,7 @@ impl App {
         let pan_off = self.pan_offset.get(&key).copied().unwrap_or(Vector::ZERO);
         items.push(
             container(
-                PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info), pan_off)
+                PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance), pan_off)
                     .on_pan(move |v| Message::PanOffsetChanged(key, v)),
             )
             .padding(Padding { left: 16.0, ..Padding::ZERO })
@@ -2163,9 +2278,14 @@ impl App {
             .align_y(Vertical::Center)
             .spacing(0);
 
-            // Icon picker — row of small buttons
+            // Icon picker — per-state option set; Unknown has no icon.
+            let icon_opts: Option<&[Option<Bootstrap>]> = match idx {
+                1 => Some(FILLED_ICON_OPTIONS),
+                2 => Some(EMPTY_ICON_OPTIONS),
+                _ => None,
+            };
             let current_icon = vis.icon;
-            let icon_btns: Vec<Element<Message>> = ICON_OPTIONS.iter().map(|&opt| {
+            let make_icon_btn = |opt: Option<Bootstrap>| -> Element<Message> {
                 let is_sel = icon_char(opt) == icon_char(current_icon);
                 let btn_content: Element<Message> = match opt {
                     None => text("—").size(12).into(),
@@ -2195,9 +2315,10 @@ impl App {
                         }
                     })
                     .into()
-            }).collect();
+            };
 
-            let section = container(
+            let section_col: Element<Message> = if let Some(opts) = icon_opts {
+                let icon_btns: Vec<Element<Message>> = opts.iter().map(|&opt| make_icon_btn(opt)).collect();
                 column![
                     text(label).size(13),
                     color_row,
@@ -2206,8 +2327,13 @@ impl App {
                         row(icon_btns).spacing(3),
                     ].spacing(8).align_y(Vertical::Center),
                 ]
-                .spacing(8),
-            )
+                .spacing(8)
+                .into()
+            } else {
+                column![text(label).size(13), color_row].spacing(8).into()
+            };
+
+            let section = container(section_col)
             .style(style_panel)
             .padding(12)
             .width(Length::Fill);
@@ -2294,6 +2420,33 @@ impl App {
             .spacing(0);
             let section = container(
                 column![text("Clue sums background").size(13), color_row].spacing(8),
+            )
+            .style(style_panel)
+            .padding(12)
+            .width(Length::Fill);
+            sections.push(section.into());
+            sections.push(horizontal_rule(1).into());
+        }
+
+        // Assistance section
+        {
+            let section = container(
+                column![
+                    text("Assistance").size(13),
+                    checkbox(
+                        "Dim fulfilled row/col clues",
+                        self.assistance.auto_dim,
+                    )
+                    .on_toggle(|_| Message::AssistToggle(0))
+                    .size(14),
+                    checkbox(
+                        "Auto-fill empties when clues fulfilled (manual only)",
+                        self.assistance.auto_fill_empty,
+                    )
+                    .on_toggle(|_| Message::AssistToggle(1))
+                    .size(14),
+                ]
+                .spacing(8),
             )
             .style(style_panel)
             .padding(12)
@@ -2395,6 +2548,28 @@ fn puzzle_to_file_string(puzzle: &Puzzle) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Assistance helpers
+// ---------------------------------------------------------------------------
+
+/// Returns true if the runs of Filled cells (Unknown/Empty both act as gaps)
+/// exactly match `clues`. Unknown gaps between filled runs are treated as
+/// separators, so `[F U F]` with clue `[1,1]` matches.
+fn check_line_fulfilled(clues: &[u32], cells: &[CellState]) -> bool {
+    let mut runs: Vec<u32> = Vec::new();
+    let mut run = 0u32;
+    for &c in cells {
+        if c == CellState::Filled {
+            run += 1;
+        } else if run > 0 {
+            runs.push(run);
+            run = 0;
+        }
+    }
+    if run > 0 { runs.push(run); }
+    runs.as_slice() == clues
+}
+
+// ---------------------------------------------------------------------------
 // Trial mode color palette
 //
 // tier 1–5 filled and empty colors; tiers above 5 cycle via modulo.
@@ -2448,6 +2623,7 @@ fn view_grid<'a>(
     key: Key,
     settings: &'a CellSettings,
     trial: &'a [(Vec<CellState>, Option<(usize, usize)>)],
+    assistance: &'a AssistanceSettings,
 ) -> Element<'a, Message> {
     const C: f32 = 26.0;  // cell size px
     const N: f32 = 22.0;  // clue-number cell px
@@ -2510,11 +2686,36 @@ fn view_grid<'a>(
         };
     }
 
+    // Per-row/col fulfilled flags for clue dimming.
+    let fulfilled_rows: Vec<bool> = if assistance.auto_dim {
+        if let Some(g) = &grid {
+            (0..h).map(|r| {
+                let cells: Vec<CellState> = (0..w).map(|c| g[r * w + c]).collect();
+                check_line_fulfilled(&puzzle.row_clues[r], &cells)
+            }).collect()
+        } else { vec![false; h] }
+    } else { vec![false; h] };
+
+    let fulfilled_cols: Vec<bool> = if assistance.auto_dim {
+        if let Some(g) = &grid {
+            (0..w).map(|c| {
+                let cells: Vec<CellState> = (0..h).map(|r| g[r * w + c]).collect();
+                check_line_fulfilled(&puzzle.col_clues[c], &cells)
+            }).collect()
+        } else { vec![false; w] }
+    } else { vec![false; w] };
+
     // Centered text label on clue_bg — used for clue numbers and sums.
+    // `$dim` makes the text light gray when true.
     macro_rules! clue_text {
-        ($n:expr, $w:expr, $h:expr) => {{
+        ($n:expr, $w:expr, $h:expr, $dim:expr) => {{
             let bg = clue_bg;
-            container(text($n.to_string()).size(13).color(Color::from_rgb(0.1, 0.1, 0.1)))
+            let tc = if $dim {
+                Color::from_rgb(0.70, 0.70, 0.70)
+            } else {
+                Color::from_rgb(0.1, 0.1, 0.1)
+            };
+            container(text($n.to_string()).size(13).color(tc))
                 .width(Length::Fixed($w))
                 .height(Length::Fixed($h))
                 .align_x(Horizontal::Center)
@@ -2626,7 +2827,7 @@ fn view_grid<'a>(
                 .map(|_| solid!(C, N, clue_bg))
                 .collect();
             for &n in clues {
-                nums.push(clue_text!(n, C, N));
+                nums.push(clue_text!(n, C, N, fulfilled_cols[c]));
             }
 
             let col_content = container(column(nums))
@@ -2694,7 +2895,7 @@ fn view_grid<'a>(
                 .map(|_| solid!(N, C, clue_bg))
                 .collect();
             for &n in clues {
-                rnums.push(clue_text!(n, N, C));
+                rnums.push(clue_text!(n, N, C, fulfilled_rows[r]));
             }
             let rclue_inner = container(row(rnums))
                 .width(Length::Fill)
@@ -2794,12 +2995,25 @@ fn view_grid<'a>(
                         .into()
                 }
             } else {
-                // Trial cell (non-origin): colored background only
-                container(Space::new(0.0, 0.0))
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .style(move |_| container::Style { background: Some(bg.into()), ..Default::default() })
-                    .into()
+                // Trial cell (non-origin): colored background; empty cells show their icon
+                // in the dark version of the tier color so it reads over the light bg.
+                let empty_icon = if state == CellState::Empty { settings.empty.icon } else { None };
+                if let Some(ic) = empty_icon {
+                    let icon_col = trial_filled_color(tier);
+                    container(bi(ic).size(C * 0.55).color(icon_col))
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .align_x(Horizontal::Center)
+                        .align_y(Vertical::Center)
+                        .style(move |_| container::Style { background: Some(bg.into()), ..Default::default() })
+                        .into()
+                } else {
+                    container(Space::new(0.0, 0.0))
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .style(move |_| container::Style { background: Some(bg.into()), ..Default::default() })
+                        .into()
+                }
             };
 
             let bordered_cell = bordered!(
