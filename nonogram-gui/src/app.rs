@@ -136,6 +136,7 @@ const EMPTY_ICON_OPTIONS: &[Option<Bootstrap>] = &[
 pub struct AssistanceSettings {
     pub auto_dim: bool,
     pub auto_fill_empty: bool,
+    pub clue_sums_with_gaps: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -167,6 +168,7 @@ struct SavedSettings {
     #[serde(default = "default_sum_bg_channel")]  sum_bg_b:  f32,
     #[serde(default)] auto_dim: bool,
     #[serde(default)] auto_fill_empty: bool,
+    #[serde(default)] clue_sums_with_gaps: bool,
 }
 
 fn icon_to_idx(icon: Option<Bootstrap>) -> usize {
@@ -220,8 +222,9 @@ fn load_settings() -> (CellSettings, AssistanceSettings) {
         sum_bg:  Color { r: saved.sum_bg_r,  g: saved.sum_bg_g,  b: saved.sum_bg_b,  a: 1.0 },
     };
     let assist = AssistanceSettings {
-        auto_dim:        saved.auto_dim,
-        auto_fill_empty: saved.auto_fill_empty,
+        auto_dim:             saved.auto_dim,
+        auto_fill_empty:      saved.auto_fill_empty,
+        clue_sums_with_gaps:  saved.clue_sums_with_gaps,
     };
     (cell, assist)
 }
@@ -241,8 +244,9 @@ fn save_settings(settings: &CellSettings, assist: &AssistanceSettings) {
         sum_bg_r:  settings.sum_bg.r,
         sum_bg_g:  settings.sum_bg.g,
         sum_bg_b:  settings.sum_bg.b,
-        auto_dim:        assist.auto_dim,
-        auto_fill_empty: assist.auto_fill_empty,
+        auto_dim:            assist.auto_dim,
+        auto_fill_empty:     assist.auto_fill_empty,
+        clue_sums_with_gaps: assist.clue_sums_with_gaps,
     };
     if let Ok(json) = serde_json::to_string_pretty(&saved) {
         let _ = std::fs::write(&path, json);
@@ -457,6 +461,9 @@ pub struct App {
     trial_stack: HashMap<Key, Vec<(Vec<CellState>, Option<(usize, usize)>)>>,
     // Grid pan/drag
     pan_offset: HashMap<Key, Vector>,
+    // Manual clue dimming
+    manual_dim_rows: HashMap<Key, HashSet<usize>>,
+    manual_dim_cols: HashMap<Key, HashSet<usize>>,
     // Settings
     cell_settings: CellSettings,
     assistance: AssistanceSettings,
@@ -550,7 +557,8 @@ pub enum Message {
     SettingIcon(u8, Option<Bootstrap>),
     SettingClueBg(u8, f32),
     SettingSumBg(u8, f32),
-    AssistToggle(u8),  // 0=auto_dim, 1=auto_fill_empty
+    AssistToggle(u8),  // 0=auto_dim, 1=auto_fill_empty, 2=clue_sums_with_gaps
+    ClueDimToggle(Key, bool, usize),  // (puzzle key, is_col, row_or_col_idx)
 
     // Trial mode
     TrialEnter,
@@ -599,6 +607,8 @@ impl App {
             drag_state: None,
             trial_stack: HashMap::new(),
             pan_offset: HashMap::new(),
+            manual_dim_rows: HashMap::new(),
+            manual_dim_cols: HashMap::new(),
             cell_settings,
             assistance,
             show_settings: false,
@@ -1356,11 +1366,19 @@ impl App {
 
             Message::AssistToggle(idx) => {
                 match idx {
-                    0 => self.assistance.auto_dim        = !self.assistance.auto_dim,
-                    1 => self.assistance.auto_fill_empty = !self.assistance.auto_fill_empty,
+                    0 => self.assistance.auto_dim             = !self.assistance.auto_dim,
+                    1 => self.assistance.auto_fill_empty      = !self.assistance.auto_fill_empty,
+                    2 => self.assistance.clue_sums_with_gaps  = !self.assistance.clue_sums_with_gaps,
                     _ => {}
                 }
                 save_settings(&self.cell_settings, &self.assistance);
+                Task::none()
+            }
+
+            Message::ClueDimToggle(key, is_col, idx) => {
+                let map = if is_col { &mut self.manual_dim_cols } else { &mut self.manual_dim_rows };
+                let set = map.entry(key).or_default();
+                if !set.remove(&idx) { set.insert(idx); }
                 Task::none()
             }
 
@@ -1924,7 +1942,7 @@ impl App {
                     container(reason_banner).padding([8, 16]).width(Length::Fill),
                     horizontal_rule(1),
                     container(
-                        PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance), pan_off)
+                        PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key)), pan_off)
                             .on_pan(move |v| Message::PanOffsetChanged(key, v)),
                     )
                     .padding(Padding { left: 16.0, ..Padding::ZERO })
@@ -2231,7 +2249,7 @@ impl App {
         let pan_off = self.pan_offset.get(&key).copied().unwrap_or(Vector::ZERO);
         items.push(
             container(
-                PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance), pan_off)
+                PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key)), pan_off)
                     .on_pan(move |v| Message::PanOffsetChanged(key, v)),
             )
             .padding(Padding { left: 16.0, ..Padding::ZERO })
@@ -2622,6 +2640,12 @@ impl App {
                     )
                     .on_toggle(|_| Message::AssistToggle(1))
                     .size(14),
+                    checkbox(
+                        "Clue sums with gaps",
+                        self.assistance.clue_sums_with_gaps,
+                    )
+                    .on_toggle(|_| Message::AssistToggle(2))
+                    .size(14),
                 ]
                 .spacing(8),
             )
@@ -2744,8 +2768,8 @@ fn export_puzprv3(
     fulfilled_rows: &[bool],
     fulfilled_cols: &[bool],
 ) -> String {
-    let max_cd = col_clues.iter().map(|v| v.len()).max().unwrap_or(0).max(1);
-    let max_rd = row_clues.iter().map(|v| v.len()).max().unwrap_or(0).max(1);
+    let max_cd = (h + 1) / 2;
+    let max_rd = (w + 1) / 2;
     let total_rows = max_cd + h;
     let total_cols = max_rd + w;
 
@@ -2833,6 +2857,47 @@ fn check_line_fulfilled(clues: &[u32], cells: &[CellState]) -> bool {
     runs.as_slice() == clues
 }
 
+/// For each clue in `clues`, returns whether it is definitively matched to a
+/// specific sealed Filled run in `cells`. Scans greedily from the left (for
+/// leading clues) and from the right (for trailing clues). A run is "sealed"
+/// only when bounded on both sides by Empty or a line boundary — any adjacent
+/// Unknown means the run might extend, so the scan stops immediately.
+fn individually_fulfilled_clues(clues: &[u32], cells: &[CellState]) -> Vec<bool> {
+    let n = clues.len();
+    let w = cells.len();
+    let mut dim = vec![false; n];
+    if n == 0 || w == 0 { return dim; }
+
+    // Left scan: match clues[0..] to sealed runs from the left.
+    let mut ci = 0usize;
+    let mut gi = 0usize;
+    while ci < n {
+        while gi < w && cells[gi] == CellState::Empty { gi += 1; }
+        if gi >= w || cells[gi] == CellState::Unknown { break; }
+        let run_start = gi;
+        while gi < w && cells[gi] == CellState::Filled { gi += 1; }
+        let run_len = gi - run_start;
+        if gi < w && cells[gi] == CellState::Unknown { break; } // run may extend right
+        if run_len == clues[ci] as usize { dim[ci] = true; ci += 1; } else { break; }
+    }
+    let left_matched = ci;
+
+    // Right scan: match clues[left_matched..] from the right.
+    let mut ci = n as isize - 1;
+    let mut gi = w as isize - 1;
+    while ci >= left_matched as isize {
+        while gi >= 0 && cells[gi as usize] == CellState::Empty { gi -= 1; }
+        if gi < 0 || cells[gi as usize] == CellState::Unknown { break; }
+        let run_end = gi;
+        while gi >= 0 && cells[gi as usize] == CellState::Filled { gi -= 1; }
+        let run_len = (run_end - gi) as usize;
+        if gi >= 0 && cells[gi as usize] == CellState::Unknown { break; } // run may extend left
+        if run_len == clues[ci as usize] as usize { dim[ci as usize] = true; ci -= 1; } else { break; }
+    }
+
+    dim
+}
+
 // ---------------------------------------------------------------------------
 // Trial mode color palette
 //
@@ -2888,6 +2953,8 @@ fn view_grid<'a>(
     settings: &'a CellSettings,
     trial: &'a [(Vec<CellState>, Option<(usize, usize)>)],
     assistance: &'a AssistanceSettings,
+    manual_dim_rows: Option<&'a HashSet<usize>>,
+    manual_dim_cols: Option<&'a HashSet<usize>>,
 ) -> Element<'a, Message> {
     const C: f32 = 26.0;  // cell size px
     const N: f32 = 22.0;  // clue-number cell px
@@ -2908,7 +2975,12 @@ fn view_grid<'a>(
     let right_border = w % 5 == 0;
     let bot_border   = h % 5 == 0;
 
-    // Grand totals — checked for mismatch (possible for Invalid puzzles).
+    let line_sum = |clues: &[u32]| -> u32 {
+        let s: u32 = clues.iter().sum();
+        if assistance.clue_sums_with_gaps { s + clues.len().saturating_sub(1) as u32 } else { s }
+    };
+
+    // Grand totals — checked for mismatch (possible for Invalid puzzles). Always gapless.
     let total_row: u32 = puzzle.row_clues.iter().flat_map(|r| r.iter()).sum();
     let total_col: u32 = puzzle.col_clues.iter().flat_map(|c| c.iter()).sum();
     let total_mismatch = total_row != total_col;
@@ -2950,24 +3022,29 @@ fn view_grid<'a>(
         };
     }
 
-    // Per-row/col fulfilled flags for clue dimming.
-    let fulfilled_rows: Vec<bool> = if assistance.auto_dim {
-        if let Some(g) = &grid {
-            (0..h).map(|r| {
-                let cells: Vec<CellState> = (0..w).map(|c| g[r * w + c]).collect();
-                check_line_fulfilled(&puzzle.row_clues[r], &cells)
-            }).collect()
-        } else { vec![false; h] }
-    } else { vec![false; h] };
+    // Per-row/col fulfilled flags: auto-dim OR manually dimmed.
+    let fulfilled_rows: Vec<bool> = (0..h).map(|r| {
+        let auto = assistance.auto_dim && grid.as_ref().map(|g| {
+            let cells: Vec<CellState> = (0..w).map(|c| g[r * w + c]).collect();
+            check_line_fulfilled(&puzzle.row_clues[r], &cells)
+        }).unwrap_or(false);
+        auto || manual_dim_rows.map(|s| s.contains(&r)).unwrap_or(false)
+    }).collect();
 
-    let fulfilled_cols: Vec<bool> = if assistance.auto_dim {
-        if let Some(g) = &grid {
-            (0..w).map(|c| {
-                let cells: Vec<CellState> = (0..h).map(|r| g[r * w + c]).collect();
-                check_line_fulfilled(&puzzle.col_clues[c], &cells)
-            }).collect()
-        } else { vec![false; w] }
-    } else { vec![false; w] };
+    let fulfilled_cols: Vec<bool> = (0..w).map(|c| {
+        let auto = assistance.auto_dim && grid.as_ref().map(|g| {
+            let cells: Vec<CellState> = (0..h).map(|r| g[r * w + c]).collect();
+            check_line_fulfilled(&puzzle.col_clues[c], &cells)
+        }).unwrap_or(false);
+        auto || manual_dim_cols.map(|s| s.contains(&c)).unwrap_or(false)
+    }).collect();
+
+    let clue_bg_hover = Color {
+        r: (clue_bg.r - 0.07).max(0.0),
+        g: (clue_bg.g - 0.07).max(0.0),
+        b: (clue_bg.b - 0.07).max(0.0),
+        a: 1.0,
+    };
 
     // Centered text label on clue_bg — used for clue numbers and sums.
     // `$dim` makes the text light gray when true.
@@ -3090,21 +3167,40 @@ fn view_grid<'a>(
             let mut nums: Vec<Element<'a, Message>> = (0..pad)
                 .map(|_| solid!(C, N, clue_bg))
                 .collect();
-            for &n in clues {
-                nums.push(clue_text!(n, C, N, fulfilled_cols[c]));
+            let col_indiv_dim: Vec<bool> = if assistance.auto_dim {
+                grid.as_ref().map(|g| {
+                    let col_cells: Vec<CellState> = (0..h).map(|r| g[r * w + c]).collect();
+                    individually_fulfilled_clues(clues, &col_cells)
+                }).unwrap_or_else(|| vec![false; clues.len()])
+            } else { vec![false; clues.len()] };
+            for (i, &n) in clues.iter().enumerate() {
+                nums.push(clue_text!(n, C, N, fulfilled_cols[c] || col_indiv_dim[i]));
             }
 
-            let col_content = container(column(nums))
+            let col_inner = container(column(nums))
                 .width(Length::Fill)
-                .height(Length::Fill)
-                .style(move |_| container::Style { background: Some(clue_bg.into()), ..Default::default() });
+                .height(Length::Fill);
             cells.push(
-                container(col_content)
-                    .width(Length::Fixed(C))
-                    .height(Length::Fixed(col_clue_h))
-                    .padding(Padding { left: lp, ..Padding::ZERO })
-                    .style(move |_| container::Style { background: Some(vc.into()), ..Default::default() })
-                    .into(),
+                container(
+                    button(col_inner)
+                        .on_press(Message::ClueDimToggle(key, true, c))
+                        .padding(Padding::ZERO)
+                        .style(move |_, status| button::Style {
+                            background: Some(if matches!(status, button::Status::Hovered) {
+                                clue_bg_hover.into()
+                            } else {
+                                clue_bg.into()
+                            }),
+                            border: Default::default(),
+                            shadow: Default::default(),
+                            text_color: Color::BLACK,
+                        })
+                )
+                .width(Length::Fixed(C))
+                .height(Length::Fixed(col_clue_h))
+                .padding(Padding { left: lp, ..Padding::ZERO })
+                .style(move |_| container::Style { background: Some(vc.into()), ..Default::default() })
+                .into(),
             );
         }
 
@@ -3151,27 +3247,46 @@ fn view_grid<'a>(
 
         let mut cells: Vec<Element<'a, Message>> = Vec::new();
 
-        // Row clue area — top border only
+        // Row clue area — top border only; click to manually dim
         {
             let clues = &puzzle.row_clues[r];
             let pad   = max_rd - clues.len();
             let mut rnums: Vec<Element<'a, Message>> = (0..pad)
                 .map(|_| solid!(N, C, clue_bg))
                 .collect();
-            for &n in clues {
-                rnums.push(clue_text!(n, N, C, fulfilled_rows[r]));
+            let row_indiv_dim: Vec<bool> = if assistance.auto_dim {
+                grid.as_ref().map(|g| {
+                    let row_cells: Vec<CellState> = (0..w).map(|c| g[r * w + c]).collect();
+                    individually_fulfilled_clues(clues, &row_cells)
+                }).unwrap_or_else(|| vec![false; clues.len()])
+            } else { vec![false; clues.len()] };
+            for (i, &n) in clues.iter().enumerate() {
+                rnums.push(clue_text!(n, N, C, fulfilled_rows[r] || row_indiv_dim[i]));
             }
             let rclue_inner = container(row(rnums))
                 .width(Length::Fill)
-                .height(Length::Fill)
-                .style(move |_| container::Style { background: Some(clue_bg.into()), ..Default::default() });
+                .height(Length::Fill);
             cells.push(
-                container(rclue_inner)
-                    .width(Length::Fixed(row_clue_w))
-                    .height(Length::Fixed(C))
-                    .padding(Padding { top: tp, ..Padding::ZERO })
-                    .style(move |_| container::Style { background: Some(hc.into()), ..Default::default() })
-                    .into(),
+                container(
+                    button(rclue_inner)
+                        .on_press(Message::ClueDimToggle(key, false, r))
+                        .padding(Padding::ZERO)
+                        .style(move |_, status| button::Style {
+                            background: Some(if matches!(status, button::Status::Hovered) {
+                                clue_bg_hover.into()
+                            } else {
+                                clue_bg.into()
+                            }),
+                            border: Default::default(),
+                            shadow: Default::default(),
+                            text_color: Color::BLACK,
+                        })
+                )
+                .width(Length::Fixed(row_clue_w))
+                .height(Length::Fixed(C))
+                .padding(Padding { top: tp, ..Padding::ZERO })
+                .style(move |_| container::Style { background: Some(hc.into()), ..Default::default() })
+                .into(),
             );
         }
 
@@ -3300,7 +3415,7 @@ fn view_grid<'a>(
 
         // Row sum — top border only; orange-red if infeasible
         {
-            let row_sum: u32 = puzzle.row_clues[r].iter().sum();
+            let row_sum: u32 = line_sum(&puzzle.row_clues[r]);
             let warn = row_infeasible[r];
             let txt_color = if warn { warn_text } else { Color::from_rgb(0.1, 0.1, 0.1) };
             let rsum_inner = if warn {
@@ -3389,7 +3504,7 @@ fn view_grid<'a>(
         for c in 0..w {
             let lp = if c % 5 == 0 { 2.0_f32 } else { 1.0 };
             let vc = if c % 5 == 0 { border_maj } else { border_min };
-            let col_sum: u32 = puzzle.col_clues[c].iter().sum();
+            let col_sum: u32 = line_sum(&puzzle.col_clues[c]);
             let warn = col_infeasible[c];
             let txt_color = if warn { warn_text } else { Color::from_rgb(0.1, 0.1, 0.1) };
             let csum_inner = if warn {
@@ -3427,7 +3542,25 @@ fn view_grid<'a>(
 
         if right_border { cells.push(solid!(2.0, N, border_maj)); }
 
-        cells.push(solid!(sum_w, N, sum_bg)); // bottom-right corner
+        // Bottom-right corner: click to toggle "clue sums with gaps".
+        cells.push(
+            button(Space::new(0.0, 0.0))
+                .on_press(Message::AssistToggle(2))
+                .width(Length::Fixed(sum_w))
+                .height(Length::Fixed(N))
+                .padding(Padding::ZERO)
+                .style(move |_, status| button::Style {
+                    background: Some(if matches!(status, button::Status::Hovered) {
+                        Color { r: sum_bg.r * 0.88, g: sum_bg.g * 0.88, b: sum_bg.b * 0.88, a: 1.0 }.into()
+                    } else {
+                        sum_bg.into()
+                    }),
+                    border: Default::default(),
+                    shadow: Default::default(),
+                    text_color: Color::BLACK,
+                })
+                .into()
+        );
 
         all_rows.push(row(cells).into());
     }
