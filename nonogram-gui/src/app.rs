@@ -9,7 +9,7 @@ use iced::{
     keyboard, mouse,
     widget::{
         button, checkbox, column, container, horizontal_rule, mouse_area,
-        pick_list, row, scrollable, slider, text, vertical_rule, Space,
+        pick_list, row, scrollable, slider, stack, text, vertical_rule, Space,
     },
     Color, Element, Event, Font, Length, Padding, Subscription, Task, Theme, Vector,
 };
@@ -415,6 +415,22 @@ pub struct LoadedFile {
 }
 
 // ---------------------------------------------------------------------------
+// Export formats
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportFormat {
+    PuzPreV3,
+}
+
+impl ExportFormat {
+    pub const ALL: &'static [Self] = &[Self::PuzPreV3];
+    pub fn label(self) -> &'static str {
+        match self { Self::PuzPreV3 => "Puz-Pre v3" }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
 
@@ -445,6 +461,7 @@ pub struct App {
     cell_settings: CellSettings,
     assistance: AssistanceSettings,
     show_settings: bool,
+    show_export_menu: bool,
     // Answer reveal spoiler state
     revealed_answers: HashSet<Key>,
     // Folder-level collapse state
@@ -539,8 +556,11 @@ pub enum Message {
     TrialEnter,
     TrialReject,
 
-    // Clipboard
+    // Clipboard / export
     CopyPuzzleString(Key),
+    ExportMenuToggled,
+    ExportFormatSelected(ExportFormat),
+    ExportSaved(String, Option<String>, Option<String>), // (content, path, error)
 
     // Grid pan
     PanOffsetChanged(Key, Vector),
@@ -582,6 +602,7 @@ impl App {
             cell_settings,
             assistance,
             show_settings: false,
+            show_export_menu: false,
             revealed_answers: HashSet::new(),
             folder_collapsed: HashMap::new(),
             pending_scans: 0,
@@ -910,6 +931,7 @@ impl App {
                 }
                 self.focused = Some(key);
                 self.replaying = false;
+                self.show_export_menu = false;
                 let all = self.all_solutions.get(&(key, self.solver));
                 self.solution_index = all.map(|a| a.solutions.len().saturating_sub(1)).unwrap_or(0);
                 self.step_cursor = all
@@ -923,6 +945,7 @@ impl App {
             Message::Unfocus => {
                 self.focused = None;
                 self.replaying = false;
+                self.show_export_menu = false;
                 Task::none()
             }
 
@@ -1376,6 +1399,90 @@ impl App {
                     })
                 else { return Task::none(); };
                 iced::clipboard::write(puzzle_to_file_string(puzzle))
+            }
+
+            Message::ExportMenuToggled => {
+                self.show_export_menu = !self.show_export_menu;
+                Task::none()
+            }
+
+            Message::ExportFormatSelected(fmt) => {
+                let Some(key) = self.focused else { return Task::none(); };
+                let (fi, pi) = key;
+                // Extract clue data (ends immutable borrow of self.files).
+                let Some((row_clues, col_clues, w, h)) = self.files.get(fi)
+                    .and_then(|f| f.puzzles.get(pi))
+                    .and_then(|e| e.as_puzzle())
+                    .map(|p| (p.row_clues.clone(), p.col_clues.clone(), p.width, p.height))
+                else { return Task::none(); };
+
+                // Current display grid: manual overrides solver.
+                let display_grid = self.manual_grids.get(&key).cloned()
+                    .or_else(|| self.compute_display_grid(key));
+
+                // Fulfilled flags — only meaningful when auto_dim is on.
+                let fulfilled_rows: Vec<bool> = if self.assistance.auto_dim {
+                    if let Some(g) = &display_grid {
+                        (0..h).map(|r| {
+                            let cells: Vec<CellState> = (0..w).map(|c| g[r * w + c]).collect();
+                            check_line_fulfilled(&row_clues[r], &cells)
+                        }).collect()
+                    } else { vec![false; h] }
+                } else { vec![false; h] };
+
+                let fulfilled_cols: Vec<bool> = if self.assistance.auto_dim {
+                    if let Some(g) = &display_grid {
+                        (0..w).map(|c| {
+                            let cells: Vec<CellState> = (0..h).map(|r| g[r * w + c]).collect();
+                            check_line_fulfilled(&col_clues[c], &cells)
+                        }).collect()
+                    } else { vec![false; w] }
+                } else { vec![false; w] };
+
+                let content = match fmt {
+                    ExportFormat::PuzPreV3 => export_puzprv3(
+                        &row_clues, &col_clues, w, h,
+                        display_grid.as_deref(),
+                        &fulfilled_rows,
+                        &fulfilled_cols,
+                    ),
+                };
+
+                self.show_export_menu = false;
+
+                Task::perform(
+                    async move {
+                        let handle = rfd::AsyncFileDialog::new()
+                            .set_title("Export puzzle")
+                            .set_file_name("nonogram.txt")
+                            .add_filter("Text files", &["txt"])
+                            .save_file()
+                            .await;
+                        match handle {
+                            Some(h) => {
+                                let path = h.path().to_string_lossy().into_owned();
+                                let err = std::fs::write(&path, &content)
+                                    .err().map(|e| e.to_string());
+                                (content, Some(path), err)
+                            }
+                            None => (content, None, None),
+                        }
+                    },
+                    |(content, path, err)| Message::ExportSaved(content, path, err),
+                )
+            }
+
+            Message::ExportSaved(content, path, err) => {
+                match (&path, &err) {
+                    (Some(p), None)  => self.status = format!("Exported to {p}"),
+                    (_, Some(e))     => self.status = format!("Export failed: {e}"),
+                    (None, None)     => {}  // user cancelled
+                }
+                if path.is_some() {
+                    iced::clipboard::write(content)
+                } else {
+                    Task::none()
+                }
             }
 
             Message::TrialReject => {
@@ -1952,6 +2059,34 @@ impl App {
         .on_press(Message::CopyPuzzleString(key))
         .padding([2, 8]);
 
+        let export_active = self.show_export_menu;
+        let export_btn = button(
+            row![bi(Bootstrap::Download).size(12), text("Export").size(12)]
+                .spacing(4).align_y(Vertical::Center),
+        )
+        .on_press(Message::ExportMenuToggled)
+        .padding([2, 8])
+        .style(move |theme: &Theme, status| {
+            let p = theme.extended_palette();
+            button::Style {
+                background: if export_active {
+                    Some(p.primary.base.color.into())
+                } else {
+                    match status {
+                        button::Status::Hovered => Some(p.primary.weak.color.into()),
+                        _ => Some(p.background.base.color.into()),
+                    }
+                },
+                text_color: if export_active { p.primary.base.text } else { p.background.base.text },
+                border: iced::Border {
+                    radius: 4.0.into(),
+                    color: p.primary.base.color,
+                    width: if export_active { 1.0 } else { 0.0 },
+                },
+                shadow: iced::Shadow::default(),
+            }
+        });
+
         let header = container(
             row![
                 back_btn,
@@ -1962,6 +2097,7 @@ impl App {
                     .size(13)
                     .color(Color::from_rgb(0.4, 0.4, 0.4)),
                 copy_btn,
+                export_btn,
                 Space::with_width(Length::Fill),
                 status_el,
             ]
@@ -2104,10 +2240,51 @@ impl App {
             .into()
         );
 
-        column(items)
+        let detail: Element<Message> = column(items)
             .width(Length::Fill)
             .height(Length::Fill)
-            .into()
+            .into();
+
+        if self.show_export_menu {
+            let popup_items: Vec<Element<Message>> = ExportFormat::ALL.iter().map(|&fmt| {
+                button(text(fmt.label()).size(13))
+                    .on_press(Message::ExportFormatSelected(fmt))
+                    .width(Length::Fill)
+                    .padding([5, 10])
+                    .into()
+            }).collect();
+            let popup = container(column(popup_items).spacing(2).padding([4, 4]))
+                .width(160)
+                .style(|theme: &Theme| {
+                    let p = theme.extended_palette();
+                    container::Style {
+                        background: Some(p.background.base.color.into()),
+                        border: iced::Border {
+                            radius: 4.0.into(),
+                            color: p.background.strong.color,
+                            width: 1.0,
+                        },
+                        shadow: iced::Shadow {
+                            color: Color::from_rgba(0.0, 0.0, 0.0, 0.25),
+                            offset: iced::Vector::new(0.0, 2.0),
+                            blur_radius: 6.0,
+                        },
+                        ..Default::default()
+                    }
+                });
+            // Position popup just below the header row (~44 px) and offset
+            // left to roughly align with the export button.
+            let popup_layer: Element<Message> = column![
+                Space::with_height(Length::Fixed(44.0)),
+                container(popup).padding(Padding { left: 16.0, ..Padding::ZERO }),
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+            stack([detail, popup_layer]).into()
+        } else {
+            detail
+        }
     }
 
     fn view_results_table(&self) -> Element<'_, Message> {
@@ -2545,6 +2722,93 @@ fn puzzle_to_file_string(puzzle: &Puzzle) -> String {
         (None, None) => {}
     }
     s
+}
+
+// ---------------------------------------------------------------------------
+// Export formatters
+// ---------------------------------------------------------------------------
+
+/// Puz-Pre v3 format.
+///
+/// Layout: `(max_col_depth + height)` rows × `(max_row_width + width)` cols,
+/// space-separated. Top-left corner is all dots. Top section holds column
+/// clues (bottom-aligned). Left section holds row clues (right-aligned).
+/// Bottom-right section is the puzzle grid (`.` = empty/unknown, `#` = filled).
+/// Clues for fulfilled lines are prefixed with `c`.
+fn export_puzprv3(
+    row_clues: &[Vec<u32>],
+    col_clues: &[Vec<u32>],
+    w: usize,
+    h: usize,
+    grid: Option<&[CellState]>,
+    fulfilled_rows: &[bool],
+    fulfilled_cols: &[bool],
+) -> String {
+    let max_cd = col_clues.iter().map(|v| v.len()).max().unwrap_or(0).max(1);
+    let max_rd = row_clues.iter().map(|v| v.len()).max().unwrap_or(0).max(1);
+    let total_rows = max_cd + h;
+    let total_cols = max_rd + w;
+
+    let mut out = String::new();
+    out.push_str("pzprv3\nnonogram\n");
+    out.push_str(&h.to_string()); out.push('\n');
+    out.push_str(&w.to_string()); out.push('\n');
+
+    for row_idx in 0..total_rows {
+        let mut tokens: Vec<String> = Vec::with_capacity(total_cols);
+        for col_idx in 0..total_cols {
+            let token = if row_idx < max_cd {
+                // Column clue area
+                if col_idx < max_rd {
+                    // Top-left corner
+                    ".".into()
+                } else {
+                    let c = col_idx - max_rd;
+                    let clues = &col_clues[c];
+                    let pad = max_cd - clues.len();
+                    if row_idx >= pad {
+                        let n = clues[row_idx - pad];
+                        if fulfilled_cols.get(c).copied().unwrap_or(false) {
+                            format!("c{n}")
+                        } else {
+                            n.to_string()
+                        }
+                    } else {
+                        ".".into()
+                    }
+                }
+            } else {
+                // Puzzle rows
+                let r = row_idx - max_cd;
+                if col_idx < max_rd {
+                    // Row clue area
+                    let clues = &row_clues[r];
+                    let pad = max_rd - clues.len();
+                    if col_idx >= pad {
+                        let n = clues[col_idx - pad];
+                        if fulfilled_rows.get(r).copied().unwrap_or(false) {
+                            format!("c{n}")
+                        } else {
+                            n.to_string()
+                        }
+                    } else {
+                        ".".into()
+                    }
+                } else {
+                    // Puzzle cell
+                    let c = col_idx - max_rd;
+                    match grid.map(|g| g[r * w + c]).unwrap_or(CellState::Unknown) {
+                        CellState::Filled => "#".into(),
+                        _ => ".".into(),
+                    }
+                }
+            };
+            tokens.push(token);
+        }
+        out.push_str(&tokens.join(" "));
+        out.push('\n');
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
