@@ -1,5 +1,6 @@
 mod app;
 mod convert;
+mod pan_viewport;
 mod solver;
 
 use iced::Size;
