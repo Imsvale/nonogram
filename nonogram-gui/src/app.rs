@@ -25,9 +25,14 @@ use crate::convert::convert_letter_content;
 use crate::solver::SolverKind;
 
 const BOOTSTRAP_FONT: Font = Font::with_name("bootstrap-icons");
+const FORWARD_FONT: Font = Font::with_name("bootstrap-forward");
 
 fn bi(icon: Bootstrap) -> iced::widget::Text<'static> {
     text(bootstrap::icon_to_char(icon).to_string()).font(BOOTSTRAP_FONT)
+}
+
+fn fwd(cp: char) -> iced::widget::Text<'static> {
+    text(cp.to_string()).font(FORWARD_FONT)
 }
 
 fn icon_char(icon: Option<Bootstrap>) -> Option<char> {
@@ -237,6 +242,51 @@ fn save_solved(solved: &HashSet<(String, String)>) {
     if let Ok(json) = serde_json::to_string_pretty(&entries) {
         let _ = std::fs::write(&path, json);
     }
+}
+
+fn session_path() -> Option<PathBuf> {
+    ProjectDirs::from("", "nonogram", "nonogram-gui")
+        .map(|pd| pd.config_dir().join("session.json"))
+}
+
+#[derive(Serialize, Deserialize)]
+struct SessionEntry { path: String, name: String }
+
+fn save_session(rel_path: &str, puzzle_name: &str) {
+    let Some(path) = session_path() else { return };
+    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+    let entry = SessionEntry { path: rel_path.to_string(), name: puzzle_name.to_string() };
+    if let Ok(json) = serde_json::to_string(&entry) { let _ = std::fs::write(&path, json); }
+}
+
+fn load_session() -> Option<(String, String)> {
+    let path = session_path()?;
+    let content = std::fs::read_to_string(&path).ok()?;
+    let entry: SessionEntry = serde_json::from_str(&content).ok()?;
+    Some((entry.path, entry.name))
+}
+
+/// Write the solved grid back into the puzzle file as the fourth `;`-field.
+/// Matches the puzzle line by name (first field). Skips gracefully on I/O errors.
+fn save_solution_to_file(file_path: &str, puzzle_name: &str, solution: &str) {
+    let Ok(content) = std::fs::read_to_string(file_path) else { return };
+    let trailing_newline = content.ends_with('\n');
+    let new_content: String = content.lines().map(|line| {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') || trimmed.is_empty() {
+            return line.to_string();
+        }
+        let first = trimmed.splitn(2, ';').next().unwrap_or("").trim();
+        if first != puzzle_name {
+            return line.to_string();
+        }
+        let parts: Vec<&str> = trimmed.splitn(4, ';').collect();
+        if parts.len() < 2 { return line.to_string(); }
+        let answer = parts.get(2).unwrap_or(&"").trim();
+        format!("{};{};{};{}", parts[0], parts[1], answer, solution)
+    }).collect::<Vec<_>>().join("\n");
+    let new_content = if trailing_newline { format!("{new_content}\n") } else { new_content };
+    let _ = std::fs::write(file_path, new_content);
 }
 
 fn load_settings() -> (CellSettings, AssistanceSettings) {
@@ -495,10 +545,13 @@ pub struct App {
     // Interactive grid
     manual_grids: HashMap<Key, Vec<CellState>>,
     drag_state: Option<CellState>,
+    // Undo/redo stacks per puzzle (each entry is a full grid snapshot)
+    undo_stack: HashMap<Key, Vec<Vec<CellState>>>,
+    redo_stack: HashMap<Key, Vec<Vec<CellState>>>,
     // Trial mode: each entry is (snapshot_before_tier, first_cell_changed_in_tier)
     trial_stack: HashMap<Key, Vec<(Vec<CellState>, Option<(usize, usize)>)>>,
     // Grid pan/drag
-    pan_offset: HashMap<Key, Vector>,
+    pan_offset: Vector,
     // Manual clue dimming
     manual_dim_rows: HashMap<Key, HashSet<usize>>,
     manual_dim_cols: HashMap<Key, HashSet<usize>>,
@@ -600,6 +653,11 @@ pub enum Message {
     AssistToggle(u8),  // 0=auto_dim, 1=auto_fill_empty, 2=clue_sums_with_gaps
     ClueDimToggle(Key, bool, usize),  // (puzzle key, is_col, row_or_col_idx)
 
+    // Grid editing
+    ClearGrid(Key),
+    UndoGrid(Key),
+    RedoGrid(Key),
+
     // Trial mode
     TrialEnter,
     TrialReject,
@@ -611,7 +669,7 @@ pub enum Message {
     ExportSaved(String, Option<String>, Option<String>), // (content, path, error)
 
     // Grid pan
-    PanOffsetChanged(Key, Vector),
+    PanOffsetChanged(Vector),
 
     // Spoiler reveal
     RevealAnswer(Key),
@@ -645,8 +703,10 @@ impl App {
             theme: Theme::Dark,
             manual_grids: HashMap::new(),
             drag_state: None,
+            undo_stack: HashMap::new(),
+            redo_stack: HashMap::new(),
             trial_stack: HashMap::new(),
-            pan_offset: HashMap::new(),
+            pan_offset: Vector::ZERO,
             manual_dim_rows: HashMap::new(),
             manual_dim_cols: HashMap::new(),
             cell_settings,
@@ -836,6 +896,7 @@ impl App {
                     } else {
                         format!("Loaded {v} puzzle(s) from puzzles/")
                     };
+                    self.restore_session();
                 } else {
                     let done = self.scan_total - self.pending_scans;
                     self.status = format!("Loading {done} / {} files…", self.scan_total);
@@ -857,6 +918,7 @@ impl App {
                     } else {
                         "No default puzzles found in puzzles/".into()
                     };
+                    self.restore_session();
                 }
                 Task::none()
             }
@@ -983,6 +1045,26 @@ impl App {
                 self.focused = Some(key);
                 self.replaying = false;
                 self.show_export_menu = false;
+
+                // Persist this puzzle as the last focused for next-session restore.
+                if let Some(file) = self.files.get(fi) {
+                    if let Some(puzzle) = file.puzzles.get(pi).and_then(|e| e.as_puzzle()) {
+                        save_session(&relative_path(&file.path), &puzzle.name);
+                    }
+                }
+
+                // Seed manual grid from persisted solution if we have no grid yet.
+                if !self.manual_grids.contains_key(&key) {
+                    let (fi, pi) = key;
+                    if let Some(sol) = self.files.get(fi)
+                        .and_then(|f| f.puzzles.get(pi))
+                        .and_then(|e| e.as_puzzle())
+                        .and_then(|p| p.solution.as_ref())
+                    {
+                        self.manual_grids.insert(key, sol.clone());
+                    }
+                }
+
                 let all = self.all_solutions.get(&(key, self.solver));
                 self.solution_index = all.map(|a| a.solutions.len().saturating_sub(1)).unwrap_or(0);
                 self.step_cursor = all
@@ -1243,6 +1325,15 @@ impl App {
                     self.manual_grids.insert(key, init);
                 }
 
+                // Push undo snapshot before any modification; clear redo.
+                {
+                    let snapshot = self.manual_grids[&key].clone();
+                    let stack = self.undo_stack.entry(key).or_default();
+                    stack.push(snapshot);
+                    if stack.len() > 500 { stack.remove(0); }
+                    self.redo_stack.remove(&key);
+                }
+
                 let mg = self.manual_grids.get_mut(&key).unwrap();
                 let current = mg[row * w + col];
                 let target = if right {
@@ -1301,9 +1392,19 @@ impl App {
                     let solved = self.files.get(fi)
                         .and_then(|f| f.puzzles.get(pi).and_then(|e| e.as_puzzle())
                             .zip(self.manual_grids.get(&key))
-                            .map(|(puzzle, grid)| (relative_path(&f.path), puzzle.name.clone(), is_puzzle_fully_solved(puzzle, grid))));
-                    if let Some((rel, name, true)) = solved {
-                        if self.solved_manually.insert((rel, name)) { save_solved(&self.solved_manually); }
+                            .map(|(puzzle, grid)| (f.path.clone(), relative_path(&f.path), puzzle.name.clone(), puzzle.solution.is_none(), is_puzzle_fully_solved(puzzle, grid))));
+                    if let Some((file_path, rel, name, no_file_solution, true)) = solved {
+                        let newly_tracked = self.solved_manually.insert((rel, name.clone()));
+                        if newly_tracked {
+                            save_solved(&self.solved_manually);
+                            self.revealed_answers.insert(key);
+                        }
+                        if newly_tracked || no_file_solution {
+                            if let Some(grid) = self.manual_grids.get(&key) {
+                                let sol: String = grid.iter().map(|&c| if c == CellState::Filled { '1' } else { '0' }).collect();
+                                save_solution_to_file(&file_path, &name, &sol);
+                            }
+                        }
                     }
                 }
                 Task::none()
@@ -1356,9 +1457,19 @@ impl App {
                     let solved = self.files.get(fi)
                         .and_then(|f| f.puzzles.get(pi).and_then(|e| e.as_puzzle())
                             .zip(self.manual_grids.get(&key))
-                            .map(|(puzzle, grid)| (relative_path(&f.path), puzzle.name.clone(), is_puzzle_fully_solved(puzzle, grid))));
-                    if let Some((rel, name, true)) = solved {
-                        if self.solved_manually.insert((rel, name)) { save_solved(&self.solved_manually); }
+                            .map(|(puzzle, grid)| (f.path.clone(), relative_path(&f.path), puzzle.name.clone(), puzzle.solution.is_none(), is_puzzle_fully_solved(puzzle, grid))));
+                    if let Some((file_path, rel, name, no_file_solution, true)) = solved {
+                        let newly_tracked = self.solved_manually.insert((rel, name.clone()));
+                        if newly_tracked {
+                            save_solved(&self.solved_manually);
+                            self.revealed_answers.insert(key);
+                        }
+                        if newly_tracked || no_file_solution {
+                            if let Some(grid) = self.manual_grids.get(&key) {
+                                let sol: String = grid.iter().map(|&c| if c == CellState::Filled { '1' } else { '0' }).collect();
+                                save_solution_to_file(&file_path, &name, &sol);
+                            }
+                        }
                     }
                 }
                 Task::none()
@@ -1369,8 +1480,8 @@ impl App {
                 Task::none()
             }
 
-            Message::PanOffsetChanged(key, offset) => {
-                self.pan_offset.insert(key, offset);
+            Message::PanOffsetChanged(offset) => {
+                self.pan_offset = offset;
                 Task::none()
             }
 
@@ -1576,6 +1687,45 @@ impl App {
                 Task::none()
             }
 
+            Message::ClearGrid(key) => {
+                if let Some(grid) = self.manual_grids.get(&key) {
+                    let snapshot = grid.clone();
+                    let stack = self.undo_stack.entry(key).or_default();
+                    stack.push(snapshot);
+                    if stack.len() > 500 { stack.remove(0); }
+                    self.redo_stack.remove(&key);
+                }
+                let size = self.files.get(key.0)
+                    .and_then(|f| f.puzzles.get(key.1))
+                    .and_then(|e| e.as_puzzle())
+                    .map(|p| p.width * p.height)
+                    .unwrap_or(0);
+                if size > 0 {
+                    self.manual_grids.insert(key, vec![CellState::Unknown; size]);
+                }
+                Task::none()
+            }
+
+            Message::UndoGrid(key) => {
+                if let Some(prev) = self.undo_stack.entry(key).or_default().pop() {
+                    if let Some(current) = self.manual_grids.get(&key).cloned() {
+                        self.redo_stack.entry(key).or_default().push(current);
+                    }
+                    self.manual_grids.insert(key, prev);
+                }
+                Task::none()
+            }
+
+            Message::RedoGrid(key) => {
+                if let Some(next) = self.redo_stack.entry(key).or_default().pop() {
+                    if let Some(current) = self.manual_grids.get(&key).cloned() {
+                        self.undo_stack.entry(key).or_default().push(current);
+                    }
+                    self.manual_grids.insert(key, next);
+                }
+                Task::none()
+            }
+
             Message::Error(e) => {
                 self.status = format!("Error: {e}");
                 self.busy = false;
@@ -1716,7 +1866,7 @@ impl App {
                         let manual_solved = self.solved_manually
                             .contains(&(relative_path(&file.path), puzzle.name.clone()));
                         let badge: Option<Element<Message>> = if manual_solved {
-                            Some(bi(Bootstrap::CheckCircleFill).size(11)
+                            Some(bi(Bootstrap::CheckCircle).size(11)
                                 .color(Color::from_rgb(0.0, 0.62, 0.24)).into())
                         } else {
                             self.results.get(&(key, self.solver)).map(|r| {
@@ -2004,15 +2154,15 @@ impl App {
                 let display_grid = self.manual_grids.get(&key).cloned();
                 let trial_info: &[(Vec<CellState>, Option<(usize, usize)>)] =
                     self.trial_stack.get(&key).map(|v| v.as_slice()).unwrap_or(&[]);
-                let pan_off = self.pan_offset.get(&key).copied().unwrap_or(Vector::ZERO);
+                let pan_off = self.pan_offset;
                 return column![
                     header,
                     horizontal_rule(1),
                     container(reason_banner).padding([8, 16]).width(Length::Fill),
                     horizontal_rule(1),
                     container(
-                        PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.solved_manually.contains(&(relative_path(&file.path), name.clone()))), pan_off)
-                            .on_pan(move |v| Message::PanOffsetChanged(key, v)),
+                        PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), None, None), pan_off)
+                            .on_pan(|v| Message::PanOffsetChanged(v)),
                     )
                     .padding(Padding { left: 16.0, ..Padding::ZERO })
                     .width(Length::Fill)
@@ -2037,6 +2187,7 @@ impl App {
         }
 
         let ParsedPuzzle::Valid(puzzle) = entry else { unreachable!() };
+        let manually_solved = self.solved_manually.contains(&(relative_path(&file.path), puzzle.name.clone()));
 
         let result = self.results.get(&(key, self.solver));
         let all    = self.all_solutions.get(&(key, self.solver));
@@ -2088,28 +2239,10 @@ impl App {
         } else if let Some(res) = result {
             match &res.state {
                 SolutionState::Complete => {
-                    let mut elems: Vec<Element<Message>> = vec![
-                        bi(Bootstrap::CheckLg).size(13).color(Color::from_rgb(0.08, 0.55, 0.08)).into(),
-                        text("Solved").size(13).into(),
-                    ];
-                    if let Some(answer) = &puzzle.answer {
-                        elems.push(Space::with_width(Length::Fixed(8.0)).into());
-                        if self.revealed_answers.contains(&key) {
-                            elems.push(
-                                text(format!("\"{answer}\"")).size(13)
-                                    .color(Color::from_rgb(0.08, 0.55, 0.08))
-                                    .into()
-                            );
-                        } else {
-                            elems.push(
-                                button(text("Reveal answer").size(12))
-                                    .on_press(Message::RevealAnswer(key))
-                                    .padding([1, 8])
-                                    .into()
-                            );
-                        }
-                    }
-                    row(elems).spacing(4).align_y(Vertical::Center).into()
+                    row![
+                        bi(Bootstrap::CheckLg).size(13).color(Color::from_rgb(0.08, 0.55, 0.08)),
+                        text("Solved").size(13),
+                    ].spacing(4).align_y(Vertical::Center).into()
                 }
                 SolutionState::Aborted => {
                     let filled = res.grid.iter().filter(|&&c| c != CellState::Unknown).count();
@@ -2135,6 +2268,11 @@ impl App {
                     text(format!("Invalid — {reason}")).size(13),
                 ].spacing(4).align_y(Vertical::Center).into(),
             }
+        } else if manually_solved {
+            row![
+                bi(Bootstrap::CheckLg).size(13).color(Color::from_rgb(0.08, 0.55, 0.08)),
+                text("Solved").size(13),
+            ].spacing(4).align_y(Vertical::Center).into()
         } else {
             text("Not yet solved").size(13).color(Color::from_rgb(0.45, 0.45, 0.45)).into()
         };
@@ -2174,22 +2312,44 @@ impl App {
             }
         });
 
+        let answer_revealed = manually_solved || self.revealed_answers.contains(&key);
+        let computer_complete = result.map(|r| matches!(&r.state, SolutionState::Complete)).unwrap_or(false);
+
+        let mut header_items: Vec<Element<Message>> = vec![
+            back_btn.into(),
+            Space::with_width(Length::Fixed(12.0)).into(),
+            text(puzzle.name.as_str()).size(16).into(),
+        ];
+        if let Some(answer) = &puzzle.answer {
+            if answer_revealed {
+                header_items.push(text(": ").size(16).into());
+                header_items.push(
+                    text(format!("\"{answer}\"")).size(16)
+                        .color(Color::from_rgb(0.0, 0.62, 0.24))
+                        .into()
+                );
+            } else if computer_complete {
+                header_items.push(
+                    button(text("Reveal answer").size(12))
+                        .on_press(Message::RevealAnswer(key))
+                        .padding([2, 8])
+                        .into()
+                );
+            }
+        }
+        header_items.extend([
+            Space::with_width(Length::Fixed(8.0)).into(),
+            text(format!("{}x{}", puzzle.width, puzzle.height))
+                .size(13)
+                .color(Color::from_rgb(0.4, 0.4, 0.4))
+                .into(),
+            copy_btn.into(),
+            export_btn.into(),
+            Space::with_width(Length::Fill).into(),
+        ]);
+        header_items.push(status_el);
         let header = container(
-            row![
-                back_btn,
-                Space::with_width(Length::Fixed(12.0)),
-                text(puzzle.name.as_str()).size(16),
-                Space::with_width(Length::Fixed(8.0)),
-                text(format!("{}x{}", puzzle.width, puzzle.height))
-                    .size(13)
-                    .color(Color::from_rgb(0.4, 0.4, 0.4)),
-                copy_btn,
-                export_btn,
-                Space::with_width(Length::Fill),
-                status_el,
-            ]
-            .spacing(4)
-            .align_y(Vertical::Center),
+            row(header_items).spacing(4).align_y(Vertical::Center),
         )
         .padding([10, 16])
         .width(Length::Fill);
@@ -2315,12 +2475,20 @@ impl App {
         let trial_info: &[(Vec<CellState>, Option<(usize, usize)>)] =
             self.trial_stack.get(&key).map(|v| v.as_slice()).unwrap_or(&[]);
 
-        let pan_off = self.pan_offset.get(&key).copied().unwrap_or(Vector::ZERO);
-        let manually_solved = self.solved_manually.contains(&(relative_path(&file.path), puzzle.name.clone()));
+        let all_keys: Vec<Key> = self.files.iter().enumerate()
+            .flat_map(|(fi, f)| f.puzzles.iter().enumerate()
+                .filter(|(_, e)| e.is_valid())
+                .map(move |(pi, _)| (fi, pi)))
+            .collect();
+        let pos = all_keys.iter().position(|&k| k == key);
+        let prev_key = pos.and_then(|i| i.checked_sub(1)).map(|i| all_keys[i]);
+        let next_key = pos.and_then(|i| all_keys.get(i + 1).copied());
+
+        let pan_off = self.pan_offset;
         items.push(
             container(
-                PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), manually_solved), pan_off)
-                    .on_pan(move |v| Message::PanOffsetChanged(key, v)),
+                PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), prev_key, next_key), pan_off)
+                    .on_pan(|v| Message::PanOffsetChanged(v)),
             )
             .padding(Padding { left: 16.0, ..Padding::ZERO })
             .width(Length::Fill)
@@ -2770,6 +2938,55 @@ impl App {
     }
 
     // Compute the solver-derived display grid for a key at the current step cursor.
+    /// Called once when all default files finish loading. Looks up the saved
+    /// session and, if the referenced puzzle still exists, focuses it and
+    /// expands its folder/file in the left panel.
+    fn restore_session(&mut self) {
+        let Some((session_rel, session_name)) = load_session() else { return };
+        let found = self.files.iter().enumerate().find_map(|(fi, file)| {
+            if relative_path(&file.path) != session_rel { return None; }
+            file.puzzles.iter().enumerate().find_map(|(pi, entry)| {
+                if let ParsedPuzzle::Valid(p) = entry {
+                    if p.name == session_name { Some((fi, pi)) } else { None }
+                } else { None }
+            })
+        });
+        let Some((fi, pi)) = found else { return };
+        let key = (fi, pi);
+
+        // Expand folder and file so the puzzle is visible in the left panel.
+        if let Some(folder) = self.files[fi].folder.clone() {
+            self.folder_collapsed.insert(folder, false);
+        }
+        self.files[fi].collapsed = false;
+
+        // Focus the puzzle (mirrors the core of PuzzleFocused without modifier logic).
+        self.selected.clear();
+        self.selected.insert(key);
+        self.last_anchor = Some(key);
+        self.focused = Some(key);
+        self.replaying = false;
+
+        // Seed manual grid from persisted solution if needed.
+        if !self.manual_grids.contains_key(&key) {
+            if let Some(sol) = self.files.get(fi)
+                .and_then(|f| f.puzzles.get(pi))
+                .and_then(|e| e.as_puzzle())
+                .and_then(|p| p.solution.as_ref())
+            {
+                self.manual_grids.insert(key, sol.clone());
+            }
+        }
+
+        let all = self.all_solutions.get(&(key, self.solver));
+        self.solution_index = all.map(|a| a.solutions.len().saturating_sub(1)).unwrap_or(0);
+        self.step_cursor = all
+            .and_then(|a| a.solutions.get(self.solution_index))
+            .or_else(|| self.results.get(&(key, self.solver)))
+            .map(|r| r.steps.len())
+            .unwrap_or(0);
+    }
+
     fn compute_display_grid(&self, key: Key) -> Option<Vec<CellState>> {
         let (fi, pi) = key;
         let puzzle = self.files.get(fi)?.puzzles.get(pi)?.as_puzzle()?;
@@ -3042,7 +3259,10 @@ fn view_grid<'a>(
     assistance: &'a AssistanceSettings,
     manual_dim_rows: Option<&'a HashSet<usize>>,
     manual_dim_cols: Option<&'a HashSet<usize>>,
-    manually_solved: bool,
+    has_undo: bool,
+    has_redo: bool,
+    prev_key: Option<Key>,
+    next_key: Option<Key>,
 ) -> Element<'a, Message> {
     const C: f32 = 26.0;  // cell size px
     const N: f32 = 22.0;  // clue-number cell px
@@ -3653,27 +3873,113 @@ fn view_grid<'a>(
         all_rows.push(row(cells).into());
     }
 
-    // ── Trial controls, appended inside the scrollable immediately below grid
+    // ── Controls below the grid ───────────────────────────────────────────
+    // Layout:  [Clear answer]  ···  [Undo] [Redo]  ···  [Tier?] [Trial] [Reject]
+    //           left-aligned        centered on            right-aligned
+    //                               paintable grid
     {
         let trial_tier = trial.len();
+
+        let clear_btn = button(text("Clear answer").size(12))
+            .on_press(Message::ClearGrid(key))
+            .padding([2, 8]);
+        let undo_btn_base = button(bi(Bootstrap::ReplyFill).size(15)).padding([2, 8]);
+        let undo_btn: Element<Message> = if has_undo {
+            undo_btn_base.on_press(Message::UndoGrid(key)).into()
+        } else { undo_btn_base.into() };
+        let redo_btn_base = button(fwd('\u{E003}').size(15)).padding([2, 8]);
+        let redo_btn: Element<Message> = if has_redo {
+            redo_btn_base.on_press(Message::RedoGrid(key)).into()
+        } else { redo_btn_base.into() };
+
         let enter_label = if trial_tier == 0 { "Trial" } else { "Deeper" };
         let enter_btn = button(text(enter_label).size(12))
             .on_press(Message::TrialEnter)
             .padding([2, 8]);
         let reject_btn = if trial_tier > 0 {
-            button(text("Reject trial").size(12))
-                .on_press(Message::TrialReject)
-                .padding([2, 8])
+            button(text("Reject trial").size(12)).on_press(Message::TrialReject).padding([2, 8])
         } else {
             button(text("Reject trial").size(12)).padding([2, 8])
         };
-        let tier_label: Element<'a, Message> = if trial_tier > 0 {
+
+        // Right group: optional tier label + Trial/Deeper + Reject trial
+        let mut tr_items: Vec<Element<Message>> = Vec::new();
+        if trial_tier > 0 {
             let (r, g, b) = TRIAL_FILLED[(trial_tier - 1) % TRIAL_FILLED.len()];
-            text(format!("Tier {trial_tier}")).size(12)
-                .color(Color::from_rgb(r, g, b))
+            tr_items.push(text(format!("Tier {trial_tier}")).size(12).color(Color::from_rgb(r, g, b)).into());
+            tr_items.push(Space::with_width(Length::Fixed(6.0)).into());
+        }
+        tr_items.push(enter_btn.into());
+        tr_items.push(Space::with_width(Length::Fixed(6.0)).into());
+        tr_items.push(reject_btn.into());
+        let tr_group: Element<Message> = row(tr_items).align_y(Vertical::Center).into();
+
+        // Centering undo/redo on the paintable grid:
+        // approx widths (conservative) used only for the can_center check.
+        const CLEAR_W: f32 = 100.0;
+        const UR_W:    f32 =  64.0; // undo(~29) + 6px gap + redo(~29)
+        const TR_W:    f32 = 160.0; // tier(~40) + trial(~60) + 6 + reject(~88) + 6 margins
+        let grid_center = row_clue_w + (C * w as f32) / 2.0;
+        let left_gap  = grid_center - CLEAR_W - UR_W / 2.0;
+        let right_gap = grid_total_w - grid_center - UR_W / 2.0 - TR_W;
+
+        let btn_row: Element<Message> = if left_gap >= 4.0 && right_gap >= 4.0 {
+            row![
+                clear_btn,
+                Space::with_width(Length::Fixed(left_gap)),
+                undo_btn,
+                Space::with_width(Length::Fixed(6.0)),
+                redo_btn,
+                Space::with_width(Length::Fixed(right_gap)),
+                tr_group,
+            ].align_y(Vertical::Center).into()
+        } else {
+            // Fallback: Fill spacers (undo/redo centered on the full row).
+            row![
+                clear_btn,
+                Space::with_width(Length::Fill),
+                undo_btn,
+                Space::with_width(Length::Fixed(6.0)),
+                redo_btn,
+                Space::with_width(Length::Fill),
+                tr_group,
+            ].align_y(Vertical::Center).into()
+        };
+
+        all_rows.push(
+            container(horizontal_rule(1))
+                .width(Length::Fixed(grid_total_w))
+                .into()
+        );
+        all_rows.push(
+            container(btn_row)
+                .padding([6, 0])
+                .width(Length::Fixed(grid_total_w))
+                .into()
+        );
+    }
+
+    // ── Prev / Next navigation ────────────────────────────────────────────
+    {
+        let prev_btn: Element<Message> = if let Some(pk) = prev_key {
+            button(row![bi(Bootstrap::ChevronLeft).size(13), text("Previous").size(12)].spacing(4).align_y(Vertical::Center))
+                .on_press(Message::PuzzleFocused(pk))
+                .padding([4, 10])
                 .into()
         } else {
-            Space::with_width(Length::Shrink).into()
+            button(row![bi(Bootstrap::ChevronLeft).size(13), text("Previous").size(12)].spacing(4).align_y(Vertical::Center))
+                .padding([4, 10])
+                .into()
+        };
+        let next_btn: Element<Message> = if let Some(nk) = next_key {
+            button(row![text("Next").size(12), bi(Bootstrap::ChevronRight).size(13)].spacing(4).align_y(Vertical::Center))
+                .on_press(Message::PuzzleFocused(nk))
+                .padding([4, 10])
+                .into()
+        } else {
+            button(row![text("Next").size(12), bi(Bootstrap::ChevronRight).size(13)].spacing(4).align_y(Vertical::Center))
+                .padding([4, 10])
+                .into()
         };
         all_rows.push(
             container(horizontal_rule(1))
@@ -3682,30 +3988,16 @@ fn view_grid<'a>(
         );
         all_rows.push(
             container(
-                row![tier_label, Space::with_width(Length::Fill), enter_btn, reject_btn]
-                    .spacing(6)
-                    .padding([8, 0])
+                row![prev_btn, Space::with_width(Length::Fill), next_btn]
                     .align_y(Vertical::Center),
             )
+            .padding([6, 0])
             .width(Length::Fixed(grid_total_w))
             .into()
         );
     }
 
-    let grid_content = container(column(all_rows))
-        .padding(Padding { top: 16.0, right: 16.0, bottom: 16.0, left: 0.0 });
-
-    if manually_solved {
-        let badge = container(
-            bi(Bootstrap::CheckCircleFill).size(48).color(Color::from_rgb(0.0, 0.62, 0.24)),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_x(Horizontal::Right)
-        .align_y(Vertical::Top)
-        .padding(Padding { top: 20.0, right: 20.0, ..Padding::ZERO });
-        stack([grid_content.into(), badge.into()]).into()
-    } else {
-        grid_content.into()
-    }
+    container(column(all_rows))
+        .padding(Padding { top: 16.0, right: 16.0, bottom: 16.0, left: 0.0 })
+        .into()
 }
