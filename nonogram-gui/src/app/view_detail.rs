@@ -11,7 +11,11 @@ use nonogram_core::{CellState, ParsedPuzzle, SolutionState};
 
 use crate::pan_viewport::PanViewport;
 use super::{App, Key, Message};
-use super::style::{bi, icon_char, style_panel, style_header_row};
+use super::style::{
+    bi, icon_char, style_panel, style_header_row,
+    status_row, warn_banner_style,
+    WARN_COLOR, COLOR_SUCCESS, COLOR_ERROR, COLOR_AMBIGUOUS,
+};
 use super::settings::{CellVisual, FILLED_ICON_OPTIONS, EMPTY_ICON_OPTIONS};
 use super::export::ExportFormat;
 use super::persistence::relative_path;
@@ -36,13 +40,7 @@ impl App {
         .on_press(Message::Unfocus);
 
         if let ParsedPuzzle::Invalid { name, reason, puzzle: partial } = entry {
-            let status_el = row![
-                bi(Bootstrap::ExclamationCircleFill).size(13)
-                    .color(Color::from_rgb(0.75, 0.38, 0.0)),
-                text("Invalid puzzle").size(13),
-            ]
-            .spacing(4)
-            .align_y(Vertical::Center);
+            let status_el = status_row(Bootstrap::ExclamationCircleFill, WARN_COLOR, "Invalid puzzle");
 
             let header = container(
                 row![
@@ -60,22 +58,13 @@ impl App {
 
             let reason_banner = container(
                 row![
-                    bi(Bootstrap::ExclamationCircleFill).size(13)
-                        .color(Color::from_rgb(0.75, 0.38, 0.0)),
+                    bi(Bootstrap::ExclamationCircleFill).size(13).color(WARN_COLOR),
                     text(reason.to_string()).size(13),
                 ]
                 .spacing(8)
                 .align_y(Vertical::Center),
             )
-            .style(|_| container::Style {
-                background: Some(Color::from_rgba(0.75, 0.38, 0.0, 0.12).into()),
-                border: iced::Border {
-                    radius: 4.0.into(),
-                    color: Color::from_rgb(0.75, 0.38, 0.0),
-                    width: 1.0,
-                },
-                ..Default::default()
-            })
+            .style(|_| warn_banner_style())
             .padding([8, 16])
             .width(Length::Fill);
 
@@ -149,56 +138,29 @@ impl App {
             let n      = a.solutions.len();
             let suffix = if a.aborted { " (aborted)" } else { "" };
             match n {
-                0 => row![
-                    bi(Bootstrap::XLg).size(13).color(Color::from_rgb(0.78, 0.08, 0.08)),
-                    text(format!("No solutions{suffix}")).size(13),
-                ].spacing(4).align_y(Vertical::Center).into(),
-                1 => row![
-                    bi(Bootstrap::CheckLg).size(13).color(Color::from_rgb(0.08, 0.55, 0.08)),
-                    text(format!("Unique solution{suffix}")).size(13),
-                ].spacing(4).align_y(Vertical::Center).into(),
-                _ => row![
-                    bi(Bootstrap::DashLg).size(13).color(Color::from_rgb(0.65, 0.45, 0.0)),
-                    text(format!("{n} solutions — ambiguous{suffix}")).size(13),
-                ].spacing(4).align_y(Vertical::Center).into(),
+                0 => status_row(Bootstrap::XLg,    COLOR_ERROR,    format!("No solutions{suffix}")),
+                1 => status_row(Bootstrap::CheckLg, COLOR_SUCCESS,  format!("Unique solution{suffix}")),
+                _ => status_row(Bootstrap::DashLg,  COLOR_AMBIGUOUS, format!("{n} solutions — ambiguous{suffix}")),
             }
         } else if let Some(res) = result {
             match &res.state {
-                SolutionState::Complete => {
-                    row![
-                        bi(Bootstrap::CheckLg).size(13).color(Color::from_rgb(0.08, 0.55, 0.08)),
-                        text("Solved").size(13),
-                    ].spacing(4).align_y(Vertical::Center).into()
-                }
+                SolutionState::Complete =>
+                    status_row(Bootstrap::CheckLg, COLOR_SUCCESS, "Solved"),
                 SolutionState::Aborted => {
                     let filled = res.grid.iter().filter(|&&c| c != CellState::Unknown).count();
-                    row![
-                        bi(Bootstrap::XCircleFill).size(13).color(Color::from_rgb(0.75, 0.38, 0.0)),
-                        text(format!("Aborted ({filled}/{})", puzzle.width * puzzle.height)).size(13),
-                    ].spacing(4).align_y(Vertical::Center).into()
+                    status_row(Bootstrap::XCircleFill, WARN_COLOR, format!("Aborted ({filled}/{})", puzzle.width * puzzle.height))
                 }
                 SolutionState::Partial => {
                     let filled = res.grid.iter().filter(|&&c| c != CellState::Unknown).count();
-                    row![
-                        bi(Bootstrap::DashLg).size(13).color(Color::from_rgb(0.65, 0.45, 0.0)),
-                        text(format!("Partial ({filled}/{})", puzzle.width * puzzle.height)).size(13),
-                    ].spacing(4).align_y(Vertical::Center).into()
+                    status_row(Bootstrap::DashLg, COLOR_AMBIGUOUS, format!("Partial ({filled}/{})", puzzle.width * puzzle.height))
                 }
-                SolutionState::Unsolvable => row![
-                    bi(Bootstrap::XLg).size(13).color(Color::from_rgb(0.78, 0.08, 0.08)),
-                    text("No solution").size(13),
-                ].spacing(4).align_y(Vertical::Center).into(),
-                SolutionState::Invalid(reason) => row![
-                    bi(Bootstrap::ExclamationCircleFill).size(13)
-                        .color(Color::from_rgb(0.75, 0.38, 0.0)),
-                    text(format!("Invalid — {reason}")).size(13),
-                ].spacing(4).align_y(Vertical::Center).into(),
+                SolutionState::Unsolvable =>
+                    status_row(Bootstrap::XLg, COLOR_ERROR, "No solution"),
+                SolutionState::Invalid(reason) =>
+                    status_row(Bootstrap::ExclamationCircleFill, WARN_COLOR, format!("Invalid — {reason}")),
             }
         } else if manually_solved {
-            row![
-                bi(Bootstrap::CheckLg).size(13).color(Color::from_rgb(0.08, 0.55, 0.08)),
-                text("Solved").size(13),
-            ].spacing(4).align_y(Vertical::Center).into()
+            status_row(Bootstrap::CheckLg, COLOR_SUCCESS, "Solved")
         } else {
             text("Not yet solved").size(13).color(Color::from_rgb(0.45, 0.45, 0.45)).into()
         };
@@ -288,22 +250,13 @@ impl App {
             if let SolutionState::Invalid(reason) = &res.state {
                 let banner = container(
                     row![
-                        bi(Bootstrap::ExclamationCircleFill).size(13)
-                            .color(Color::from_rgb(0.75, 0.38, 0.0)),
+                        bi(Bootstrap::ExclamationCircleFill).size(13).color(WARN_COLOR),
                         text(format!("Invalid — {reason}")).size(13),
                     ]
                     .spacing(8)
                     .align_y(Vertical::Center),
                 )
-                .style(|_| container::Style {
-                    background: Some(Color::from_rgba(0.75, 0.38, 0.0, 0.12).into()),
-                    border: iced::Border {
-                        radius: 4.0.into(),
-                        color: Color::from_rgb(0.75, 0.38, 0.0),
-                        width: 1.0,
-                    },
-                    ..Default::default()
-                })
+                .style(|_| warn_banner_style())
                 .padding([8, 16])
                 .width(Length::Fill);
 
@@ -488,38 +441,12 @@ impl App {
         let mut sections: Vec<Element<Message>> = Vec::new();
 
         for &(label, idx, vis) in states {
-            let color_preview = container(Space::new(Length::Fixed(32.0), Length::Fixed(32.0)))
-                .style(move |_| container::Style {
-                    background: Some(vis.color.into()),
-                    border: iced::Border {
-                        radius: 4.0.into(),
-                        color: Color::from_rgb(0.4, 0.4, 0.4),
-                        width: 1.0,
-                    },
-                    ..Default::default()
-                });
-
-            let r_slider = slider(0.0_f32..=1.0, vis.color.r, move |v| Message::SettingColor(idx, 0, v))
-                .step(0.01_f32).width(Length::Fixed(140.0));
-            let g_slider = slider(0.0_f32..=1.0, vis.color.g, move |v| Message::SettingColor(idx, 1, v))
-                .step(0.01_f32).width(Length::Fixed(140.0));
-            let b_slider = slider(0.0_f32..=1.0, vis.color.b, move |v| Message::SettingColor(idx, 2, v))
-                .step(0.01_f32).width(Length::Fixed(140.0));
-
-            let color_row = row![
-                color_preview,
-                Space::with_width(Length::Fixed(12.0)),
-                column![
-                    row![text("R").size(11).width(Length::Fixed(12.0)), r_slider,
-                         text(format!("{:.2}", vis.color.r)).size(11)].spacing(4).align_y(Vertical::Center),
-                    row![text("G").size(11).width(Length::Fixed(12.0)), g_slider,
-                         text(format!("{:.2}", vis.color.g)).size(11)].spacing(4).align_y(Vertical::Center),
-                    row![text("B").size(11).width(Length::Fixed(12.0)), b_slider,
-                         text(format!("{:.2}", vis.color.b)).size(11)].spacing(4).align_y(Vertical::Center),
-                ].spacing(4),
-            ]
-            .align_y(Vertical::Center)
-            .spacing(0);
+            let color_row = color_editor_row(
+                vis.color,
+                move |v| Message::SettingColor(idx, 0, v),
+                move |v| Message::SettingColor(idx, 1, v),
+                move |v| Message::SettingColor(idx, 2, v),
+            );
 
             let icon_opts: Option<&[Option<Bootstrap>]> = match idx {
                 1 => Some(FILLED_ICON_OPTIONS),
@@ -586,36 +513,12 @@ impl App {
 
         {
             let cb = self.cell_settings.clue_bg;
-            let color_preview = container(Space::new(Length::Fixed(32.0), Length::Fixed(32.0)))
-                .style(move |_| container::Style {
-                    background: Some(cb.into()),
-                    border: iced::Border {
-                        radius: 4.0.into(),
-                        color: Color::from_rgb(0.4, 0.4, 0.4),
-                        width: 1.0,
-                    },
-                    ..Default::default()
-                });
-            let r_slider = slider(0.0_f32..=1.0, cb.r, move |v| Message::SettingClueBg(0, v))
-                .step(0.01_f32).width(Length::Fixed(140.0));
-            let g_slider = slider(0.0_f32..=1.0, cb.g, move |v| Message::SettingClueBg(1, v))
-                .step(0.01_f32).width(Length::Fixed(140.0));
-            let b_slider = slider(0.0_f32..=1.0, cb.b, move |v| Message::SettingClueBg(2, v))
-                .step(0.01_f32).width(Length::Fixed(140.0));
-            let color_row = row![
-                color_preview,
-                Space::with_width(Length::Fixed(12.0)),
-                column![
-                    row![text("R").size(11).width(Length::Fixed(12.0)), r_slider,
-                         text(format!("{:.2}", cb.r)).size(11)].spacing(4).align_y(Vertical::Center),
-                    row![text("G").size(11).width(Length::Fixed(12.0)), g_slider,
-                         text(format!("{:.2}", cb.g)).size(11)].spacing(4).align_y(Vertical::Center),
-                    row![text("B").size(11).width(Length::Fixed(12.0)), b_slider,
-                         text(format!("{:.2}", cb.b)).size(11)].spacing(4).align_y(Vertical::Center),
-                ].spacing(4),
-            ]
-            .align_y(Vertical::Center)
-            .spacing(0);
+            let color_row = color_editor_row(
+                cb,
+                |v| Message::SettingClueBg(0, v),
+                |v| Message::SettingClueBg(1, v),
+                |v| Message::SettingClueBg(2, v),
+            );
             let section = container(
                 column![text("Clue background").size(13), color_row].spacing(8),
             )
@@ -628,36 +531,12 @@ impl App {
 
         {
             let cb = self.cell_settings.sum_bg;
-            let color_preview = container(Space::new(Length::Fixed(32.0), Length::Fixed(32.0)))
-                .style(move |_| container::Style {
-                    background: Some(cb.into()),
-                    border: iced::Border {
-                        radius: 4.0.into(),
-                        color: Color::from_rgb(0.4, 0.4, 0.4),
-                        width: 1.0,
-                    },
-                    ..Default::default()
-                });
-            let r_slider = slider(0.0_f32..=1.0, cb.r, move |v| Message::SettingSumBg(0, v))
-                .step(0.01_f32).width(Length::Fixed(140.0));
-            let g_slider = slider(0.0_f32..=1.0, cb.g, move |v| Message::SettingSumBg(1, v))
-                .step(0.01_f32).width(Length::Fixed(140.0));
-            let b_slider = slider(0.0_f32..=1.0, cb.b, move |v| Message::SettingSumBg(2, v))
-                .step(0.01_f32).width(Length::Fixed(140.0));
-            let color_row = row![
-                color_preview,
-                Space::with_width(Length::Fixed(12.0)),
-                column![
-                    row![text("R").size(11).width(Length::Fixed(12.0)), r_slider,
-                         text(format!("{:.2}", cb.r)).size(11)].spacing(4).align_y(Vertical::Center),
-                    row![text("G").size(11).width(Length::Fixed(12.0)), g_slider,
-                         text(format!("{:.2}", cb.g)).size(11)].spacing(4).align_y(Vertical::Center),
-                    row![text("B").size(11).width(Length::Fixed(12.0)), b_slider,
-                         text(format!("{:.2}", cb.b)).size(11)].spacing(4).align_y(Vertical::Center),
-                ].spacing(4),
-            ]
-            .align_y(Vertical::Center)
-            .spacing(0);
+            let color_row = color_editor_row(
+                cb,
+                |v| Message::SettingSumBg(0, v),
+                |v| Message::SettingSumBg(1, v),
+                |v| Message::SettingSumBg(2, v),
+            );
             let section = container(
                 column![text("Clue sums background").size(13), color_row].spacing(8),
             )
@@ -715,4 +594,41 @@ impl App {
         .height(Length::Fill)
         .into()
     }
+}
+
+// Color preview square + R/G/B sliders.
+fn color_editor_row<'a>(
+    color: Color,
+    mk_r: impl Fn(f32) -> Message + 'static,
+    mk_g: impl Fn(f32) -> Message + 'static,
+    mk_b: impl Fn(f32) -> Message + 'static,
+) -> Element<'a, Message> {
+    let preview = container(Space::new(Length::Fixed(32.0), Length::Fixed(32.0)))
+        .style(move |_| container::Style {
+            background: Some(color.into()),
+            border: iced::Border {
+                radius: 4.0.into(),
+                color: Color::from_rgb(0.4, 0.4, 0.4),
+                width: 1.0,
+            },
+            ..Default::default()
+        });
+    let r_slider = slider(0.0_f32..=1.0, color.r, mk_r).step(0.01_f32).width(Length::Fixed(140.0));
+    let g_slider = slider(0.0_f32..=1.0, color.g, mk_g).step(0.01_f32).width(Length::Fixed(140.0));
+    let b_slider = slider(0.0_f32..=1.0, color.b, mk_b).step(0.01_f32).width(Length::Fixed(140.0));
+    row![
+        preview,
+        Space::with_width(Length::Fixed(12.0)),
+        column![
+            row![text("R").size(11).width(Length::Fixed(12.0)), r_slider,
+                 text(format!("{:.2}", color.r)).size(11)].spacing(4).align_y(Vertical::Center),
+            row![text("G").size(11).width(Length::Fixed(12.0)), g_slider,
+                 text(format!("{:.2}", color.g)).size(11)].spacing(4).align_y(Vertical::Center),
+            row![text("B").size(11).width(Length::Fixed(12.0)), b_slider,
+                 text(format!("{:.2}", color.b)).size(11)].spacing(4).align_y(Vertical::Center),
+        ].spacing(4),
+    ]
+    .align_y(Vertical::Center)
+    .spacing(0)
+    .into()
 }

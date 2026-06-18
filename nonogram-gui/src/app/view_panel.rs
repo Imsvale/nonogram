@@ -11,7 +11,10 @@ use nonogram_core::{CellState, ParsedPuzzle, SolutionState};
 
 use crate::solver::SolverKind;
 use super::{App, LoadedFile, Message};
-use super::style::{bi, style_panel, style_header_row, style_chevron_btn, style_list_row_btn};
+use super::style::{
+    bi, style_panel, style_header_row, style_chevron_btn, style_list_row_btn,
+    status_row, WARN_COLOR, COLOR_SUCCESS, COLOR_ERROR, COLOR_AMBIGUOUS,
+};
 use super::persistence::relative_path;
 
 impl App {
@@ -167,7 +170,7 @@ impl App {
                     }
                     ParsedPuzzle::Invalid { name, .. } => {
                         let name_btn = button(
-                            row![bi(Bootstrap::ExclamationCircleFill).size(11).color(Color::from_rgb(0.75, 0.38, 0.0)), text(name.as_str()).size(13)]
+                            row![bi(Bootstrap::ExclamationCircleFill).size(11).color(WARN_COLOR), text(name.as_str()).size(13)]
                                 .spacing(4).align_y(Vertical::Center),
                         )
                         .on_press(Message::PuzzleFocused(key))
@@ -176,7 +179,7 @@ impl App {
                             if is_focused {
                                 button::Style { background: Some(p.primary.strong.color.into()), text_color: p.primary.strong.text, border: iced::Border::default(), shadow: iced::Shadow::default() }
                             } else {
-                                button::Style { background: match status { button::Status::Hovered => Some(p.primary.weak.color.into()), _ => None }, text_color: Color::from_rgb(0.75, 0.38, 0.0), border: iced::Border::default(), shadow: iced::Shadow::default() }
+                                button::Style { background: match status { button::Status::Hovered => Some(p.primary.weak.color.into()), _ => None }, text_color: WARN_COLOR, border: iced::Border::default(), shadow: iced::Shadow::default() }
                             }
                         })
                         .padding([2, 6]);
@@ -339,14 +342,14 @@ impl App {
                 let (status_icon, status_color, status_text) = match &result.state {
                     SolutionState::Complete => (
                         Bootstrap::CheckLg,
-                        Color::from_rgb(0.08, 0.55, 0.08),
+                        COLOR_SUCCESS,
                         String::from("Solved"),
                     ),
                     SolutionState::Aborted => {
                         let filled = result.grid.iter().filter(|&&c| c != CellState::Unknown).count();
                         (
                             Bootstrap::XCircleFill,
-                            Color::from_rgb(0.75, 0.38, 0.0),
+                            WARN_COLOR,
                             format!("Aborted ({}/{})", filled, puzzle.width * puzzle.height),
                         )
                     }
@@ -354,30 +357,25 @@ impl App {
                         let filled = result.grid.iter().filter(|&&c| c != CellState::Unknown).count();
                         (
                             Bootstrap::DashLg,
-                            Color::from_rgb(0.65, 0.45, 0.0),
+                            COLOR_AMBIGUOUS,
                             format!("Partial ({}/{})", filled, puzzle.width * puzzle.height),
                         )
                     }
                     SolutionState::Unsolvable => (
                         Bootstrap::XLg,
-                        Color::from_rgb(0.78, 0.08, 0.08),
+                        COLOR_ERROR,
                         String::from("No solution"),
                     ),
                     SolutionState::Invalid(reason) => (
                         Bootstrap::ExclamationCircleFill,
-                        Color::from_rgb(0.75, 0.38, 0.0),
+                        WARN_COLOR,
                         format!("Invalid — {reason}"),
                     ),
                 };
 
-                let status_col: Element<Message> = row![
-                    bi(status_icon).size(13).color(status_color),
-                    text(status_text).size(13),
-                ]
-                .spacing(4)
-                .align_y(Vertical::Center)
-                .width(Length::Fill)
-                .into();
+                let status_col: Element<Message> = container(status_row(status_icon, status_color, status_text))
+                    .width(Length::Fill)
+                    .into();
 
                 let row_el = button(
                     row![

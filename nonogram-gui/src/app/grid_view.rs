@@ -10,7 +10,7 @@ use nonogram_core::{CellState, Puzzle, SolveResult};
 
 use super::{Key, Message};
 use super::settings::{AssistanceSettings, CellSettings};
-use super::style::{bi, fwd};
+use super::style::{bi, fwd, warn_inline_style, WARN_COLOR};
 
 // ---------------------------------------------------------------------------
 // Grid step helper
@@ -191,7 +191,7 @@ pub(crate) fn view_grid<'a>(
         + if right_border { 2.0 } else { 0.0 }
         + sum_w;
 
-    let warn_text = Color::from_rgb(0.75, 0.38, 0.0);
+    let warn_text = WARN_COLOR;
 
     macro_rules! solid {
         ($w:expr, $h:expr, $c:expr) => {
@@ -390,11 +390,7 @@ pub(crate) fn view_grid<'a>(
                     .width(Length::Fill).height(Length::Fill)
                     .align_x(Horizontal::Center).align_y(Vertical::Bottom)
                     .padding(Padding { bottom: 2.0, ..Padding::ZERO })
-                    .style(|_| container::Style {
-                        background: Some(Color::from_rgba(0.75, 0.38, 0.0, 0.15).into()),
-                        border: iced::Border { radius: 3.0.into(), color: Color::from_rgb(0.75, 0.38, 0.0), width: 1.0 },
-                        ..Default::default()
-                    })
+                    .style(|_| warn_inline_style())
             } else {
                 container(text(total_col.to_string()).size(13).color(txt_color))
                     .width(Length::Fill).height(Length::Fill)
@@ -589,11 +585,7 @@ pub(crate) fn view_grid<'a>(
                 container(text(row_sum.to_string()).size(13).color(txt_color))
                     .width(Length::Fill).height(Length::Fill)
                     .align_x(Horizontal::Center).align_y(Vertical::Center)
-                    .style(|_| container::Style {
-                        background: Some(Color::from_rgba(0.75, 0.38, 0.0, 0.15).into()),
-                        border: iced::Border { radius: 3.0.into(), color: Color::from_rgb(0.75, 0.38, 0.0), width: 1.0 },
-                        ..Default::default()
-                    })
+                    .style(|_| warn_inline_style())
             } else {
                 container(text(row_sum.to_string()).size(13).color(txt_color))
                     .width(Length::Fill).height(Length::Fill)
@@ -636,11 +628,7 @@ pub(crate) fn view_grid<'a>(
                     .width(Length::Fill).height(Length::Fill)
                     .align_x(Horizontal::Right).align_y(Vertical::Center)
                     .padding(Padding { right: 4.0, ..Padding::ZERO })
-                    .style(|_| container::Style {
-                        background: Some(Color::from_rgba(0.75, 0.38, 0.0, 0.15).into()),
-                        border: iced::Border { radius: 3.0.into(), color: Color::from_rgb(0.75, 0.38, 0.0), width: 1.0 },
-                        ..Default::default()
-                    })
+                    .style(|_| warn_inline_style())
             } else {
                 container(text(total_row.to_string()).size(13).color(txt_color))
                     .width(Length::Fill).height(Length::Fill)
@@ -666,11 +654,7 @@ pub(crate) fn view_grid<'a>(
                 container(text(col_sum.to_string()).size(13).color(txt_color))
                     .width(Length::Fill).height(Length::Fill)
                     .align_x(Horizontal::Center).align_y(Vertical::Center)
-                    .style(|_| container::Style {
-                        background: Some(Color::from_rgba(0.75, 0.38, 0.0, 0.15).into()),
-                        border: iced::Border { radius: 3.0.into(), color: Color::from_rgb(0.75, 0.38, 0.0), width: 1.0 },
-                        ..Default::default()
-                    })
+                    .style(|_| warn_inline_style())
             } else {
                 container(text(col_sum.to_string()).size(13).color(txt_color))
                     .width(Length::Fill).height(Length::Fill)

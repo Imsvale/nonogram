@@ -1,9 +1,15 @@
-use iced::{Font, Theme};
+use iced::{alignment::Vertical, Color, Element, Font, Theme};
 use iced::widget::{button, container};
 use iced_fonts::bootstrap::{self, Bootstrap};
 
 pub(crate) const BOOTSTRAP_FONT: Font = Font::with_name("bootstrap-icons");
-pub(crate) const FORWARD_FONT: Font = Font::with_name("bootstrap-forward");
+pub(crate) const FORWARD_FONT:   Font = Font::with_name("bootstrap-forward");
+
+// Status / warning colors used across view modules.
+pub(crate) const WARN_COLOR:      Color = Color { r: 0.75, g: 0.38, b: 0.00, a: 1.0 };
+pub(crate) const COLOR_SUCCESS:   Color = Color { r: 0.08, g: 0.55, b: 0.08, a: 1.0 };
+pub(crate) const COLOR_ERROR:     Color = Color { r: 0.78, g: 0.08, b: 0.08, a: 1.0 };
+pub(crate) const COLOR_AMBIGUOUS: Color = Color { r: 0.65, g: 0.45, b: 0.00, a: 1.0 };
 
 pub(crate) fn bi(icon: Bootstrap) -> iced::widget::Text<'static> {
     iced::widget::text(bootstrap::icon_to_char(icon).to_string()).font(BOOTSTRAP_FONT)
@@ -51,4 +57,31 @@ pub(crate) fn style_list_row_btn(theme: &Theme, status: button::Status) -> butto
         border: iced::Border::default(),
         shadow: iced::Shadow::default(),
     }
+}
+
+// Warning container style used for full-width error banners in view_detail.
+pub(crate) fn warn_banner_style() -> container::Style {
+    container::Style {
+        background: Some(Color::from_rgba(0.75, 0.38, 0.0, 0.12).into()),
+        border: iced::Border { radius: 4.0.into(), color: WARN_COLOR, width: 1.0 },
+        ..Default::default()
+    }
+}
+
+// Warning container style used for inline clue-sum cells in the grid.
+pub(crate) fn warn_inline_style() -> container::Style {
+    container::Style {
+        background: Some(Color::from_rgba(0.75, 0.38, 0.0, 0.15).into()),
+        border: iced::Border { radius: 3.0.into(), color: WARN_COLOR, width: 1.0 },
+        ..Default::default()
+    }
+}
+
+// Icon + text row for solver-result status lines.
+pub(crate) fn status_row<'a>(icon: Bootstrap, color: Color, msg: impl Into<String>) -> Element<'a, super::Message> {
+    use iced::widget::{row, text};
+    row![bi(icon).size(13).color(color), text(msg.into()).size(13)]
+        .spacing(4)
+        .align_y(Vertical::Center)
+        .into()
 }
