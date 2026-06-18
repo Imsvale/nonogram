@@ -1,0 +1,1403 @@
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
+
+use iced::{
+    alignment::{Horizontal, Vertical},
+    keyboard, mouse,
+    widget::{column, container, horizontal_rule, row, text, vertical_rule},
+    Color, Element, Event, Length, Subscription, Task, Theme, Vector,
+};
+use iced_fonts::bootstrap::Bootstrap;
+
+use nonogram_core::{
+    parse_file, AllSolutions, CancelToken, CellState, ParsedPuzzle, Puzzle,
+    SolveContext, SolveResult, SolutionState,
+};
+
+use crate::convert::convert_letter_content;
+use crate::solver::SolverKind;
+
+pub(crate) mod style;
+pub(crate) mod settings;
+pub(crate) mod persistence;
+pub(crate) mod scan;
+pub(crate) mod export;
+pub(crate) mod grid_view;
+mod view_panel;
+mod view_detail;
+
+use settings::{CellSettings, AssistanceSettings, load_settings, save_settings};
+use persistence::{
+    load_solved, save_solved, save_session, load_session,
+    save_solution_to_file, relative_path,
+};
+use scan::scan_puzzle_dirs;
+use export::{ExportFormat, puzzle_to_file_string, export_puzprv3};
+use grid_view::{grid_at_step, is_puzzle_fully_solved, check_line_fulfilled};
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+pub type Key = (usize, usize); // (file_idx, puzzle_idx)
+
+pub struct LoadedFile {
+    pub path: String,
+    pub name: String,
+    pub folder: Option<String>,
+    pub auto_loaded: bool,
+    pub puzzles: Vec<ParsedPuzzle>,
+    pub collapsed: bool,
+}
+// ---------------------------------------------------------------------------
+// App
+// ---------------------------------------------------------------------------
+
+pub struct App {
+    files: Vec<LoadedFile>,
+    selected: HashSet<Key>,
+    results: HashMap<(Key, SolverKind), SolveResult>,
+    all_solutions: HashMap<(Key, SolverKind), AllSolutions>,
+    solution_index: usize,
+    solver: SolverKind,
+    focused: Option<Key>,
+    status: String,
+    busy: bool,
+    step_cursor: usize,
+    replaying: bool,
+    cancel: CancelToken,
+    modifiers: keyboard::Modifiers,
+    last_anchor: Option<Key>,
+    theme: Theme,
+    // Interactive grid
+    manual_grids: HashMap<Key, Vec<CellState>>,
+    drag_state: Option<CellState>,
+    // Undo/redo stacks per puzzle (each entry is a full grid snapshot)
+    undo_stack: HashMap<Key, Vec<Vec<CellState>>>,
+    redo_stack: HashMap<Key, Vec<Vec<CellState>>>,
+    // Trial mode: each entry is (snapshot_before_tier, first_cell_changed_in_tier)
+    trial_stack: HashMap<Key, Vec<(Vec<CellState>, Option<(usize, usize)>)>>,
+    // Grid pan/drag
+    pan_offset: Vector,
+    // Manual clue dimming
+    manual_dim_rows: HashMap<Key, HashSet<usize>>,
+    manual_dim_cols: HashMap<Key, HashSet<usize>>,
+    // Settings
+    cell_settings: CellSettings,
+    assistance: AssistanceSettings,
+    show_settings: bool,
+    show_export_menu: bool,
+    // Answer reveal spoiler state
+    revealed_answers: HashSet<Key>,
+    // Manually-solved puzzles: (relative_file_path, puzzle_name) — persisted across sessions
+    solved_manually: HashSet<(String, String)>,
+    // Folder-level collapse state
+    folder_collapsed: HashMap<String, bool>,
+    // Incremental scan tracking
+    pending_scans: usize,
+    scan_total: usize,
+}
+
+// ---------------------------------------------------------------------------
+// Message
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    // File operations
+    ImportClicked,
+    ConvertClicked,
+    FileChosen(Option<String>),
+    ConvertChosen(Option<String>),
+    FileLoaded(String, String, Vec<ParsedPuzzle>),
+    ConvertLoaded(String, Vec<ParsedPuzzle>),
+    // Incremental scan: discovery → per-file parse
+    FilePathsDiscovered(Vec<(String, String, Option<String>)>),
+    LoadFileFound(String, String, Option<String>, Vec<ParsedPuzzle>),
+    LoadFileFailed, // parse failed — just decrements pending counter
+    // Refresh
+    RefreshClicked,
+
+    // Selection
+    PuzzleToggled(Key, bool),
+    FileToggled(usize, bool),
+    PuzzleFocused(Key),
+    Unfocus,
+
+    // Solving
+    SolverChanged(SolverKind),
+    SolveSelected,
+    SolveAll,
+    SolveDone(SolverKind, Vec<(Key, SolveResult)>),
+
+    // Exhaustive search
+    FindAllSelected,
+    FindAllDone(SolverKind, Vec<(Key, AllSolutions)>),
+    SolutionPrev,
+    SolutionNext,
+
+    // Step navigation
+    StepFirst,
+    StepBack,
+    StepForward,
+    StepLast,
+    ReplayToggle,
+    ReplayTick,
+
+    // List toolbar
+    SelectAll,
+    DeselectAll,
+    ExpandAll,
+    CollapseAll,
+
+    // Collapse
+    FileCollapseToggled(usize),
+    FolderCollapseToggled(String),
+    FolderToggled(String, bool),
+
+    // Theme
+    ThemeToggled,
+
+    // Keyboard modifiers
+    ModifiersChanged(keyboard::Modifiers),
+
+    // Abort
+    AbortClicked,
+
+    // Interactive grid
+    CellClicked { key: Key, row: usize, col: usize, right: bool },
+    CellEntered { key: Key, row: usize, col: usize },
+    DragEnded,
+
+    // Settings
+    SettingsOpened,
+    SettingsClosed,
+    // state_idx: 0=Unknown, 1=Filled, 2=Empty; channel: 0=R, 1=G, 2=B
+    SettingColor(u8, u8, f32),
+    SettingIcon(u8, Option<Bootstrap>),
+    SettingClueBg(u8, f32),
+    SettingSumBg(u8, f32),
+    AssistToggle(u8),  // 0=auto_dim, 1=auto_fill_empty, 2=clue_sums_with_gaps
+    ClueDimToggle(Key, bool, usize),  // (puzzle key, is_col, row_or_col_idx)
+
+    // Grid editing
+    ClearGrid(Key),
+    UndoGrid(Key),
+    RedoGrid(Key),
+
+    // Trial mode
+    TrialEnter,
+    TrialReject,
+
+    // Clipboard / export
+    CopyPuzzleString(Key),
+    ExportMenuToggled,
+    ExportFormatSelected(ExportFormat),
+    ExportSaved(String, Option<String>, Option<String>), // (content, path, error)
+
+    // Grid pan
+    PanOffsetChanged(Vector),
+
+    // Spoiler reveal
+    RevealAnswer(Key),
+
+    // Errors
+    Error(String),
+}
+
+// ---------------------------------------------------------------------------
+// impl App
+// ---------------------------------------------------------------------------
+
+impl App {
+    pub fn new() -> (Self, Task<Message>) {
+        let (cell_settings, assistance) = load_settings();
+        let app = App {
+            files: Vec::new(),
+            selected: HashSet::new(),
+            results: HashMap::new(),
+            all_solutions: HashMap::new(),
+            solution_index: 0,
+            solver: SolverKind::GraphSearch,
+            focused: None,
+            status: String::from("Loading default puzzle files…"),
+            busy: true,
+            step_cursor: 0,
+            replaying: false,
+            cancel: CancelToken::default(),
+            modifiers: keyboard::Modifiers::default(),
+            last_anchor: None,
+            theme: Theme::Dark,
+            manual_grids: HashMap::new(),
+            drag_state: None,
+            undo_stack: HashMap::new(),
+            redo_stack: HashMap::new(),
+            trial_stack: HashMap::new(),
+            pan_offset: Vector::ZERO,
+            manual_dim_rows: HashMap::new(),
+            manual_dim_cols: HashMap::new(),
+            cell_settings,
+            assistance,
+            show_settings: false,
+            show_export_menu: false,
+            revealed_answers: HashSet::new(),
+            solved_manually: load_solved(),
+            folder_collapsed: HashMap::new(),
+            pending_scans: 0,
+            scan_total: 0,
+        };
+
+        let task = Task::perform(scan_puzzle_dirs(), Message::FilePathsDiscovered);
+
+        (app, task)
+    }
+
+    pub fn theme(&self) -> Theme {
+        self.theme.clone()
+    }
+
+    pub fn subscription(&self) -> Subscription<Message> {
+        let timer = if self.replaying {
+            iced::time::every(std::time::Duration::from_millis(400))
+                .map(|_| Message::ReplayTick)
+        } else {
+            Subscription::none()
+        };
+
+        let kbd_and_mouse = iced::event::listen_with(|event, _, _| match event {
+            Event::Keyboard(keyboard::Event::ModifiersChanged(mods)) => {
+                Some(Message::ModifiersChanged(mods))
+            }
+            Event::Mouse(mouse::Event::ButtonReleased(_)) => Some(Message::DragEnded),
+            _ => None,
+        });
+
+        Subscription::batch([timer, kbd_and_mouse])
+    }
+
+    pub fn update(&mut self, msg: Message) -> Task<Message> {
+        match msg {
+            // ── File loading ──────────────────────────────────────────────
+            Message::ImportClicked => Task::perform(
+                async {
+                    rfd::AsyncFileDialog::new()
+                        .set_title("Import puzzle file")
+                        .add_filter("Nonogram puzzles", &["txt"])
+                        .pick_file()
+                        .await
+                        .map(|h| h.path().to_string_lossy().into_owned())
+                },
+                Message::FileChosen,
+            ),
+
+            Message::ConvertClicked => Task::perform(
+                async {
+                    rfd::AsyncFileDialog::new()
+                        .set_title("Convert letter-encoded puzzle file")
+                        .add_filter("Text files", &["txt"])
+                        .pick_file()
+                        .await
+                        .map(|h| h.path().to_string_lossy().into_owned())
+                },
+                Message::ConvertChosen,
+            ),
+
+            Message::FileChosen(Some(path)) => {
+                let p2 = path.clone();
+                let name = Path::new(&path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| path.clone());
+                let n2 = name.clone();
+                self.status = format!("Loading {name}…");
+                self.busy = true;
+                Task::perform(
+                    async move {
+                        parse_file(&p2).map(|p| (p2, n2, p)).map_err(|e| e.to_string())
+                    },
+                    |r| match r {
+                        Ok((path, name, puzzles)) => Message::FileLoaded(path, name, puzzles),
+                        Err(e) => Message::Error(e),
+                    },
+                )
+            }
+            Message::FileChosen(None) => Task::none(),
+
+            Message::ConvertChosen(Some(path)) => {
+                let p2 = path.clone();
+                let name = Path::new(&path)
+                    .file_stem()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| path.clone());
+                self.status = format!("Converting {name}…");
+                self.busy = true;
+                Task::perform(
+                    async move {
+                        let content = std::fs::read_to_string(&p2)
+                            .map_err(|e| e.to_string())?;
+                        let puzzles = convert_letter_content(&content, &name)
+                            .into_iter().map(ParsedPuzzle::Valid).collect();
+                        Ok::<_, String>((name, puzzles))
+                    },
+                    |r| match r {
+                        Ok((name, puzzles)) => Message::ConvertLoaded(name, puzzles),
+                        Err(e) => Message::Error(e),
+                    },
+                )
+            }
+            Message::ConvertChosen(None) => Task::none(),
+
+            Message::FileLoaded(path, name, puzzles) => {
+                let n_valid = puzzles.iter().filter(|e| e.is_valid()).count();
+                let n_invalid = puzzles.len() - n_valid;
+                self.status = if n_invalid > 0 {
+                    format!("Loaded {n_valid} puzzle(s) from {name} ({n_invalid} invalid)")
+                } else {
+                    format!("Loaded {n_valid} puzzle(s) from {name}")
+                };
+                self.busy = false;
+                if !self.files.iter().any(|f| f.path == path) {
+                    self.files.push(LoadedFile { path, name, folder: None, auto_loaded: false, puzzles, collapsed: true });
+                }
+                Task::none()
+            }
+
+            Message::ConvertLoaded(name, puzzles) => {
+                let n_valid = puzzles.iter().filter(|e| e.is_valid()).count();
+                self.status = format!("Converted {n_valid} puzzle(s) as \"{name}\"");
+                self.busy = false;
+                let display = format!("{name} (converted)");
+                self.files.push(LoadedFile {
+                    path: format!("__converted__{name}"),
+                    name: display,
+                    folder: None,
+                    auto_loaded: false,
+                    puzzles,
+                    collapsed: true,
+                });
+                Task::none()
+            }
+
+            Message::FilePathsDiscovered(paths) => {
+                if paths.is_empty() {
+                    self.busy = false;
+                    self.status = "No default puzzles found in puzzles/".into();
+                    return Task::none();
+                }
+                let n = paths.len();
+                self.scan_total = n;
+                self.pending_scans = n;
+                self.status = format!("Loading 0 / {n} files…");
+                Task::batch(paths.into_iter().map(|(path, name, folder)| {
+                    Task::perform(
+                        async move {
+                            parse_file(&path).ok().map(|puzzles| (path, name, folder, puzzles))
+                        },
+                        |opt| match opt {
+                            Some((p, n, f, pz)) => Message::LoadFileFound(p, n, f, pz),
+                            None => Message::LoadFileFailed,
+                        },
+                    )
+                }))
+            }
+
+            Message::LoadFileFound(path, name, folder, puzzles) => {
+                self.pending_scans = self.pending_scans.saturating_sub(1);
+                if let Some(existing) = self.files.iter_mut().find(|f| f.path == path) {
+                    existing.puzzles = puzzles;
+                    existing.folder = folder;
+                } else {
+                    if let Some(ref f) = folder {
+                        self.folder_collapsed.entry(f.clone()).or_insert(true);
+                    }
+                    self.files.push(LoadedFile { path, name, folder, auto_loaded: true, puzzles, collapsed: true });
+                }
+                if self.pending_scans == 0 {
+                    self.busy = false;
+                    let (v, iv) = self.files.iter().filter(|f| f.auto_loaded).fold((0usize, 0usize), |(v, iv), f| {
+                        let valid = f.puzzles.iter().filter(|e| e.is_valid()).count();
+                        (v + valid, iv + f.puzzles.len() - valid)
+                    });
+                    self.status = if iv > 0 {
+                        format!("Loaded {v} puzzle(s) from puzzles/ ({iv} invalid)")
+                    } else {
+                        format!("Loaded {v} puzzle(s) from puzzles/")
+                    };
+                    self.restore_session();
+                } else {
+                    let done = self.scan_total - self.pending_scans;
+                    self.status = format!("Loading {done} / {} files…", self.scan_total);
+                }
+                Task::none()
+            }
+
+            Message::LoadFileFailed => {
+                self.pending_scans = self.pending_scans.saturating_sub(1);
+                if self.pending_scans == 0 {
+                    self.busy = false;
+                    let (v, iv) = self.files.iter().filter(|f| f.auto_loaded).fold((0usize, 0usize), |(v, iv), f| {
+                        let valid = f.puzzles.iter().filter(|e| e.is_valid()).count();
+                        (v + valid, iv + f.puzzles.len() - valid)
+                    });
+                    self.status = if v > 0 {
+                        if iv > 0 { format!("Loaded {v} puzzle(s) from puzzles/ ({iv} invalid)") }
+                        else { format!("Loaded {v} puzzle(s) from puzzles/") }
+                    } else {
+                        "No default puzzles found in puzzles/".into()
+                    };
+                    self.restore_session();
+                }
+                Task::none()
+            }
+
+            Message::RefreshClicked => {
+                if self.busy { return Task::none(); }
+                self.busy = true;
+                self.status = "Rescanning puzzles/…".into();
+                Task::perform(scan_puzzle_dirs(), Message::FilePathsDiscovered)
+            }
+
+            // ── List toolbar ──────────────────────────────────────────────
+            Message::SelectAll => {
+                for fi in 0..self.files.len() {
+                    for (pi, entry) in self.files[fi].puzzles.iter().enumerate() {
+                        if entry.is_valid() { self.selected.insert((fi, pi)); }
+                    }
+                }
+                Task::none()
+            }
+            Message::DeselectAll => {
+                self.selected.clear();
+                Task::none()
+            }
+            Message::ExpandAll => {
+                for file in &mut self.files { file.collapsed = false; }
+                for v in self.folder_collapsed.values_mut() { *v = false; }
+                Task::none()
+            }
+            Message::CollapseAll => {
+                for file in &mut self.files { file.collapsed = true; }
+                for v in self.folder_collapsed.values_mut() { *v = true; }
+                Task::none()
+            }
+
+            Message::FileCollapseToggled(fi) => {
+                if let Some(file) = self.files.get_mut(fi) {
+                    file.collapsed = !file.collapsed;
+                }
+                Task::none()
+            }
+
+            Message::FolderCollapseToggled(folder) => {
+                let entry = self.folder_collapsed.entry(folder).or_insert(true);
+                *entry = !*entry;
+                Task::none()
+            }
+
+            Message::FolderToggled(folder, checked) => {
+                for (fi, file) in self.files.iter().enumerate() {
+                    if file.folder.as_deref() == Some(folder.as_str()) {
+                        for (pi, entry) in file.puzzles.iter().enumerate() {
+                            if !entry.is_valid() { continue; }
+                            if checked { self.selected.insert((fi, pi)); }
+                            else { self.selected.remove(&(fi, pi)); }
+                        }
+                    }
+                }
+                Task::none()
+            }
+
+            // ── Theme ─────────────────────────────────────────────────────
+            Message::ThemeToggled => {
+                self.theme = match self.theme {
+                    Theme::Light => Theme::Dark,
+                    _            => Theme::Light,
+                };
+                Task::none()
+            }
+
+            // ── Modifiers ─────────────────────────────────────────────────
+            Message::ModifiersChanged(mods) => {
+                self.modifiers = mods;
+                Task::none()
+            }
+
+            // ── Selection ─────────────────────────────────────────────────
+            Message::PuzzleToggled(key, checked) => {
+                if checked { self.selected.insert(key); } else { self.selected.remove(&key); }
+                Task::none()
+            }
+
+            Message::FileToggled(fi, checked) => {
+                if fi < self.files.len() {
+                    for (pi, entry) in self.files[fi].puzzles.iter().enumerate() {
+                        if !entry.is_valid() { continue; }
+                        if checked { self.selected.insert((fi, pi)); }
+                        else { self.selected.remove(&(fi, pi)); }
+                    }
+                }
+                Task::none()
+            }
+
+            Message::PuzzleFocused(key) => {
+                let (fi, pi) = key;
+                let is_valid = self.files.get(fi)
+                    .and_then(|f| f.puzzles.get(pi))
+                    .map(|e| e.is_valid())
+                    .unwrap_or(false);
+                let shift = self.modifiers.shift();
+                let ctrl  = self.modifiers.control() || self.modifiers.logo();
+                if is_valid {
+                    match (shift, ctrl) {
+                        (false, false) => {
+                            self.selected.clear();
+                            self.selected.insert(key);
+                            self.last_anchor = Some(key);
+                        }
+                        (false, true) => {
+                            if self.selected.contains(&key) {
+                                self.selected.remove(&key);
+                            } else {
+                                self.selected.insert(key);
+                                self.last_anchor = Some(key);
+                            }
+                        }
+                        (true, _) => {
+                            let anchor = self.last_anchor.unwrap_or(key);
+                            if !ctrl { self.selected.clear(); }
+                            self.select_range(anchor, key);
+                        }
+                    }
+                }
+                self.focused = Some(key);
+                self.replaying = false;
+                self.show_export_menu = false;
+
+                // Persist this puzzle as the last focused for next-session restore.
+                if let Some(file) = self.files.get(fi) {
+                    if let Some(puzzle) = file.puzzles.get(pi).and_then(|e| e.as_puzzle()) {
+                        save_session(&relative_path(&file.path), &puzzle.name);
+                    }
+                }
+
+                // Seed manual grid from persisted solution if we have no grid yet.
+                if !self.manual_grids.contains_key(&key) {
+                    let (fi, pi) = key;
+                    if let Some(sol) = self.files.get(fi)
+                        .and_then(|f| f.puzzles.get(pi))
+                        .and_then(|e| e.as_puzzle())
+                        .and_then(|p| p.solution.as_ref())
+                    {
+                        self.manual_grids.insert(key, sol.clone());
+                    }
+                }
+
+                let all = self.all_solutions.get(&(key, self.solver));
+                self.solution_index = all.map(|a| a.solutions.len().saturating_sub(1)).unwrap_or(0);
+                self.step_cursor = all
+                    .and_then(|a| a.solutions.get(self.solution_index))
+                    .or_else(|| self.results.get(&(key, self.solver)))
+                    .map(|r| r.steps.len())
+                    .unwrap_or(0);
+                Task::none()
+            }
+
+            Message::Unfocus => {
+                self.focused = None;
+                self.replaying = false;
+                self.show_export_menu = false;
+                Task::none()
+            }
+
+            // ── Solver ────────────────────────────────────────────────────
+            Message::SolverChanged(kind) => {
+                self.solver = kind;
+                self.replaying = false;
+                let all = self.focused.and_then(|key| self.all_solutions.get(&(key, kind)));
+                self.solution_index = all.map(|a| a.solutions.len().saturating_sub(1)).unwrap_or(0);
+                self.step_cursor = all
+                    .and_then(|a| a.solutions.get(self.solution_index))
+                    .or_else(|| self.focused.and_then(|key| self.results.get(&(key, kind))))
+                    .map(|r| r.steps.len())
+                    .unwrap_or(0);
+                Task::none()
+            }
+
+            Message::SolveSelected => {
+                let to_solve: Vec<(Key, Puzzle)> = self.selected.iter()
+                    .filter_map(|&(fi, pi)| {
+                        self.files.get(fi)?.puzzles.get(pi)?.as_puzzle().map(|p| ((fi, pi), p.clone()))
+                    })
+                    .collect();
+                if to_solve.is_empty() { return Task::none(); }
+                let solver = self.solver;
+                self.cancel.reset();
+                let ctx = SolveContext { cancel: self.cancel.clone() };
+                self.busy = true;
+                self.status = format!("Solving {} puzzle(s)…", to_solve.len());
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            to_solve.into_iter()
+                                .map(|(key, puzzle)| (key, solver.solve(&puzzle, &ctx)))
+                                .collect::<Vec<_>>()
+                        })
+                        .await
+                        .unwrap_or_default()
+                    },
+                    move |results| Message::SolveDone(solver, results),
+                )
+            }
+
+            Message::SolveAll => {
+                let to_solve: Vec<(Key, Puzzle)> = self.files.iter().enumerate()
+                    .flat_map(|(fi, f)| {
+                        f.puzzles.iter().enumerate()
+                            .filter_map(move |(pi, e)| e.as_puzzle().map(|p| ((fi, pi), p.clone())))
+                    })
+                    .collect();
+                if to_solve.is_empty() { return Task::none(); }
+                let solver = self.solver;
+                self.cancel.reset();
+                let ctx = SolveContext { cancel: self.cancel.clone() };
+                self.busy = true;
+                self.status = format!("Solving {} puzzle(s)…", to_solve.len());
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            to_solve.into_iter()
+                                .map(|(key, puzzle)| (key, solver.solve(&puzzle, &ctx)))
+                                .collect::<Vec<_>>()
+                        })
+                        .await
+                        .unwrap_or_default()
+                    },
+                    move |results| Message::SolveDone(solver, results),
+                )
+            }
+
+            Message::SolveDone(solver_kind, results) => {
+                let n = results.len();
+                let solved  = results.iter().filter(|(_, r)| r.state == SolutionState::Complete).count();
+                let aborted = results.iter().filter(|(_, r)| r.state == SolutionState::Aborted).count();
+                for (key, result) in results {
+                    if Some(key) == self.focused && solver_kind == self.solver {
+                        self.step_cursor = result.steps.len();
+                    }
+                    self.results.insert((key, solver_kind), result);
+                }
+                self.busy = false;
+                self.status = if aborted > 0 {
+                    format!("Done: {solved}/{n} solved, {aborted} aborted")
+                } else {
+                    format!("Done: {solved}/{n} fully solved")
+                };
+                Task::none()
+            }
+
+            Message::AbortClicked => {
+                self.cancel.cancel();
+                Task::none()
+            }
+
+            // ── Exhaustive search ─────────────────────────────────────────
+            Message::FindAllSelected => {
+                if !self.solver.supports_exhaustive() { return Task::none(); }
+                let to_solve: Vec<(Key, Puzzle)> = self.selected.iter()
+                    .filter_map(|&(fi, pi)| {
+                        self.files.get(fi)?.puzzles.get(pi)?.as_puzzle().map(|p| ((fi, pi), p.clone()))
+                    })
+                    .collect();
+                if to_solve.is_empty() { return Task::none(); }
+                let solver = self.solver;
+                self.cancel.reset();
+                let ctx = SolveContext { cancel: self.cancel.clone() };
+                self.busy = true;
+                self.status = format!("Finding all solutions for {} puzzle(s)…", to_solve.len());
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            to_solve.into_iter()
+                                .filter_map(|(key, puzzle)| {
+                                    solver.solve_all(&puzzle, &ctx).map(|r| (key, r))
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .await
+                        .unwrap_or_default()
+                    },
+                    move |results| Message::FindAllDone(solver, results),
+                )
+            }
+
+            Message::FindAllDone(solver_kind, results) => {
+                let total    = results.iter().map(|(_, r)| r.solutions.len()).sum::<usize>();
+                let expanded = results.iter().map(|(_, r)| r.nodes_expanded).sum::<usize>();
+                let pushed   = results.iter().map(|(_, r)| r.nodes_pushed).sum::<usize>();
+                let aborted  = results.iter().any(|(_, r)| r.aborted);
+                for (key, result) in results {
+                    if Some(key) == self.focused && solver_kind == self.solver {
+                        self.solution_index = result.solutions.len().saturating_sub(1);
+                        self.step_cursor = result.solutions
+                            .get(self.solution_index)
+                            .map(|r| r.steps.len())
+                            .unwrap_or(0);
+                    }
+                    self.all_solutions.insert((key, solver_kind), result);
+                }
+                self.busy = false;
+                self.status = if aborted {
+                    format!("{total} solution(s) found (aborted) — expanded: {expanded}, pushed: {pushed}")
+                } else {
+                    format!("{total} solution(s) found — expanded: {expanded}, pushed: {pushed}")
+                };
+                Task::none()
+            }
+
+            Message::SolutionPrev => {
+                if self.solution_index > 0 {
+                    self.solution_index -= 1;
+                    self.replaying = false;
+                    if let Some(key) = self.focused {
+                        self.step_cursor = self.all_solutions.get(&(key, self.solver))
+                            .and_then(|a| a.solutions.get(self.solution_index))
+                            .map(|r| r.steps.len())
+                            .unwrap_or(0);
+                    }
+                }
+                Task::none()
+            }
+
+            Message::SolutionNext => {
+                if let Some(key) = self.focused {
+                    let max_idx = self.all_solutions.get(&(key, self.solver))
+                        .map(|a| a.solutions.len().saturating_sub(1))
+                        .unwrap_or(0);
+                    if self.solution_index < max_idx {
+                        self.solution_index += 1;
+                        self.replaying = false;
+                        self.step_cursor = self.all_solutions.get(&(key, self.solver))
+                            .and_then(|a| a.solutions.get(self.solution_index))
+                            .map(|r| r.steps.len())
+                            .unwrap_or(0);
+                    }
+                }
+                Task::none()
+            }
+
+            // ── Step navigation ───────────────────────────────────────────
+            Message::StepFirst => {
+                self.step_cursor = 0;
+                self.replaying = false;
+                Task::none()
+            }
+            Message::StepBack => {
+                self.step_cursor = self.step_cursor.saturating_sub(1);
+                Task::none()
+            }
+            Message::StepForward => {
+                if let Some(key) = self.focused {
+                    let max = self.active_steps_len(key);
+                    self.step_cursor = (self.step_cursor + 1).min(max);
+                }
+                Task::none()
+            }
+            Message::StepLast => {
+                if let Some(key) = self.focused {
+                    let max = self.active_steps_len(key);
+                    self.step_cursor = max;
+                }
+                Task::none()
+            }
+            Message::ReplayToggle => {
+                self.replaying = !self.replaying;
+                if self.replaying {
+                    if let Some(key) = self.focused {
+                        let max = self.active_steps_len(key);
+                        if self.step_cursor >= max { self.step_cursor = 0; }
+                    } else {
+                        self.replaying = false;
+                    }
+                }
+                Task::none()
+            }
+            Message::ReplayTick => {
+                if let Some(key) = self.focused {
+                    let max = self.active_steps_len(key);
+                    if self.step_cursor >= max {
+                        self.replaying = false;
+                    } else {
+                        self.step_cursor += 1;
+                    }
+                } else {
+                    self.replaying = false;
+                }
+                Task::none()
+            }
+
+            // ── Interactive grid ──────────────────────────────────────────
+            Message::CellClicked { key, row, col, right } => {
+                let (fi, pi) = key;
+                let Some((w, h)) = self.files.get(fi)
+                    .and_then(|f| f.puzzles.get(pi))
+                    .and_then(|e| e.as_puzzle())
+                    .map(|p| (p.width, p.height))
+                else { return Task::none(); };
+
+                // Initialize manual grid from current display if not yet present.
+                if !self.manual_grids.contains_key(&key) {
+                    let init = self.compute_display_grid(key).unwrap_or_else(|| {
+                        vec![CellState::Unknown; w * h]
+                    });
+                    self.manual_grids.insert(key, init);
+                }
+
+                // Push undo snapshot before any modification; clear redo.
+                {
+                    let snapshot = self.manual_grids[&key].clone();
+                    let stack = self.undo_stack.entry(key).or_default();
+                    stack.push(snapshot);
+                    if stack.len() > 500 { stack.remove(0); }
+                    self.redo_stack.remove(&key);
+                }
+
+                let mg = self.manual_grids.get_mut(&key).unwrap();
+                let current = mg[row * w + col];
+                let target = if right {
+                    match current {
+                        CellState::Empty => CellState::Unknown,
+                        _                => CellState::Empty,
+                    }
+                } else {
+                    match current {
+                        CellState::Filled => CellState::Unknown,
+                        _                 => CellState::Filled,
+                    }
+                };
+                mg[row * w + col] = target;
+                self.drag_state = Some(target);
+                // Record origin cell for the current trial tier (first click only)
+                if let Some(stack) = self.trial_stack.get_mut(&key) {
+                    if let Some((_, origin)) = stack.last_mut() {
+                        if origin.is_none() {
+                            *origin = Some((row, col));
+                        }
+                    }
+                }
+                // Auto-fill empties when a line's clues become fulfilled.
+                if self.assistance.auto_fill_empty && target != CellState::Unknown {
+                    let no_solver = self.results.get(&(key, self.solver)).is_none()
+                        && self.all_solutions.get(&(key, self.solver)).is_none();
+                    if no_solver {
+                        let clue_data = self.files.get(fi)
+                            .and_then(|f| f.puzzles.get(pi))
+                            .and_then(|e| e.as_puzzle())
+                            .map(|p| (p.row_clues.clone(), p.col_clues.clone(), p.width, p.height));
+                        if let Some((row_clues, col_clues, w, h)) = clue_data {
+                            let mg = self.manual_grids.get_mut(&key).unwrap();
+                            let row_cells: Vec<CellState> = (0..w).map(|c| mg[row * w + c]).collect();
+                            if check_line_fulfilled(&row_clues[row], &row_cells) {
+                                for c in 0..w {
+                                    if mg[row * w + c] == CellState::Unknown {
+                                        mg[row * w + c] = CellState::Empty;
+                                    }
+                                }
+                            }
+                            let col_cells: Vec<CellState> = (0..h).map(|r| mg[r * w + col]).collect();
+                            if check_line_fulfilled(&col_clues[col], &col_cells) {
+                                for r in 0..h {
+                                    if mg[r * w + col] == CellState::Unknown {
+                                        mg[r * w + col] = CellState::Empty;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // Detect full manual solve.
+                {
+                    let solved = self.files.get(fi)
+                        .and_then(|f| f.puzzles.get(pi).and_then(|e| e.as_puzzle())
+                            .zip(self.manual_grids.get(&key))
+                            .map(|(puzzle, grid)| (f.path.clone(), relative_path(&f.path), puzzle.name.clone(), puzzle.solution.is_none(), is_puzzle_fully_solved(puzzle, grid))));
+                    if let Some((file_path, rel, name, no_file_solution, true)) = solved {
+                        let newly_tracked = self.solved_manually.insert((rel, name.clone()));
+                        if newly_tracked {
+                            save_solved(&self.solved_manually);
+                            self.revealed_answers.insert(key);
+                        }
+                        if newly_tracked || no_file_solution {
+                            if let Some(grid) = self.manual_grids.get(&key) {
+                                let sol: String = grid.iter().map(|&c| if c == CellState::Filled { '1' } else { '0' }).collect();
+                                save_solution_to_file(&file_path, &name, &sol);
+                            }
+                        }
+                    }
+                }
+                Task::none()
+            }
+
+            Message::CellEntered { key, row, col } => {
+                if let Some(target) = self.drag_state {
+                    let (fi, pi) = key;
+                    let w = self.files.get(fi)
+                        .and_then(|f| f.puzzles.get(pi))
+                        .and_then(|e| e.as_puzzle())
+                        .map(|p| p.width)
+                        .unwrap_or(0);
+                    if let Some(mg) = self.manual_grids.get_mut(&key) {
+                        if row * w + col < mg.len() {
+                            mg[row * w + col] = target;
+                        }
+                    }
+                    // Auto-fill empties when a line's clues become fulfilled.
+                    if self.assistance.auto_fill_empty && target != CellState::Unknown {
+                        let no_solver = self.results.get(&(key, self.solver)).is_none()
+                            && self.all_solutions.get(&(key, self.solver)).is_none();
+                        if no_solver {
+                            let clue_data = self.files.get(fi)
+                                .and_then(|f| f.puzzles.get(pi))
+                                .and_then(|e| e.as_puzzle())
+                                .map(|p| (p.row_clues.clone(), p.col_clues.clone(), p.width, p.height));
+                            if let Some((row_clues, col_clues, w, h)) = clue_data {
+                                let mg = self.manual_grids.get_mut(&key).unwrap();
+                                let row_cells: Vec<CellState> = (0..w).map(|c| mg[row * w + c]).collect();
+                                if check_line_fulfilled(&row_clues[row], &row_cells) {
+                                    for c in 0..w {
+                                        if mg[row * w + c] == CellState::Unknown {
+                                            mg[row * w + c] = CellState::Empty;
+                                        }
+                                    }
+                                }
+                                let col_cells: Vec<CellState> = (0..h).map(|r| mg[r * w + col]).collect();
+                                if check_line_fulfilled(&col_clues[col], &col_cells) {
+                                    for r in 0..h {
+                                        if mg[r * w + col] == CellState::Unknown {
+                                            mg[r * w + col] = CellState::Empty;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Detect full manual solve.
+                    let solved = self.files.get(fi)
+                        .and_then(|f| f.puzzles.get(pi).and_then(|e| e.as_puzzle())
+                            .zip(self.manual_grids.get(&key))
+                            .map(|(puzzle, grid)| (f.path.clone(), relative_path(&f.path), puzzle.name.clone(), puzzle.solution.is_none(), is_puzzle_fully_solved(puzzle, grid))));
+                    if let Some((file_path, rel, name, no_file_solution, true)) = solved {
+                        let newly_tracked = self.solved_manually.insert((rel, name.clone()));
+                        if newly_tracked {
+                            save_solved(&self.solved_manually);
+                            self.revealed_answers.insert(key);
+                        }
+                        if newly_tracked || no_file_solution {
+                            if let Some(grid) = self.manual_grids.get(&key) {
+                                let sol: String = grid.iter().map(|&c| if c == CellState::Filled { '1' } else { '0' }).collect();
+                                save_solution_to_file(&file_path, &name, &sol);
+                            }
+                        }
+                    }
+                }
+                Task::none()
+            }
+
+            Message::DragEnded => {
+                self.drag_state = None;
+                Task::none()
+            }
+
+            Message::PanOffsetChanged(offset) => {
+                self.pan_offset = offset;
+                Task::none()
+            }
+
+            // ── Settings ──────────────────────────────────────────────────
+            Message::SettingsOpened => {
+                self.show_settings = true;
+                Task::none()
+            }
+            Message::SettingsClosed => {
+                self.show_settings = false;
+                Task::none()
+            }
+            Message::SettingColor(state_idx, channel, value) => {
+                if let Some(vis) = self.cell_settings.visual_for_mut(state_idx) {
+                    match channel {
+                        0 => vis.color.r = value,
+                        1 => vis.color.g = value,
+                        2 => vis.color.b = value,
+                        _ => {}
+                    }
+                }
+                save_settings(&self.cell_settings, &self.assistance);
+                Task::none()
+            }
+            Message::SettingIcon(state_idx, icon) => {
+                if let Some(vis) = self.cell_settings.visual_for_mut(state_idx) {
+                    vis.icon = icon;
+                }
+                save_settings(&self.cell_settings, &self.assistance);
+                Task::none()
+            }
+            Message::SettingClueBg(channel, value) => {
+                match channel {
+                    0 => self.cell_settings.clue_bg.r = value,
+                    1 => self.cell_settings.clue_bg.g = value,
+                    2 => self.cell_settings.clue_bg.b = value,
+                    _ => {}
+                }
+                save_settings(&self.cell_settings, &self.assistance);
+                Task::none()
+            }
+            Message::SettingSumBg(channel, value) => {
+                match channel {
+                    0 => self.cell_settings.sum_bg.r = value,
+                    1 => self.cell_settings.sum_bg.g = value,
+                    2 => self.cell_settings.sum_bg.b = value,
+                    _ => {}
+                }
+                save_settings(&self.cell_settings, &self.assistance);
+                Task::none()
+            }
+
+            Message::AssistToggle(idx) => {
+                match idx {
+                    0 => self.assistance.auto_dim             = !self.assistance.auto_dim,
+                    1 => self.assistance.auto_fill_empty      = !self.assistance.auto_fill_empty,
+                    2 => self.assistance.clue_sums_with_gaps  = !self.assistance.clue_sums_with_gaps,
+                    _ => {}
+                }
+                save_settings(&self.cell_settings, &self.assistance);
+                Task::none()
+            }
+
+            Message::ClueDimToggle(key, is_col, idx) => {
+                let map = if is_col { &mut self.manual_dim_cols } else { &mut self.manual_dim_rows };
+                let set = map.entry(key).or_default();
+                if !set.remove(&idx) { set.insert(idx); }
+                Task::none()
+            }
+
+            Message::RevealAnswer(key) => {
+                self.revealed_answers.insert(key);
+                Task::none()
+            }
+
+            Message::TrialEnter => {
+                if let Some(key) = self.focused {
+                    let (fi, pi) = key;
+                    let Some((w, h)) = self.files.get(fi)
+                        .and_then(|f| f.puzzles.get(pi))
+                        .and_then(|e| e.as_puzzle())
+                        .map(|p| (p.width, p.height))
+                    else { return Task::none(); };
+                    // Snapshot = current displayed state
+                    let snapshot = self.manual_grids.get(&key).cloned()
+                        .or_else(|| self.compute_display_grid(key))
+                        .unwrap_or_else(|| vec![CellState::Unknown; w * h]);
+                    // Ensure manual_grids has this state so future clicks go into it
+                    self.manual_grids.entry(key).or_insert_with(|| snapshot.clone());
+                    self.trial_stack.entry(key).or_default().push((snapshot, None));
+                }
+                Task::none()
+            }
+
+            Message::CopyPuzzleString(key) => {
+                let (fi, pi) = key;
+                let Some(puzzle) = self.files.get(fi)
+                    .and_then(|f| f.puzzles.get(pi))
+                    .and_then(|e| match e {
+                        nonogram_core::ParsedPuzzle::Valid(p) => Some(p),
+                        nonogram_core::ParsedPuzzle::Invalid { puzzle: Some(p), .. } => Some(p),
+                        _ => None,
+                    })
+                else { return Task::none(); };
+                iced::clipboard::write(puzzle_to_file_string(puzzle))
+            }
+
+            Message::ExportMenuToggled => {
+                self.show_export_menu = !self.show_export_menu;
+                Task::none()
+            }
+
+            Message::ExportFormatSelected(fmt) => {
+                let Some(key) = self.focused else { return Task::none(); };
+                let (fi, pi) = key;
+                // Extract clue data (ends immutable borrow of self.files).
+                let Some((row_clues, col_clues, w, h)) = self.files.get(fi)
+                    .and_then(|f| f.puzzles.get(pi))
+                    .and_then(|e| e.as_puzzle())
+                    .map(|p| (p.row_clues.clone(), p.col_clues.clone(), p.width, p.height))
+                else { return Task::none(); };
+
+                // Current display grid: manual overrides solver.
+                let display_grid = self.manual_grids.get(&key).cloned()
+                    .or_else(|| self.compute_display_grid(key));
+
+                // Fulfilled flags — only meaningful when auto_dim is on.
+                let fulfilled_rows: Vec<bool> = if self.assistance.auto_dim {
+                    if let Some(g) = &display_grid {
+                        (0..h).map(|r| {
+                            let cells: Vec<CellState> = (0..w).map(|c| g[r * w + c]).collect();
+                            check_line_fulfilled(&row_clues[r], &cells)
+                        }).collect()
+                    } else { vec![false; h] }
+                } else { vec![false; h] };
+
+                let fulfilled_cols: Vec<bool> = if self.assistance.auto_dim {
+                    if let Some(g) = &display_grid {
+                        (0..w).map(|c| {
+                            let cells: Vec<CellState> = (0..h).map(|r| g[r * w + c]).collect();
+                            check_line_fulfilled(&col_clues[c], &cells)
+                        }).collect()
+                    } else { vec![false; w] }
+                } else { vec![false; w] };
+
+                let content = match fmt {
+                    ExportFormat::PuzPreV3 => export_puzprv3(
+                        &row_clues, &col_clues, w, h,
+                        display_grid.as_deref(),
+                        &fulfilled_rows,
+                        &fulfilled_cols,
+                    ),
+                };
+
+                self.show_export_menu = false;
+
+                Task::perform(
+                    async move {
+                        let handle = rfd::AsyncFileDialog::new()
+                            .set_title("Export puzzle")
+                            .set_file_name("nonogram.txt")
+                            .add_filter("Text files", &["txt"])
+                            .save_file()
+                            .await;
+                        match handle {
+                            Some(h) => {
+                                let path = h.path().to_string_lossy().into_owned();
+                                let err = std::fs::write(&path, &content)
+                                    .err().map(|e| e.to_string());
+                                (content, Some(path), err)
+                            }
+                            None => (content, None, None),
+                        }
+                    },
+                    |(content, path, err)| Message::ExportSaved(content, path, err),
+                )
+            }
+
+            Message::ExportSaved(content, path, err) => {
+                match (&path, &err) {
+                    (Some(p), None)  => self.status = format!("Exported to {p}"),
+                    (_, Some(e))     => self.status = format!("Export failed: {e}"),
+                    (None, None)     => {}  // user cancelled
+                }
+                if path.is_some() {
+                    iced::clipboard::write(content)
+                } else {
+                    Task::none()
+                }
+            }
+
+            Message::TrialReject => {
+                if let Some(key) = self.focused {
+                    if let Some(stack) = self.trial_stack.get_mut(&key) {
+                        if let Some((snapshot, _)) = stack.pop() {
+                            self.manual_grids.insert(key, snapshot);
+                        }
+                        if stack.is_empty() {
+                            self.trial_stack.remove(&key);
+                        }
+                    }
+                }
+                Task::none()
+            }
+
+            Message::ClearGrid(key) => {
+                if let Some(grid) = self.manual_grids.get(&key) {
+                    let snapshot = grid.clone();
+                    let stack = self.undo_stack.entry(key).or_default();
+                    stack.push(snapshot);
+                    if stack.len() > 500 { stack.remove(0); }
+                    self.redo_stack.remove(&key);
+                }
+                let size = self.files.get(key.0)
+                    .and_then(|f| f.puzzles.get(key.1))
+                    .and_then(|e| e.as_puzzle())
+                    .map(|p| p.width * p.height)
+                    .unwrap_or(0);
+                if size > 0 {
+                    self.manual_grids.insert(key, vec![CellState::Unknown; size]);
+                }
+                Task::none()
+            }
+
+            Message::UndoGrid(key) => {
+                if let Some(prev) = self.undo_stack.entry(key).or_default().pop() {
+                    if let Some(current) = self.manual_grids.get(&key).cloned() {
+                        self.redo_stack.entry(key).or_default().push(current);
+                    }
+                    self.manual_grids.insert(key, prev);
+                }
+                Task::none()
+            }
+
+            Message::RedoGrid(key) => {
+                if let Some(next) = self.redo_stack.entry(key).or_default().pop() {
+                    if let Some(current) = self.manual_grids.get(&key).cloned() {
+                        self.undo_stack.entry(key).or_default().push(current);
+                    }
+                    self.manual_grids.insert(key, next);
+                }
+                Task::none()
+            }
+
+            Message::Error(e) => {
+                self.status = format!("Error: {e}");
+                self.busy = false;
+                Task::none()
+            }
+        }
+    }
+
+    // ── Top-level view ───────────────────────────────────────────────────
+
+    pub fn view(&self) -> Element<'_, Message> {
+        column![
+            self.view_toolbar(),
+            horizontal_rule(1),
+            row![
+                self.view_left_panel(),
+                vertical_rule(1),
+                self.view_right_panel(),
+            ]
+            .height(Length::Fill),
+            horizontal_rule(1),
+            self.view_status_bar(),
+        ]
+        .into()
+    }
+
+
+    // ── Right panel ──────────────────────────────────────────────────────
+
+    fn view_right_panel(&self) -> Element<'_, Message> {
+        if self.show_settings {
+            return self.view_settings_panel();
+        }
+        if let Some((fi, pi)) = self.focused {
+            self.view_puzzle_detail(fi, pi)
+        } else if self.results.keys().any(|(_, sk)| *sk == self.solver) {
+            self.view_results_table()
+        } else {
+            container(
+                text("Select puzzles and press Solve, or click a puzzle to inspect it.")
+                    .size(14)
+                    .color(Color::from_rgb(0.45, 0.45, 0.45)),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Horizontal::Center)
+            .align_y(Vertical::Center)
+            .into()
+        }
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────
+
+    fn active_steps_len(&self, key: Key) -> usize {
+        self.all_solutions.get(&(key, self.solver))
+            .and_then(|a| a.solutions.get(self.solution_index))
+            .or_else(|| self.results.get(&(key, self.solver)))
+            .map(|r| r.steps.len())
+            .unwrap_or(0)
+    }
+
+    fn select_range(&mut self, from: Key, to: Key) {
+        let all: Vec<Key> = self.files.iter().enumerate()
+            .flat_map(|(fi, f)| {
+                f.puzzles.iter().enumerate()
+                    .filter(|(_, e)| e.is_valid())
+                    .map(move |(pi, _)| (fi, pi))
+            })
+            .collect();
+        let a = all.iter().position(|&k| k == from);
+        let b = all.iter().position(|&k| k == to);
+        if let (Some(a), Some(b)) = (a, b) {
+            let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+            for &k in &all[lo..=hi] {
+                self.selected.insert(k);
+            }
+        }
+    }
+
+    // Compute the solver-derived display grid for a key at the current step cursor.
+    /// Called once when all default files finish loading. Looks up the saved
+    /// session and, if the referenced puzzle still exists, focuses it and
+    /// expands its folder/file in the left panel.
+    fn restore_session(&mut self) {
+        let Some((session_rel, session_name)) = load_session() else { return };
+        let found = self.files.iter().enumerate().find_map(|(fi, file)| {
+            if relative_path(&file.path) != session_rel { return None; }
+            file.puzzles.iter().enumerate().find_map(|(pi, entry)| {
+                if let ParsedPuzzle::Valid(p) = entry {
+                    if p.name == session_name { Some((fi, pi)) } else { None }
+                } else { None }
+            })
+        });
+        let Some((fi, pi)) = found else { return };
+        let key = (fi, pi);
+
+        // Expand folder and file so the puzzle is visible in the left panel.
+        if let Some(folder) = self.files[fi].folder.clone() {
+            self.folder_collapsed.insert(folder, false);
+        }
+        self.files[fi].collapsed = false;
+
+        // Focus the puzzle (mirrors the core of PuzzleFocused without modifier logic).
+        self.selected.clear();
+        self.selected.insert(key);
+        self.last_anchor = Some(key);
+        self.focused = Some(key);
+        self.replaying = false;
+
+        // Seed manual grid from persisted solution if needed.
+        if !self.manual_grids.contains_key(&key) {
+            if let Some(sol) = self.files.get(fi)
+                .and_then(|f| f.puzzles.get(pi))
+                .and_then(|e| e.as_puzzle())
+                .and_then(|p| p.solution.as_ref())
+            {
+                self.manual_grids.insert(key, sol.clone());
+            }
+        }
+
+        let all = self.all_solutions.get(&(key, self.solver));
+        self.solution_index = all.map(|a| a.solutions.len().saturating_sub(1)).unwrap_or(0);
+        self.step_cursor = all
+            .and_then(|a| a.solutions.get(self.solution_index))
+            .or_else(|| self.results.get(&(key, self.solver)))
+            .map(|r| r.steps.len())
+            .unwrap_or(0);
+    }
+
+    fn compute_display_grid(&self, key: Key) -> Option<Vec<CellState>> {
+        let (fi, pi) = key;
+        let puzzle = self.files.get(fi)?.puzzles.get(pi)?.as_puzzle()?;
+        let all    = self.all_solutions.get(&(key, self.solver));
+        let result = self.results.get(&(key, self.solver));
+        let active: Option<&SolveResult> = all
+            .and_then(|a| a.solutions.get(self.solution_index))
+            .or(result);
+        let cursor = self.step_cursor;
+        active.and_then(|r| {
+            if r.grid.is_empty() { return None; }
+            Some(if !r.steps.is_empty() && cursor < r.steps.len() {
+                grid_at_step(puzzle, r, cursor)
+            } else {
+                r.grid.clone()
+            })
+        })
+    }
+}

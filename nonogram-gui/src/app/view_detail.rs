@@ -1,0 +1,718 @@
+use iced::{
+    alignment::Vertical,
+    widget::{
+        button, column, container, horizontal_rule, row,
+        scrollable, slider, stack, text, Space,
+    },
+    Color, Element, Length, Padding, Theme,
+};
+use iced_fonts::bootstrap::Bootstrap;
+use nonogram_core::{CellState, ParsedPuzzle, SolutionState};
+
+use crate::pan_viewport::PanViewport;
+use super::{App, Key, Message};
+use super::style::{bi, icon_char, style_panel, style_header_row};
+use super::settings::{CellVisual, FILLED_ICON_OPTIONS, EMPTY_ICON_OPTIONS};
+use super::export::ExportFormat;
+use super::persistence::relative_path;
+use super::grid_view::view_grid;
+
+impl App {
+    pub(crate) fn view_puzzle_detail(&self, fi: usize, pi: usize) -> Element<'_, Message> {
+        let Some(file) = self.files.get(fi) else {
+            return text("(missing file)").into();
+        };
+        let entry = match file.puzzles.get(pi) {
+            Some(e) => e,
+            None => return text("(missing puzzle)").into(),
+        };
+
+        let key = (fi, pi);
+
+        let back_btn = button(
+            row![bi(Bootstrap::ArrowLeft).size(13), text("Back").size(13)]
+                .spacing(4).align_y(Vertical::Center),
+        )
+        .on_press(Message::Unfocus);
+
+        if let ParsedPuzzle::Invalid { name, reason, puzzle: partial } = entry {
+            let status_el = row![
+                bi(Bootstrap::ExclamationCircleFill).size(13)
+                    .color(Color::from_rgb(0.75, 0.38, 0.0)),
+                text("Invalid puzzle").size(13),
+            ]
+            .spacing(4)
+            .align_y(Vertical::Center);
+
+            let header = container(
+                row![
+                    back_btn,
+                    Space::with_width(Length::Fixed(12.0)),
+                    text(name.as_str()).size(16),
+                    Space::with_width(Length::Fill),
+                    status_el,
+                ]
+                .spacing(4)
+                .align_y(Vertical::Center),
+            )
+            .padding([10, 16])
+            .width(Length::Fill);
+
+            let reason_banner = container(
+                row![
+                    bi(Bootstrap::ExclamationCircleFill).size(13)
+                        .color(Color::from_rgb(0.75, 0.38, 0.0)),
+                    text(reason.to_string()).size(13),
+                ]
+                .spacing(8)
+                .align_y(Vertical::Center),
+            )
+            .style(|_| container::Style {
+                background: Some(Color::from_rgba(0.75, 0.38, 0.0, 0.12).into()),
+                border: iced::Border {
+                    radius: 4.0.into(),
+                    color: Color::from_rgb(0.75, 0.38, 0.0),
+                    width: 1.0,
+                },
+                ..Default::default()
+            })
+            .padding([8, 16])
+            .width(Length::Fill);
+
+            if let Some(puzzle) = partial {
+                let display_grid = self.manual_grids.get(&key).cloned();
+                let trial_info: &[(Vec<CellState>, Option<(usize, usize)>)] =
+                    self.trial_stack.get(&key).map(|v| v.as_slice()).unwrap_or(&[]);
+                let pan_off = self.pan_offset;
+                return column![
+                    header,
+                    horizontal_rule(1),
+                    container(reason_banner).padding([8, 16]).width(Length::Fill),
+                    horizontal_rule(1),
+                    container(
+                        PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), None, None), pan_off)
+                            .on_pan(|v| Message::PanOffsetChanged(v)),
+                    )
+                    .padding(Padding { left: 16.0, ..Padding::ZERO })
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+                ]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into();
+            }
+
+            return column![
+                header,
+                horizontal_rule(1),
+                container(reason_banner)
+                    .padding(16)
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+        }
+
+        let ParsedPuzzle::Valid(puzzle) = entry else { unreachable!() };
+        let manually_solved = self.solved_manually.contains(&(relative_path(&file.path), puzzle.name.clone()));
+
+        let result = self.results.get(&(key, self.solver));
+        let all    = self.all_solutions.get(&(key, self.solver));
+        let active = all
+            .and_then(|a| a.solutions.get(self.solution_index))
+            .or(result);
+
+        let grid_data: Option<Vec<CellState>> = {
+            let cursor = self.step_cursor;
+            active.and_then(|r| {
+                if r.grid.is_empty() { return None; }
+                Some(if !r.steps.is_empty() && cursor < r.steps.len() {
+                    super::grid_view::grid_at_step(puzzle, r, cursor)
+                } else {
+                    r.grid.clone()
+                })
+            })
+        };
+
+        let at_end = active
+            .map(|r| r.steps.is_empty() || self.step_cursor >= r.steps.len())
+            .unwrap_or(true);
+        let display_grid: Option<Vec<CellState>> = if at_end {
+            self.manual_grids.get(&key).cloned().or(grid_data)
+        } else {
+            grid_data
+        };
+
+        let status_el: Element<Message> = if let Some(a) = all {
+            let n      = a.solutions.len();
+            let suffix = if a.aborted { " (aborted)" } else { "" };
+            match n {
+                0 => row![
+                    bi(Bootstrap::XLg).size(13).color(Color::from_rgb(0.78, 0.08, 0.08)),
+                    text(format!("No solutions{suffix}")).size(13),
+                ].spacing(4).align_y(Vertical::Center).into(),
+                1 => row![
+                    bi(Bootstrap::CheckLg).size(13).color(Color::from_rgb(0.08, 0.55, 0.08)),
+                    text(format!("Unique solution{suffix}")).size(13),
+                ].spacing(4).align_y(Vertical::Center).into(),
+                _ => row![
+                    bi(Bootstrap::DashLg).size(13).color(Color::from_rgb(0.65, 0.45, 0.0)),
+                    text(format!("{n} solutions — ambiguous{suffix}")).size(13),
+                ].spacing(4).align_y(Vertical::Center).into(),
+            }
+        } else if let Some(res) = result {
+            match &res.state {
+                SolutionState::Complete => {
+                    row![
+                        bi(Bootstrap::CheckLg).size(13).color(Color::from_rgb(0.08, 0.55, 0.08)),
+                        text("Solved").size(13),
+                    ].spacing(4).align_y(Vertical::Center).into()
+                }
+                SolutionState::Aborted => {
+                    let filled = res.grid.iter().filter(|&&c| c != CellState::Unknown).count();
+                    row![
+                        bi(Bootstrap::XCircleFill).size(13).color(Color::from_rgb(0.75, 0.38, 0.0)),
+                        text(format!("Aborted ({filled}/{})", puzzle.width * puzzle.height)).size(13),
+                    ].spacing(4).align_y(Vertical::Center).into()
+                }
+                SolutionState::Partial => {
+                    let filled = res.grid.iter().filter(|&&c| c != CellState::Unknown).count();
+                    row![
+                        bi(Bootstrap::DashLg).size(13).color(Color::from_rgb(0.65, 0.45, 0.0)),
+                        text(format!("Partial ({filled}/{})", puzzle.width * puzzle.height)).size(13),
+                    ].spacing(4).align_y(Vertical::Center).into()
+                }
+                SolutionState::Unsolvable => row![
+                    bi(Bootstrap::XLg).size(13).color(Color::from_rgb(0.78, 0.08, 0.08)),
+                    text("No solution").size(13),
+                ].spacing(4).align_y(Vertical::Center).into(),
+                SolutionState::Invalid(reason) => row![
+                    bi(Bootstrap::ExclamationCircleFill).size(13)
+                        .color(Color::from_rgb(0.75, 0.38, 0.0)),
+                    text(format!("Invalid — {reason}")).size(13),
+                ].spacing(4).align_y(Vertical::Center).into(),
+            }
+        } else if manually_solved {
+            row![
+                bi(Bootstrap::CheckLg).size(13).color(Color::from_rgb(0.08, 0.55, 0.08)),
+                text("Solved").size(13),
+            ].spacing(4).align_y(Vertical::Center).into()
+        } else {
+            text("Not yet solved").size(13).color(Color::from_rgb(0.45, 0.45, 0.45)).into()
+        };
+
+        let copy_btn = button(
+            row![bi(Bootstrap::Clipboard).size(12), text("Copy").size(12)]
+                .spacing(4).align_y(Vertical::Center),
+        )
+        .on_press(Message::CopyPuzzleString(key))
+        .padding([2, 8]);
+
+        let export_active = self.show_export_menu;
+        let export_btn = button(
+            row![bi(Bootstrap::Download).size(12), text("Export").size(12)]
+                .spacing(4).align_y(Vertical::Center),
+        )
+        .on_press(Message::ExportMenuToggled)
+        .padding([2, 8])
+        .style(move |theme: &Theme, status| {
+            let p = theme.extended_palette();
+            button::Style {
+                background: if export_active {
+                    Some(p.primary.base.color.into())
+                } else {
+                    match status {
+                        button::Status::Hovered => Some(p.primary.weak.color.into()),
+                        _ => Some(p.background.base.color.into()),
+                    }
+                },
+                text_color: if export_active { p.primary.base.text } else { p.background.base.text },
+                border: iced::Border {
+                    radius: 4.0.into(),
+                    color: p.primary.base.color,
+                    width: if export_active { 1.0 } else { 0.0 },
+                },
+                shadow: iced::Shadow::default(),
+            }
+        });
+
+        let answer_revealed = manually_solved || self.revealed_answers.contains(&key);
+        let computer_complete = result.map(|r| matches!(&r.state, SolutionState::Complete)).unwrap_or(false);
+
+        let mut header_items: Vec<Element<Message>> = vec![
+            back_btn.into(),
+            Space::with_width(Length::Fixed(12.0)).into(),
+            text(puzzle.name.as_str()).size(16).into(),
+        ];
+        if let Some(answer) = &puzzle.answer {
+            if answer_revealed {
+                header_items.push(text(": ").size(16).into());
+                header_items.push(
+                    text(format!("\"{answer}\"")).size(16)
+                        .color(Color::from_rgb(0.0, 0.62, 0.24))
+                        .into()
+                );
+            } else if computer_complete {
+                header_items.push(
+                    button(text("Reveal answer").size(12))
+                        .on_press(Message::RevealAnswer(key))
+                        .padding([2, 8])
+                        .into()
+                );
+            }
+        }
+        header_items.extend([
+            Space::with_width(Length::Fixed(8.0)).into(),
+            text(format!("{}x{}", puzzle.width, puzzle.height))
+                .size(13)
+                .color(Color::from_rgb(0.4, 0.4, 0.4))
+                .into(),
+            copy_btn.into(),
+            export_btn.into(),
+            Space::with_width(Length::Fill).into(),
+        ]);
+        header_items.push(status_el);
+        let header = container(
+            row(header_items).spacing(4).align_y(Vertical::Center),
+        )
+        .padding([10, 16])
+        .width(Length::Fill);
+
+        let mut items: Vec<Element<Message>> = Vec::new();
+        items.push(header.into());
+        items.push(horizontal_rule(1).into());
+
+        if let Some(res) = result {
+            if let SolutionState::Invalid(reason) = &res.state {
+                let banner = container(
+                    row![
+                        bi(Bootstrap::ExclamationCircleFill).size(13)
+                            .color(Color::from_rgb(0.75, 0.38, 0.0)),
+                        text(format!("Invalid — {reason}")).size(13),
+                    ]
+                    .spacing(8)
+                    .align_y(Vertical::Center),
+                )
+                .style(|_| container::Style {
+                    background: Some(Color::from_rgba(0.75, 0.38, 0.0, 0.12).into()),
+                    border: iced::Border {
+                        radius: 4.0.into(),
+                        color: Color::from_rgb(0.75, 0.38, 0.0),
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                })
+                .padding([8, 16])
+                .width(Length::Fill);
+
+                items.push(container(banner).padding([8, 16]).width(Length::Fill).into());
+                items.push(horizontal_rule(1).into());
+            }
+        }
+
+        if let Some(a) = all {
+            let n = a.solutions.len();
+            if n > 0 {
+                let idx      = self.solution_index.min(n.saturating_sub(1));
+                let can_prev = idx > 0;
+                let can_next = idx + 1 < n;
+                let sol_nav = row![
+                    {
+                        let b = button(bi(Bootstrap::ChevronLeft).size(13)).padding([2, 5]);
+                        if can_prev { b.on_press(Message::SolutionPrev) } else { b }
+                    },
+                    text(format!("Solution {} / {n}", idx + 1)).size(12),
+                    {
+                        let b = button(bi(Bootstrap::ChevronRight).size(13)).padding([2, 5]);
+                        if can_next { b.on_press(Message::SolutionNext) } else { b }
+                    },
+                    Space::with_width(Length::Fixed(12.0)),
+                    text(format!("nodes expanded: {}", a.nodes_expanded))
+                        .size(11)
+                        .color(Color::from_rgb(0.45, 0.45, 0.45)),
+                ]
+                .spacing(4)
+                .padding([5, 12])
+                .align_y(Vertical::Center);
+                items.push(sol_nav.into());
+                items.push(horizontal_rule(1).into());
+            }
+        }
+
+        if let Some(res) = active {
+            if !res.steps.is_empty() {
+                let total    = res.steps.len();
+                let cursor   = self.step_cursor.min(total);
+                let can_back = cursor > 0;
+                let can_fwd  = cursor < total;
+
+                let step_desc: String = if cursor > 0 {
+                    res.steps[cursor - 1].description.clone()
+                } else {
+                    String::from("Initial state")
+                };
+
+                let play_icon = if self.replaying { Bootstrap::PauseFill } else { Bootstrap::PlayFill };
+
+                let first_btn = {
+                    let b = button(bi(Bootstrap::SkipStartFill).size(13)).padding([2, 5]);
+                    if can_back { b.on_press(Message::StepFirst) } else { b }
+                };
+                let back_btn = {
+                    let b = button(bi(Bootstrap::ChevronLeft).size(13)).padding([2, 5]);
+                    if can_back { b.on_press(Message::StepBack) } else { b }
+                };
+                let fwd_btn = {
+                    let b = button(bi(Bootstrap::ChevronRight).size(13)).padding([2, 5]);
+                    if can_fwd { b.on_press(Message::StepForward) } else { b }
+                };
+                let last_btn = {
+                    let b = button(bi(Bootstrap::SkipEndFill).size(13)).padding([2, 5]);
+                    if can_fwd { b.on_press(Message::StepLast) } else { b }
+                };
+                let play_btn = {
+                    let b = button(bi(play_icon).size(13)).padding([2, 5]);
+                    if can_fwd || self.replaying { b.on_press(Message::ReplayToggle) } else { b }
+                };
+
+                let step_nav = row![
+                    first_btn, back_btn,
+                    text(format!("Step {cursor} / {total}")).size(12),
+                    fwd_btn, last_btn,
+                    Space::with_width(Length::Fixed(8.0)),
+                    play_btn,
+                    Space::with_width(Length::Fixed(12.0)),
+                    text(step_desc).size(12).color(Color::from_rgb(0.35, 0.35, 0.35)),
+                ]
+                .spacing(4)
+                .padding([6, 12])
+                .align_y(Vertical::Center);
+
+                items.push(step_nav.into());
+                items.push(horizontal_rule(1).into());
+            }
+        }
+
+        let trial_info: &[(Vec<CellState>, Option<(usize, usize)>)] =
+            self.trial_stack.get(&key).map(|v| v.as_slice()).unwrap_or(&[]);
+
+        let all_keys: Vec<Key> = self.files.iter().enumerate()
+            .flat_map(|(fi, f)| f.puzzles.iter().enumerate()
+                .filter(|(_, e)| e.is_valid())
+                .map(move |(pi, _)| (fi, pi)))
+            .collect();
+        let pos = all_keys.iter().position(|&k| k == key);
+        let prev_key = pos.and_then(|i| i.checked_sub(1)).map(|i| all_keys[i]);
+        let next_key = pos.and_then(|i| all_keys.get(i + 1).copied());
+
+        let pan_off = self.pan_offset;
+        items.push(
+            container(
+                PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), prev_key, next_key), pan_off)
+                    .on_pan(|v| Message::PanOffsetChanged(v)),
+            )
+            .padding(Padding { left: 16.0, ..Padding::ZERO })
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+        );
+
+        let detail: Element<Message> = column(items)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+
+        if self.show_export_menu {
+            let popup_items: Vec<Element<Message>> = ExportFormat::ALL.iter().map(|&fmt| {
+                button(text(fmt.label()).size(13))
+                    .on_press(Message::ExportFormatSelected(fmt))
+                    .width(Length::Fill)
+                    .padding([5, 10])
+                    .into()
+            }).collect();
+            let popup = container(column(popup_items).spacing(2).padding([4, 4]))
+                .width(160)
+                .style(|theme: &Theme| {
+                    let p = theme.extended_palette();
+                    container::Style {
+                        background: Some(p.background.base.color.into()),
+                        border: iced::Border {
+                            radius: 4.0.into(),
+                            color: p.background.strong.color,
+                            width: 1.0,
+                        },
+                        shadow: iced::Shadow {
+                            color: Color::from_rgba(0.0, 0.0, 0.0, 0.25),
+                            offset: iced::Vector::new(0.0, 2.0),
+                            blur_radius: 6.0,
+                        },
+                        ..Default::default()
+                    }
+                });
+            let popup_layer: Element<Message> = column![
+                Space::with_height(Length::Fixed(44.0)),
+                container(popup).padding(Padding { left: 16.0, ..Padding::ZERO }),
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+            stack([detail, popup_layer]).into()
+        } else {
+            detail
+        }
+    }
+
+    pub(crate) fn view_settings_panel(&self) -> Element<'_, Message> {
+        let title_row = container(
+            row![
+                text("Settings").size(15),
+                Space::with_width(Length::Fill),
+                button(bi(Bootstrap::XLg).size(13))
+                    .on_press(Message::SettingsClosed)
+                    .padding([2, 6]),
+            ]
+            .align_y(Vertical::Center),
+        )
+        .style(style_header_row)
+        .padding([8, 12])
+        .width(Length::Fill);
+
+        let states: &[(&str, u8, &CellVisual)] = &[
+            ("Unknown", 0, &self.cell_settings.unknown),
+            ("Filled",  1, &self.cell_settings.filled),
+            ("Empty",   2, &self.cell_settings.empty),
+        ];
+
+        let mut sections: Vec<Element<Message>> = Vec::new();
+
+        for &(label, idx, vis) in states {
+            let color_preview = container(Space::new(Length::Fixed(32.0), Length::Fixed(32.0)))
+                .style(move |_| container::Style {
+                    background: Some(vis.color.into()),
+                    border: iced::Border {
+                        radius: 4.0.into(),
+                        color: Color::from_rgb(0.4, 0.4, 0.4),
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                });
+
+            let r_slider = slider(0.0_f32..=1.0, vis.color.r, move |v| Message::SettingColor(idx, 0, v))
+                .step(0.01_f32).width(Length::Fixed(140.0));
+            let g_slider = slider(0.0_f32..=1.0, vis.color.g, move |v| Message::SettingColor(idx, 1, v))
+                .step(0.01_f32).width(Length::Fixed(140.0));
+            let b_slider = slider(0.0_f32..=1.0, vis.color.b, move |v| Message::SettingColor(idx, 2, v))
+                .step(0.01_f32).width(Length::Fixed(140.0));
+
+            let color_row = row![
+                color_preview,
+                Space::with_width(Length::Fixed(12.0)),
+                column![
+                    row![text("R").size(11).width(Length::Fixed(12.0)), r_slider,
+                         text(format!("{:.2}", vis.color.r)).size(11)].spacing(4).align_y(Vertical::Center),
+                    row![text("G").size(11).width(Length::Fixed(12.0)), g_slider,
+                         text(format!("{:.2}", vis.color.g)).size(11)].spacing(4).align_y(Vertical::Center),
+                    row![text("B").size(11).width(Length::Fixed(12.0)), b_slider,
+                         text(format!("{:.2}", vis.color.b)).size(11)].spacing(4).align_y(Vertical::Center),
+                ].spacing(4),
+            ]
+            .align_y(Vertical::Center)
+            .spacing(0);
+
+            let icon_opts: Option<&[Option<Bootstrap>]> = match idx {
+                1 => Some(FILLED_ICON_OPTIONS),
+                2 => Some(EMPTY_ICON_OPTIONS),
+                _ => None,
+            };
+            let current_icon = vis.icon;
+            let make_icon_btn = |opt: Option<Bootstrap>| -> Element<Message> {
+                let is_sel = icon_char(opt) == icon_char(current_icon);
+                let btn_content: Element<Message> = match opt {
+                    None => text("—").size(12).into(),
+                    Some(ic) => bi(ic).size(13).into(),
+                };
+                button(btn_content)
+                    .on_press(Message::SettingIcon(idx, opt))
+                    .padding([3, 7])
+                    .style(move |theme: &Theme, status| {
+                        let p = theme.extended_palette();
+                        button::Style {
+                            background: if is_sel {
+                                Some(p.primary.base.color.into())
+                            } else {
+                                match status {
+                                    button::Status::Hovered => Some(p.primary.weak.color.into()),
+                                    _ => None,
+                                }
+                            },
+                            text_color: if is_sel { p.primary.base.text } else { p.background.base.text },
+                            border: iced::Border {
+                                radius: 3.0.into(),
+                                color: p.primary.base.color,
+                                width: if is_sel { 1.0 } else { 0.0 },
+                            },
+                            shadow: iced::Shadow::default(),
+                        }
+                    })
+                    .into()
+            };
+
+            let section_col: Element<Message> = if let Some(opts) = icon_opts {
+                let icon_btns: Vec<Element<Message>> = opts.iter().map(|&opt| make_icon_btn(opt)).collect();
+                column![
+                    text(label).size(13),
+                    color_row,
+                    row![
+                        text("Icon:").size(11),
+                        row(icon_btns).spacing(3),
+                    ].spacing(8).align_y(Vertical::Center),
+                ]
+                .spacing(8)
+                .into()
+            } else {
+                column![text(label).size(13), color_row].spacing(8).into()
+            };
+
+            let section = container(section_col)
+                .style(style_panel)
+                .padding(12)
+                .width(Length::Fill);
+
+            sections.push(section.into());
+            sections.push(horizontal_rule(1).into());
+        }
+
+        {
+            let cb = self.cell_settings.clue_bg;
+            let color_preview = container(Space::new(Length::Fixed(32.0), Length::Fixed(32.0)))
+                .style(move |_| container::Style {
+                    background: Some(cb.into()),
+                    border: iced::Border {
+                        radius: 4.0.into(),
+                        color: Color::from_rgb(0.4, 0.4, 0.4),
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                });
+            let r_slider = slider(0.0_f32..=1.0, cb.r, move |v| Message::SettingClueBg(0, v))
+                .step(0.01_f32).width(Length::Fixed(140.0));
+            let g_slider = slider(0.0_f32..=1.0, cb.g, move |v| Message::SettingClueBg(1, v))
+                .step(0.01_f32).width(Length::Fixed(140.0));
+            let b_slider = slider(0.0_f32..=1.0, cb.b, move |v| Message::SettingClueBg(2, v))
+                .step(0.01_f32).width(Length::Fixed(140.0));
+            let color_row = row![
+                color_preview,
+                Space::with_width(Length::Fixed(12.0)),
+                column![
+                    row![text("R").size(11).width(Length::Fixed(12.0)), r_slider,
+                         text(format!("{:.2}", cb.r)).size(11)].spacing(4).align_y(Vertical::Center),
+                    row![text("G").size(11).width(Length::Fixed(12.0)), g_slider,
+                         text(format!("{:.2}", cb.g)).size(11)].spacing(4).align_y(Vertical::Center),
+                    row![text("B").size(11).width(Length::Fixed(12.0)), b_slider,
+                         text(format!("{:.2}", cb.b)).size(11)].spacing(4).align_y(Vertical::Center),
+                ].spacing(4),
+            ]
+            .align_y(Vertical::Center)
+            .spacing(0);
+            let section = container(
+                column![text("Clue background").size(13), color_row].spacing(8),
+            )
+            .style(style_panel)
+            .padding(12)
+            .width(Length::Fill);
+            sections.push(section.into());
+            sections.push(horizontal_rule(1).into());
+        }
+
+        {
+            let cb = self.cell_settings.sum_bg;
+            let color_preview = container(Space::new(Length::Fixed(32.0), Length::Fixed(32.0)))
+                .style(move |_| container::Style {
+                    background: Some(cb.into()),
+                    border: iced::Border {
+                        radius: 4.0.into(),
+                        color: Color::from_rgb(0.4, 0.4, 0.4),
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                });
+            let r_slider = slider(0.0_f32..=1.0, cb.r, move |v| Message::SettingSumBg(0, v))
+                .step(0.01_f32).width(Length::Fixed(140.0));
+            let g_slider = slider(0.0_f32..=1.0, cb.g, move |v| Message::SettingSumBg(1, v))
+                .step(0.01_f32).width(Length::Fixed(140.0));
+            let b_slider = slider(0.0_f32..=1.0, cb.b, move |v| Message::SettingSumBg(2, v))
+                .step(0.01_f32).width(Length::Fixed(140.0));
+            let color_row = row![
+                color_preview,
+                Space::with_width(Length::Fixed(12.0)),
+                column![
+                    row![text("R").size(11).width(Length::Fixed(12.0)), r_slider,
+                         text(format!("{:.2}", cb.r)).size(11)].spacing(4).align_y(Vertical::Center),
+                    row![text("G").size(11).width(Length::Fixed(12.0)), g_slider,
+                         text(format!("{:.2}", cb.g)).size(11)].spacing(4).align_y(Vertical::Center),
+                    row![text("B").size(11).width(Length::Fixed(12.0)), b_slider,
+                         text(format!("{:.2}", cb.b)).size(11)].spacing(4).align_y(Vertical::Center),
+                ].spacing(4),
+            ]
+            .align_y(Vertical::Center)
+            .spacing(0);
+            let section = container(
+                column![text("Clue sums background").size(13), color_row].spacing(8),
+            )
+            .style(style_panel)
+            .padding(12)
+            .width(Length::Fill);
+            sections.push(section.into());
+            sections.push(horizontal_rule(1).into());
+        }
+
+        {
+            use iced::widget::checkbox;
+            let section = container(
+                column![
+                    text("Assistance").size(13),
+                    checkbox(
+                        "Dim fulfilled row/col clues",
+                        self.assistance.auto_dim,
+                    )
+                    .on_toggle(|_| Message::AssistToggle(0))
+                    .size(14),
+                    checkbox(
+                        "Auto-fill empties when clues fulfilled (manual only)",
+                        self.assistance.auto_fill_empty,
+                    )
+                    .on_toggle(|_| Message::AssistToggle(1))
+                    .size(14),
+                    checkbox(
+                        "Clue sums with gaps",
+                        self.assistance.clue_sums_with_gaps,
+                    )
+                    .on_toggle(|_| Message::AssistToggle(2))
+                    .size(14),
+                ]
+                .spacing(8),
+            )
+            .style(style_panel)
+            .padding(12)
+            .width(Length::Fill);
+            sections.push(section.into());
+            sections.push(horizontal_rule(1).into());
+        }
+
+        let content = column(sections).spacing(0);
+
+        container(
+            column![
+                title_row,
+                horizontal_rule(1),
+                scrollable(content).height(Length::Fill),
+            ]
+        )
+        .style(style_panel)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+    }
+}
