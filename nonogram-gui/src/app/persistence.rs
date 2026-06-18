@@ -19,24 +19,44 @@ fn solved_path() -> Option<PathBuf> {
         .map(|pd| pd.config_dir().join("solved.json"))
 }
 
+// New grouped format: one entry per file, puzzle names listed under it.
 #[derive(Serialize, Deserialize)]
-struct SolvedEntry { path: String, name: String }
+struct SolvedFile { path: String, puzzles: Vec<String> }
+
+// Legacy flat format kept only for reading old solved.json files.
+#[derive(Deserialize)]
+struct SolvedEntryFlat { path: String, name: String }
 
 pub(crate) fn load_solved() -> HashSet<(String, String)> {
     let path = match solved_path() { Some(p) => p, None => return HashSet::new() };
     let content = match std::fs::read_to_string(&path) { Ok(s) => s, Err(_) => return HashSet::new() };
-    let entries: Vec<SolvedEntry> = match serde_json::from_str(&content) { Ok(e) => e, Err(_) => return HashSet::new() };
-    entries.into_iter().map(|e| (e.path, e.name)).collect()
+
+    // Try the current grouped format first; fall back to the old flat format.
+    if let Ok(files) = serde_json::from_str::<Vec<SolvedFile>>(&content) {
+        return files.into_iter()
+            .flat_map(|f| f.puzzles.into_iter().map(move |n| (f.path.clone(), n)))
+            .collect();
+    }
+    if let Ok(entries) = serde_json::from_str::<Vec<SolvedEntryFlat>>(&content) {
+        return entries.into_iter().map(|e| (e.path, e.name)).collect();
+    }
+    HashSet::new()
 }
 
 pub(crate) fn save_solved(solved: &HashSet<(String, String)>) {
     let Some(path) = solved_path() else { return };
     if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
-    let mut entries: Vec<SolvedEntry> = solved.iter()
-        .map(|(p, n)| SolvedEntry { path: p.clone(), name: n.clone() })
+
+    let mut grouped: std::collections::BTreeMap<&str, Vec<&str>> = std::collections::BTreeMap::new();
+    for (p, n) in solved {
+        grouped.entry(p.as_str()).or_default().push(n.as_str());
+    }
+    for names in grouped.values_mut() { names.sort_unstable(); }
+    let files: Vec<SolvedFile> = grouped.into_iter()
+        .map(|(p, ns)| SolvedFile { path: p.to_owned(), puzzles: ns.iter().map(|&s| s.to_owned()).collect() })
         .collect();
-    entries.sort_by(|a, b| a.path.cmp(&b.path).then(a.name.cmp(&b.name)));
-    if let Ok(json) = serde_json::to_string_pretty(&entries) {
+
+    if let Ok(json) = serde_json::to_string_pretty(&files) {
         let _ = std::fs::write(&path, json);
     }
 }
