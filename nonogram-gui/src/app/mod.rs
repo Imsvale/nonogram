@@ -80,8 +80,8 @@ pub struct App {
     // Grid pan/drag
     pan_offset: Vector,
     // Manual clue dimming
-    manual_dim_rows: HashMap<Key, HashSet<usize>>,
-    manual_dim_cols: HashMap<Key, HashSet<usize>>,
+    manual_dim_rows: HashMap<Key, HashSet<(usize, usize)>>,
+    manual_dim_cols: HashMap<Key, HashSet<(usize, usize)>>,
     // Settings
     cell_settings: CellSettings,
     assistance: AssistanceSettings,
@@ -178,7 +178,7 @@ pub enum Message {
     SettingClueBg(u8, f32),
     SettingSumBg(u8, f32),
     AssistToggle(u8),  // 0=auto_dim, 1=auto_fill_empty, 2=clue_sums_with_gaps
-    ClueDimToggle(Key, bool, usize),  // (puzzle key, is_col, row_or_col_idx)
+    ClueDimToggle(Key, bool, usize, usize),  // (puzzle key, is_col, line_idx, clue_idx)
 
     // Grid editing
     ClearGrid(Key),
@@ -1072,10 +1072,11 @@ impl App {
                 Task::none()
             }
 
-            Message::ClueDimToggle(key, is_col, idx) => {
+            Message::ClueDimToggle(key, is_col, line_idx, clue_idx) => {
                 let map = if is_col { &mut self.manual_dim_cols } else { &mut self.manual_dim_rows };
                 let set = map.entry(key).or_default();
-                if !set.remove(&idx) { set.insert(idx); }
+                let entry = (line_idx, clue_idx);
+                if !set.remove(&entry) { set.insert(entry); }
                 Task::none()
             }
 

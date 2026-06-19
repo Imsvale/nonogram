@@ -137,8 +137,8 @@ pub(crate) fn view_grid<'a>(
     settings: &'a CellSettings,
     trial: &'a [(Vec<CellState>, Option<(usize, usize)>)],
     assistance: &'a AssistanceSettings,
-    manual_dim_rows: Option<&'a HashSet<usize>>,
-    manual_dim_cols: Option<&'a HashSet<usize>>,
+    manual_dim_rows: Option<&'a HashSet<(usize, usize)>>,
+    manual_dim_cols: Option<&'a HashSet<(usize, usize)>>,
     has_undo: bool,
     has_redo: bool,
     prev_key: Option<Key>,
@@ -204,19 +204,17 @@ pub(crate) fn view_grid<'a>(
     }
 
     let fulfilled_rows: Vec<bool> = (0..h).map(|r| {
-        let auto = assistance.auto_dim && grid.as_ref().map(|g| {
+        assistance.auto_dim && grid.as_ref().map(|g| {
             let cells: Vec<CellState> = (0..w).map(|c| g[r * w + c]).collect();
             check_line_fulfilled(&puzzle.row_clues[r], &cells)
-        }).unwrap_or(false);
-        auto || manual_dim_rows.map(|s| s.contains(&r)).unwrap_or(false)
+        }).unwrap_or(false)
     }).collect();
 
     let fulfilled_cols: Vec<bool> = (0..w).map(|c| {
-        let auto = assistance.auto_dim && grid.as_ref().map(|g| {
+        assistance.auto_dim && grid.as_ref().map(|g| {
             let cells: Vec<CellState> = (0..h).map(|r| g[r * w + c]).collect();
             check_line_fulfilled(&puzzle.col_clues[c], &cells)
-        }).unwrap_or(false);
-        auto || manual_dim_cols.map(|s| s.contains(&c)).unwrap_or(false)
+        }).unwrap_or(false)
     }).collect();
 
     let clue_bg_hover = Color {
@@ -225,24 +223,6 @@ pub(crate) fn view_grid<'a>(
         b: (clue_bg.b - 0.07).max(0.0),
         a: 1.0,
     };
-
-    macro_rules! clue_text {
-        ($n:expr, $w:expr, $h:expr, $dim:expr) => {{
-            let bg = clue_bg;
-            let tc = if $dim {
-                Color::from_rgb(0.70, 0.70, 0.70)
-            } else {
-                Color::from_rgb(0.1, 0.1, 0.1)
-            };
-            container(text($n.to_string()).size(13).color(tc))
-                .width(Length::Fixed($w))
-                .height(Length::Fixed($h))
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Center)
-                .style(move |_| container::Style { background: Some(bg.into()), ..Default::default() })
-                .into()
-        }};
-    }
 
     macro_rules! bordered {
         (
@@ -350,33 +330,42 @@ pub(crate) fn view_grid<'a>(
                 }).unwrap_or_else(|| vec![false; clues.len()])
             } else { vec![false; clues.len()] };
             for (i, &n) in clues.iter().enumerate() {
-                nums.push(clue_text!(n, C, N, fulfilled_cols[c] || col_indiv_dim[i]));
+                let is_dim = fulfilled_cols[c]
+                    || col_indiv_dim[i]
+                    || manual_dim_cols.map(|s| s.contains(&(c, i))).unwrap_or(false);
+                let tc = if is_dim { Color::from_rgb(0.70, 0.70, 0.70) } else { Color::from_rgb(0.1, 0.1, 0.1) };
+                let bg = clue_bg;
+                nums.push(
+                    button(
+                        container(text(n.to_string()).size(13).color(tc))
+                            .width(Length::Fixed(C))
+                            .height(Length::Fixed(N))
+                            .align_x(Horizontal::Center)
+                            .align_y(Vertical::Center)
+                    )
+                    .on_press(Message::ClueDimToggle(key, true, c, i))
+                    .padding(Padding::ZERO)
+                    .style(move |_, status| button::Style {
+                        background: Some(if matches!(status, button::Status::Hovered) {
+                            clue_bg_hover.into()
+                        } else {
+                            bg.into()
+                        }),
+                        border: Default::default(),
+                        shadow: Default::default(),
+                        text_color: Color::BLACK,
+                    })
+                    .into()
+                );
             }
 
-            let col_inner = container(column(nums))
-                .width(Length::Fill)
-                .height(Length::Fill);
             cells.push(
-                container(
-                    button(col_inner)
-                        .on_press(Message::ClueDimToggle(key, true, c))
-                        .padding(Padding::ZERO)
-                        .style(move |_, status| button::Style {
-                            background: Some(if matches!(status, button::Status::Hovered) {
-                                clue_bg_hover.into()
-                            } else {
-                                clue_bg.into()
-                            }),
-                            border: Default::default(),
-                            shadow: Default::default(),
-                            text_color: Color::BLACK,
-                        })
-                )
-                .width(Length::Fixed(C))
-                .height(Length::Fixed(col_clue_h))
-                .padding(Padding { left: lp, ..Padding::ZERO })
-                .style(move |_| container::Style { background: Some(vc.into()), ..Default::default() })
-                .into(),
+                container(column(nums))
+                    .width(Length::Fixed(C))
+                    .height(Length::Fixed(col_clue_h))
+                    .padding(Padding { left: lp, ..Padding::ZERO })
+                    .style(move |_| container::Style { background: Some(vc.into()), ..Default::default() })
+                    .into(),
             );
         }
 
@@ -430,32 +419,41 @@ pub(crate) fn view_grid<'a>(
                 }).unwrap_or_else(|| vec![false; clues.len()])
             } else { vec![false; clues.len()] };
             for (i, &n) in clues.iter().enumerate() {
-                rnums.push(clue_text!(n, N, C, fulfilled_rows[r] || row_indiv_dim[i]));
+                let is_dim = fulfilled_rows[r]
+                    || row_indiv_dim[i]
+                    || manual_dim_rows.map(|s| s.contains(&(r, i))).unwrap_or(false);
+                let tc = if is_dim { Color::from_rgb(0.70, 0.70, 0.70) } else { Color::from_rgb(0.1, 0.1, 0.1) };
+                let bg = clue_bg;
+                rnums.push(
+                    button(
+                        container(text(n.to_string()).size(13).color(tc))
+                            .width(Length::Fixed(N))
+                            .height(Length::Fixed(C))
+                            .align_x(Horizontal::Center)
+                            .align_y(Vertical::Center)
+                    )
+                    .on_press(Message::ClueDimToggle(key, false, r, i))
+                    .padding(Padding::ZERO)
+                    .style(move |_, status| button::Style {
+                        background: Some(if matches!(status, button::Status::Hovered) {
+                            clue_bg_hover.into()
+                        } else {
+                            bg.into()
+                        }),
+                        border: Default::default(),
+                        shadow: Default::default(),
+                        text_color: Color::BLACK,
+                    })
+                    .into()
+                );
             }
-            let rclue_inner = container(row(rnums))
-                .width(Length::Fill)
-                .height(Length::Fill);
             cells.push(
-                container(
-                    button(rclue_inner)
-                        .on_press(Message::ClueDimToggle(key, false, r))
-                        .padding(Padding::ZERO)
-                        .style(move |_, status| button::Style {
-                            background: Some(if matches!(status, button::Status::Hovered) {
-                                clue_bg_hover.into()
-                            } else {
-                                clue_bg.into()
-                            }),
-                            border: Default::default(),
-                            shadow: Default::default(),
-                            text_color: Color::BLACK,
-                        })
-                )
-                .width(Length::Fixed(row_clue_w))
-                .height(Length::Fixed(C))
-                .padding(Padding { top: tp, ..Padding::ZERO })
-                .style(move |_| container::Style { background: Some(hc.into()), ..Default::default() })
-                .into(),
+                container(row(rnums))
+                    .width(Length::Fixed(row_clue_w))
+                    .height(Length::Fixed(C))
+                    .padding(Padding { top: tp, ..Padding::ZERO })
+                    .style(move |_| container::Style { background: Some(hc.into()), ..Default::default() })
+                    .into(),
             );
         }
 
