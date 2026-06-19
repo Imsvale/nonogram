@@ -106,6 +106,7 @@ pub(crate) const EMPTY_ICON_OPTIONS: &[Option<Bootstrap>] = &[
 pub(crate) struct AssistanceSettings {
     pub(crate) auto_dim: bool,
     pub(crate) auto_fill_empty: bool,
+    pub(crate) auto_cross_edges: bool,
     pub(crate) clue_sums_with_gaps: bool,
 }
 
@@ -137,6 +138,7 @@ struct SavedSettings {
     #[serde(default = "default_sum_bg_channel")]  sum_bg_b:  f32,
     #[serde(default)] auto_dim: bool,
     #[serde(default)] auto_fill_empty: bool,
+    #[serde(default)] auto_cross_edges: bool,
     #[serde(default)] clue_sums_with_gaps: bool,
 }
 
@@ -193,6 +195,7 @@ pub(crate) fn load_settings() -> (CellSettings, AssistanceSettings) {
     let assist = AssistanceSettings {
         auto_dim:             saved.auto_dim,
         auto_fill_empty:      saved.auto_fill_empty,
+        auto_cross_edges:     saved.auto_cross_edges,
         clue_sums_with_gaps:  saved.clue_sums_with_gaps,
     };
     (cell, assist)
@@ -215,6 +218,7 @@ pub(crate) fn save_settings(settings: &CellSettings, assist: &AssistanceSettings
         sum_bg_b:  settings.sum_bg.b,
         auto_dim:            assist.auto_dim,
         auto_fill_empty:     assist.auto_fill_empty,
+        auto_cross_edges:    assist.auto_cross_edges,
         clue_sums_with_gaps: assist.clue_sums_with_gaps,
     };
     if let Ok(json) = serde_json::to_string_pretty(&saved) {

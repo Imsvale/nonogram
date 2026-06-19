@@ -565,6 +565,12 @@ impl App {
                     .on_toggle(|_| Message::AssistToggle(1))
                     .size(14),
                     checkbox(
+                        "Auto-cross confirmed gaps from edges (manual only)",
+                        self.assistance.auto_cross_edges,
+                    )
+                    .on_toggle(|_| Message::AssistToggle(3))
+                    .size(14),
+                    checkbox(
                         "Clue sums with gaps",
                         self.assistance.clue_sums_with_gaps,
                     )

@@ -68,6 +68,9 @@ fn individually_fulfilled_clues(clues: &[u32], cells: &[CellState]) -> Vec<bool>
     let mut dim = vec![false; n];
     if n == 0 || w == 0 { return dim; }
 
+    // Left-to-right: a run is dimmed if its left boundary is confirmed (edge or Empty).
+    // An Unknown to the RIGHT of the run no longer blocks — the right boundary will be
+    // checked by the next iteration's pre-scan (which stops at Unknown gaps).
     let mut ci = 0usize;
     let mut gi = 0usize;
     while ci < n {
@@ -76,11 +79,11 @@ fn individually_fulfilled_clues(clues: &[u32], cells: &[CellState]) -> Vec<bool>
         let run_start = gi;
         while gi < w && cells[gi] == CellState::Filled { gi += 1; }
         let run_len = gi - run_start;
-        if gi < w && cells[gi] == CellState::Unknown { break; }
         if run_len == clues[ci] as usize { dim[ci] = true; ci += 1; } else { break; }
     }
     let left_matched = ci;
 
+    // Right-to-left: symmetric — confirmed right boundary is enough.
     let mut ci = n as isize - 1;
     let mut gi = w as isize - 1;
     while ci >= left_matched as isize {
@@ -89,11 +92,98 @@ fn individually_fulfilled_clues(clues: &[u32], cells: &[CellState]) -> Vec<bool>
         let run_end = gi;
         while gi >= 0 && cells[gi as usize] == CellState::Filled { gi -= 1; }
         let run_len = (run_end - gi) as usize;
-        if gi >= 0 && cells[gi as usize] == CellState::Unknown { break; }
         if run_len == clues[ci as usize] as usize { dim[ci as usize] = true; ci -= 1; } else { break; }
     }
 
     dim
+}
+
+// ---------------------------------------------------------------------------
+// Forced-empty helpers (used by auto-cross-edges assist)
+// ---------------------------------------------------------------------------
+
+// Strict left scan: returns (start, end_exclusive) for each confirmed run where
+// BOTH boundaries are confirmed (Empty or edge). Runs abutting Unknown are not
+// included, because their length might grow as the solver fills in cells.
+fn scan_confirmed_left(clues: &[u32], cells: &[CellState]) -> Vec<(usize, usize)> {
+    let n = clues.len();
+    let w = cells.len();
+    let mut runs = Vec::new();
+    let (mut ci, mut gi) = (0usize, 0usize);
+    while ci < n {
+        while gi < w && cells[gi] == CellState::Empty { gi += 1; }
+        if gi >= w || cells[gi] == CellState::Unknown { break; }
+        let start = gi;
+        while gi < w && cells[gi] == CellState::Filled { gi += 1; }
+        let end_excl = gi;
+        if gi < w && cells[gi] == CellState::Unknown { break; }  // right boundary uncertain
+        if end_excl - start == clues[ci] as usize { runs.push((start, end_excl)); ci += 1; } else { break; }
+    }
+    runs
+}
+
+// Strict right scan: returns (start, end_exclusive) rightmost-first.
+fn scan_confirmed_right(clues: &[u32], cells: &[CellState], skip_left: usize) -> Vec<(usize, usize)> {
+    let n = clues.len();
+    let w = cells.len();
+    let mut runs = Vec::new();
+    let (mut ci, mut gi) = (n as isize - 1, w as isize - 1);
+    while ci >= skip_left as isize {
+        while gi >= 0 && cells[gi as usize] == CellState::Empty { gi -= 1; }
+        if gi < 0 || cells[gi as usize] == CellState::Unknown { break; }
+        let end_incl = gi as usize;
+        while gi >= 0 && cells[gi as usize] == CellState::Filled { gi -= 1; }
+        let start = (gi + 1) as usize;
+        if gi >= 0 && cells[gi as usize] == CellState::Unknown { break; }  // left boundary uncertain
+        if end_incl - start + 1 == clues[ci as usize] as usize {
+            runs.push((start, end_incl + 1));
+            ci -= 1;
+        } else { break; }
+    }
+    runs
+}
+
+fn mark_unknown_range(cells: &[CellState], a: usize, b: usize, out: &mut Vec<usize>) {
+    for i in a..b {
+        if cells[i] == CellState::Unknown { out.push(i); }
+    }
+}
+
+/// Returns indices of Unknown cells that are definitively Empty, derived from
+/// runs confirmed on both sides from the left and right edges.
+///
+/// Identifies forced empties in three situations:
+///   • Cells to the left of the leftmost edge-confirmed run.
+///   • Gaps between consecutive edge-confirmed runs (same direction).
+///   • Cells to the right of the rightmost edge-confirmed run.
+///   • The middle gap between left and right scans, when together they account
+///     for every clue (so no unconfirmed clue can occupy the space between them).
+pub(crate) fn forced_empty_from_edges(clues: &[u32], cells: &[CellState]) -> Vec<usize> {
+    let n = clues.len();
+    let len = cells.len();
+    if len == 0 { return vec![]; }
+
+    let left  = scan_confirmed_left(clues, cells);
+    let right = scan_confirmed_right(clues, cells, left.len());
+    let mut out: Vec<usize> = Vec::new();
+
+    // Cells before the first left-confirmed run.
+    if let Some(&(s, _)) = left.first() { mark_unknown_range(cells, 0, s, &mut out); }
+    // Gaps between consecutive left-confirmed runs.
+    for pair in left.windows(2) { mark_unknown_range(cells, pair[0].1, pair[1].0, &mut out); }
+    // Middle gap — only when left + right together cover all clues.
+    if left.len() + right.len() == n && !left.is_empty() && !right.is_empty() {
+        // right is rightmost-first; right.last() is the leftmost right-confirmed run.
+        mark_unknown_range(cells, left.last().unwrap().1, right.last().unwrap().0, &mut out);
+    }
+    // Gaps between consecutive right-confirmed runs (pair[0] is the more-rightward one).
+    for pair in right.windows(2) { mark_unknown_range(cells, pair[1].1, pair[0].0, &mut out); }
+    // Cells after the last right-confirmed run (right[0] is rightmost).
+    if let Some(&(_, e)) = right.first() { mark_unknown_range(cells, e, len, &mut out); }
+
+    out.sort_unstable();
+    out.dedup();
+    out
 }
 
 // ---------------------------------------------------------------------------

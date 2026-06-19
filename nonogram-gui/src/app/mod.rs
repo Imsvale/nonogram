@@ -33,7 +33,7 @@ use persistence::{
 };
 use scan::scan_puzzle_dirs;
 use export::{ExportFormat, puzzle_to_file_string, export_puzprv3};
-use grid_view::{grid_at_step, is_puzzle_fully_solved, check_line_fulfilled};
+use grid_view::{grid_at_step, is_puzzle_fully_solved, check_line_fulfilled, forced_empty_from_edges};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -177,7 +177,7 @@ pub enum Message {
     SettingIcon(u8, Option<Bootstrap>),
     SettingClueBg(u8, f32),
     SettingSumBg(u8, f32),
-    AssistToggle(u8),  // 0=auto_dim, 1=auto_fill_empty, 2=clue_sums_with_gaps
+    AssistToggle(u8),  // 0=auto_dim, 1=auto_fill_empty, 2=clue_sums_with_gaps, 3=auto_cross_edges
     ClueDimToggle(Key, bool, usize, usize),  // (puzzle key, is_col, line_idx, clue_idx)
 
     // Grid editing
@@ -914,6 +914,28 @@ impl App {
                         }
                     }
                 }
+                // Auto-cross from edges: mark cells provably Empty based on confirmed-run positions.
+                if self.assistance.auto_cross_edges && target != CellState::Unknown {
+                    let no_solver = self.results.get(&(key, self.solver)).is_none()
+                        && self.all_solutions.get(&(key, self.solver)).is_none();
+                    if no_solver {
+                        let clue_data = self.files.get(fi)
+                            .and_then(|f| f.puzzles.get(pi))
+                            .and_then(|e| e.as_puzzle())
+                            .map(|p| (p.row_clues.clone(), p.col_clues.clone(), p.width, p.height));
+                        if let Some((row_clues, col_clues, w, h)) = clue_data {
+                            let mg = self.manual_grids.get_mut(&key).unwrap();
+                            let row_cells: Vec<CellState> = (0..w).map(|c| mg[row * w + c]).collect();
+                            for c in forced_empty_from_edges(&row_clues[row], &row_cells) {
+                                mg[row * w + c] = CellState::Empty;
+                            }
+                            let col_cells: Vec<CellState> = (0..h).map(|r| mg[r * w + col]).collect();
+                            for r in forced_empty_from_edges(&col_clues[col], &col_cells) {
+                                mg[r * w + col] = CellState::Empty;
+                            }
+                        }
+                    }
+                }
                 // Detect full manual solve.
                 {
                     let solved = self.files.get(fi)
@@ -976,6 +998,28 @@ impl App {
                                             mg[r * w + col] = CellState::Empty;
                                         }
                                     }
+                                }
+                            }
+                        }
+                    }
+                    // Auto-cross from edges.
+                    if self.assistance.auto_cross_edges && target != CellState::Unknown {
+                        let no_solver = self.results.get(&(key, self.solver)).is_none()
+                            && self.all_solutions.get(&(key, self.solver)).is_none();
+                        if no_solver {
+                            let clue_data = self.files.get(fi)
+                                .and_then(|f| f.puzzles.get(pi))
+                                .and_then(|e| e.as_puzzle())
+                                .map(|p| (p.row_clues.clone(), p.col_clues.clone(), p.width, p.height));
+                            if let Some((row_clues, col_clues, w, h)) = clue_data {
+                                let mg = self.manual_grids.get_mut(&key).unwrap();
+                                let row_cells: Vec<CellState> = (0..w).map(|c| mg[row * w + c]).collect();
+                                for c in forced_empty_from_edges(&row_clues[row], &row_cells) {
+                                    mg[row * w + c] = CellState::Empty;
+                                }
+                                let col_cells: Vec<CellState> = (0..h).map(|r| mg[r * w + col]).collect();
+                                for r in forced_empty_from_edges(&col_clues[col], &col_cells) {
+                                    mg[r * w + col] = CellState::Empty;
                                 }
                             }
                         }
@@ -1066,6 +1110,7 @@ impl App {
                     0 => self.assistance.auto_dim             = !self.assistance.auto_dim,
                     1 => self.assistance.auto_fill_empty      = !self.assistance.auto_fill_empty,
                     2 => self.assistance.clue_sums_with_gaps  = !self.assistance.clue_sums_with_gaps,
+                    3 => self.assistance.auto_cross_edges     = !self.assistance.auto_cross_edges,
                     _ => {}
                 }
                 save_settings(&self.cell_settings, &self.assistance);
