@@ -344,7 +344,7 @@ pub(crate) fn view_grid<'a>(
 
         // Corner: minimap
         {
-            let cell_size = (row_clue_w / w as f32).min(col_clue_h / h as f32).max(1.0);
+            let cell_size = (row_clue_w / (w + 2) as f32).min(col_clue_h / (h + 2) as f32).max(1.0);
             let map_w = cell_size * w as f32;
             let map_h = cell_size * h as f32;
             let pad_left = ((row_clue_w - map_w) / 2.0).max(0.0);
