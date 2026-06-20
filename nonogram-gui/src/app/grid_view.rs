@@ -250,8 +250,8 @@ pub(crate) fn view_grid<'a>(
     let w = puzzle.width;
     let h = puzzle.height;
 
-    let right_border = w % 5 == 0;
-    let bot_border   = h % 5 == 0;
+    let right_border = true;
+    let bot_border   = true;
 
     let line_sum = |clues: &[u32]| -> u32 {
         let s: u32 = clues.iter().sum();
