@@ -187,6 +187,7 @@ pub enum Message {
 
     // Trial mode
     TrialEnter,
+    TrialAccept,
     TrialReject,
 
     // Clipboard / export
@@ -1145,6 +1146,18 @@ impl App {
                     // Ensure manual_grids has this state so future clicks go into it
                     self.manual_grids.entry(key).or_insert_with(|| snapshot.clone());
                     self.trial_stack.entry(key).or_default().push((snapshot, None));
+                }
+                Task::none()
+            }
+
+            Message::TrialAccept => {
+                if let Some(key) = self.focused {
+                    if let Some(stack) = self.trial_stack.get_mut(&key) {
+                        stack.pop(); // discard saved snapshot, keep current manual_grid as promoted state
+                        if stack.is_empty() {
+                            self.trial_stack.remove(&key);
+                        }
+                    }
                 }
                 Task::none()
             }

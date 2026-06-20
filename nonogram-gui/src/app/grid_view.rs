@@ -10,7 +10,7 @@ use nonogram_core::{CellState, Puzzle, SolveResult};
 
 use super::{Key, Message};
 use super::settings::{AssistanceSettings, CellSettings};
-use super::style::{bi, fwd, warn_inline_style, WARN_COLOR};
+use super::style::{bi, fwd, warn_inline_style, WARN_COLOR, COLOR_SUCCESS, COLOR_ERROR};
 
 // ---------------------------------------------------------------------------
 // Grid step helper
@@ -800,42 +800,50 @@ pub(crate) fn view_grid<'a>(
             redo_btn_base.on_press(Message::RedoGrid(key)).into()
         } else { redo_btn_base.into() };
 
-        let enter_label = if trial_tier == 0 { "Trial" } else { "Deeper" };
-        let enter_btn = button(text(enter_label).size(12))
+        // Fixed width sized to "Trial" so layout doesn't shift when label changes to "+1".
+        let enter_label = if trial_tier == 0 { "Trial" } else { "+1" };
+        let enter_btn: Element<Message> = button(text(enter_label).size(12))
             .on_press(Message::TrialEnter)
-            .padding([2, 8]);
-        let reject_btn = if trial_tier > 0 {
-            button(text("Reject trial").size(12)).on_press(Message::TrialReject).padding([2, 8])
-        } else {
-            button(text("Reject trial").size(12)).padding([2, 8])
-        };
+            .width(Length::Fixed(48.0))
+            .padding([2, 8])
+            .into();
 
         let mut tr_items: Vec<Element<Message>> = Vec::new();
         if trial_tier > 0 {
             let (r, g, b) = TRIAL_FILLED[(trial_tier - 1) % TRIAL_FILLED.len()];
             tr_items.push(text(format!("Tier {trial_tier}")).size(12).color(Color::from_rgb(r, g, b)).into());
             tr_items.push(Space::with_width(Length::Fixed(6.0)).into());
+            tr_items.push(
+                button(bi(Bootstrap::CheckLg).size(14).color(COLOR_SUCCESS))
+                    .on_press(Message::TrialAccept)
+                    .padding([2, 6])
+                    .into()
+            );
+            tr_items.push(Space::with_width(Length::Fixed(4.0)).into());
+            tr_items.push(
+                button(bi(Bootstrap::XLg).size(14).color(COLOR_ERROR))
+                    .on_press(Message::TrialReject)
+                    .padding([2, 6])
+                    .into()
+            );
+            tr_items.push(Space::with_width(Length::Fixed(6.0)).into());
         }
-        tr_items.push(enter_btn.into());
-        tr_items.push(Space::with_width(Length::Fixed(6.0)).into());
-        tr_items.push(reject_btn.into());
+        tr_items.push(enter_btn);
         let tr_group: Element<Message> = row(tr_items).align_y(Vertical::Center).into();
 
         const CLEAR_W: f32 = 100.0;
         const UR_W:    f32 =  64.0;
-        const TR_W:    f32 = 160.0;
         let grid_center = row_clue_w + (C * w as f32) / 2.0;
-        let left_gap  = grid_center - CLEAR_W - UR_W / 2.0;
-        let right_gap = grid_total_w - grid_center - UR_W / 2.0 - TR_W;
+        let left_gap = grid_center - CLEAR_W - UR_W / 2.0;
 
-        let btn_row: Element<Message> = if left_gap >= 4.0 && right_gap >= 4.0 {
+        let btn_row: Element<Message> = if left_gap >= 4.0 {
             row![
                 clear_btn,
                 Space::with_width(Length::Fixed(left_gap)),
                 undo_btn,
                 Space::with_width(Length::Fixed(6.0)),
                 redo_btn,
-                Space::with_width(Length::Fixed(right_gap)),
+                Space::with_width(Length::Fill),
                 tr_group,
             ].align_y(Vertical::Center).into()
         } else {
