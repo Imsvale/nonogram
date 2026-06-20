@@ -3,7 +3,8 @@ use std::collections::HashSet;
 use iced::{
     alignment::{Horizontal, Vertical},
     widget::{button, column, container, horizontal_rule, mouse_area, row, text, Space},
-    Color, Element, Length, Padding,
+    Color, Element, Font, Length, Padding,
+    font::Weight,
 };
 use iced_fonts::bootstrap::Bootstrap;
 use nonogram_core::{CellState, Puzzle, SolveResult};
@@ -427,7 +428,8 @@ pub(crate) fn view_grid<'a>(
                 let bg = clue_bg;
                 nums.push(
                     button(
-                        container(text(n.to_string()).size(13).color(tc))
+                        container(text(n.to_string()).size(13).color(tc)
+                            .font(Font { weight: Weight::Bold, ..Font::DEFAULT }))
                             .width(Length::Fixed(C))
                             .height(Length::Fixed(N))
                             .align_x(Horizontal::Center)
@@ -516,7 +518,8 @@ pub(crate) fn view_grid<'a>(
                 let bg = clue_bg;
                 rnums.push(
                     button(
-                        container(text(n.to_string()).size(13).color(tc))
+                        container(text(n.to_string()).size(13).color(tc)
+                            .font(Font { weight: Weight::Bold, ..Font::DEFAULT }))
                             .width(Length::Fixed(N))
                             .height(Length::Fixed(C))
                             .align_x(Horizontal::Center)
@@ -804,31 +807,48 @@ pub(crate) fn view_grid<'a>(
         let enter_label = if trial_tier == 0 { "Trial" } else { "+1" };
         let enter_btn: Element<Message> = button(text(enter_label).size(12))
             .on_press(Message::TrialEnter)
-            .width(Length::Fixed(48.0))
+            .width(Length::Fixed(40.0))
             .padding([2, 8])
             .into();
+
+        // Accept and Reject are always shown; coloured green/red when active, washed-out when not.
+        let active = trial_tier > 0;
+        let accept_bg  = if active { COLOR_SUCCESS } else { Color { r: 0.72, g: 0.87, b: 0.72, a: 1.0 } };
+        let reject_bg  = if active { COLOR_ERROR   } else { Color { r: 0.90, g: 0.72, b: 0.72, a: 1.0 } };
+        let icon_color = Color::WHITE;
+        let reject_btn_base = button(bi(Bootstrap::XLg).size(16).color(icon_color))
+            .padding([2, 6])
+            .style(move |_, _| button::Style {
+                background: Some(reject_bg.into()),
+                border: Default::default(), shadow: Default::default(),
+                text_color: icon_color,
+            });
+        let reject_btn: Element<Message> = if active {
+            reject_btn_base.on_press(Message::TrialReject).into()
+        } else { reject_btn_base.into() };
+
+        let accept_btn_base = button(bi(Bootstrap::CheckLg).size(16).color(icon_color))
+            .padding([2, 6])
+            .style(move |_, _| button::Style {
+                background: Some(accept_bg.into()),
+                border: Default::default(), shadow: Default::default(),
+                text_color: icon_color,
+            });
+        let accept_btn: Element<Message> = if active {
+            accept_btn_base.on_press(Message::TrialAccept).into()
+        } else { accept_btn_base.into() };
 
         let mut tr_items: Vec<Element<Message>> = Vec::new();
         if trial_tier > 0 {
             let (r, g, b) = TRIAL_FILLED[(trial_tier - 1) % TRIAL_FILLED.len()];
             tr_items.push(text(format!("Tier {trial_tier}")).size(12).color(Color::from_rgb(r, g, b)).into());
             tr_items.push(Space::with_width(Length::Fixed(6.0)).into());
-            tr_items.push(
-                button(bi(Bootstrap::CheckLg).size(14).color(COLOR_SUCCESS))
-                    .on_press(Message::TrialAccept)
-                    .padding([2, 6])
-                    .into()
-            );
-            tr_items.push(Space::with_width(Length::Fixed(4.0)).into());
-            tr_items.push(
-                button(bi(Bootstrap::XLg).size(14).color(COLOR_ERROR))
-                    .on_press(Message::TrialReject)
-                    .padding([2, 6])
-                    .into()
-            );
-            tr_items.push(Space::with_width(Length::Fixed(6.0)).into());
         }
+        tr_items.push(reject_btn);
+        tr_items.push(Space::with_width(Length::Fixed(4.0)).into());
         tr_items.push(enter_btn);
+        tr_items.push(Space::with_width(Length::Fixed(4.0)).into());
+        tr_items.push(accept_btn);
         let tr_group: Element<Message> = row(tr_items).align_y(Vertical::Center).into();
 
         const CLEAR_W: f32 = 100.0;
