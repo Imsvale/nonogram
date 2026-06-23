@@ -19,7 +19,7 @@ use super::style::{
 use super::settings::{CellVisual, FILLED_ICON_OPTIONS, EMPTY_ICON_OPTIONS};
 use super::export::ExportFormat;
 use super::persistence::relative_path;
-use super::grid_view::view_grid;
+use super::grid_view::{view_grid, compute_hover_run, HoverRun};
 
 impl App {
     pub(crate) fn view_puzzle_detail(&self, fi: usize, pi: usize) -> Element<'_, Message> {
@@ -73,13 +73,15 @@ impl App {
                 let trial_info: &[(Vec<CellState>, Option<(usize, usize)>)] =
                     self.trial_stack.get(&key).map(|v| v.as_slice()).unwrap_or(&[]);
                 let pan_off = self.pan_offset;
+                let hover_run: Option<HoverRun> = display_grid.as_deref()
+                    .and_then(|g| compute_hover_run(self.hover_cell, self.hover_axis, key, puzzle, g));
                 return column![
                     header,
                     horizontal_rule(1),
                     container(reason_banner).padding([8, 16]).width(Length::Fill),
                     horizontal_rule(1),
                     container(
-                        PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), None, None), pan_off)
+                        PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), None, None, hover_run), pan_off)
                             .on_pan(|v| Message::PanOffsetChanged(v)),
                     )
                     .padding(Padding { left: 16.0, ..Padding::ZERO })
@@ -361,9 +363,11 @@ impl App {
         let next_key = pos.and_then(|i| all_keys.get(i + 1).copied());
 
         let pan_off = self.pan_offset;
+        let hover_run: Option<HoverRun> = display_grid.as_deref()
+            .and_then(|g| compute_hover_run(self.hover_cell, self.hover_axis, key, puzzle, g));
         items.push(
             container(
-                PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), prev_key, next_key), pan_off)
+                PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), prev_key, next_key, hover_run), pan_off)
                     .on_pan(|v| Message::PanOffsetChanged(v)),
             )
             .padding(Padding { left: 16.0, ..Padding::ZERO })

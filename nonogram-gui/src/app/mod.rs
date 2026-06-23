@@ -5,7 +5,8 @@ use iced::{
     alignment::{Horizontal, Vertical},
     keyboard, mouse,
     widget::{column, container, horizontal_rule, row, text, vertical_rule},
-    Color, Element, Event, Length, Subscription, Task, Theme, Vector,
+    Color, Element, Event, Length, Point, Size, Subscription, Task, Theme, Vector,
+    window,
 };
 use iced_fonts::bootstrap::Bootstrap;
 
@@ -29,7 +30,7 @@ mod view_detail;
 use settings::{CellSettings, AssistanceSettings, load_settings, save_settings};
 use persistence::{
     load_solved, save_solved, save_session, load_session,
-    save_solution_to_file, relative_path,
+    save_solution_to_file, relative_path, save_window_state,
 };
 use scan::scan_puzzle_dirs;
 use export::{ExportFormat, puzzle_to_file_string, export_puzprv3};
@@ -77,6 +78,15 @@ pub struct App {
     redo_stack: HashMap<Key, Vec<Vec<CellState>>>,
     // Trial mode: each entry is (snapshot_before_tier, first_cell_changed_in_tier)
     trial_stack: HashMap<Key, Vec<(Vec<CellState>, Option<(usize, usize)>)>>,
+    // Hover-run detection
+    hover_cell: Option<(Key, usize, usize)>,
+    hover_cell_history: Vec<(usize, usize)>,
+    hover_axis: bool,
+    // Window geometry (updated by events, persisted on close)
+    window_id: Option<window::Id>,
+    startup_maximize: bool,
+    window_size: Size,
+    window_pos: Point,
     // Grid pan/drag
     pan_offset: Vector,
     // Manual clue dimming
@@ -199,6 +209,13 @@ pub enum Message {
     // Grid pan
     PanOffsetChanged(Vector),
 
+    // Window geometry / lifecycle
+    WindowOpened(window::Id),
+    WindowResized(Size),
+    WindowMoved(Point),
+    CloseRequested(window::Id),
+    FinalizeClose { id: window::Id, maximized: bool },
+
     // Spoiler reveal
     RevealAnswer(Key),
 
@@ -213,6 +230,7 @@ pub enum Message {
 impl App {
     pub fn new() -> (Self, Task<Message>) {
         let (cell_settings, assistance) = load_settings();
+        let (_, _, _, was_maximized) = persistence::load_window_state();
         let app = App {
             files: Vec::new(),
             selected: HashSet::new(),
@@ -234,6 +252,13 @@ impl App {
             undo_stack: HashMap::new(),
             redo_stack: HashMap::new(),
             trial_stack: HashMap::new(),
+            hover_cell: None,
+            hover_cell_history: Vec::new(),
+            hover_axis: true,
+            window_id: None,
+            startup_maximize: was_maximized,
+            window_size: Size::new(1200.0, 780.0),
+            window_pos: Point::ORIGIN,
             pan_offset: Vector::ZERO,
             manual_dim_rows: HashMap::new(),
             manual_dim_cols: HashMap::new(),
@@ -265,11 +290,15 @@ impl App {
             Subscription::none()
         };
 
-        let kbd_and_mouse = iced::event::listen_with(|event, _, _| match event {
+        let kbd_and_mouse = iced::event::listen_with(|event, _, id| match event {
             Event::Keyboard(keyboard::Event::ModifiersChanged(mods)) => {
                 Some(Message::ModifiersChanged(mods))
             }
             Event::Mouse(mouse::Event::ButtonReleased(_)) => Some(Message::DragEnded),
+            Event::Window(window::Event::Opened { .. }) => Some(Message::WindowOpened(id)),
+            Event::Window(window::Event::Resized(sz)) => Some(Message::WindowResized(sz)),
+            Event::Window(window::Event::Moved(pt)) => Some(Message::WindowMoved(pt)),
+            Event::Window(window::Event::CloseRequested) => Some(Message::CloseRequested(id)),
             _ => None,
         });
 
@@ -961,6 +990,24 @@ impl App {
             }
 
             Message::CellEntered { key, row, col } => {
+                // Track hover cell and update axis from recent cell-entry sequence.
+                if self.hover_cell.map(|(k, _, _)| k) != Some(key) {
+                    self.hover_cell_history.clear();
+                }
+                self.hover_cell = Some((key, row, col));
+                self.hover_cell_history.push((row, col));
+                if self.hover_cell_history.len() > 5 { self.hover_cell_history.remove(0); }
+                let h = &self.hover_cell_history;
+                if h.len() >= 2 {
+                    let row_spread = h.iter().map(|&(r, _)| r).max().unwrap_or(0)
+                        .saturating_sub(h.iter().map(|&(r, _)| r).min().unwrap_or(0));
+                    let col_spread = h.iter().map(|&(_, c)| c).max().unwrap_or(0)
+                        .saturating_sub(h.iter().map(|&(_, c)| c).min().unwrap_or(0));
+                    if col_spread != row_spread {
+                        self.hover_axis = col_spread > row_spread;
+                    }
+                }
+
                 if let Some(target) = self.drag_state {
                     let (fi, pi) = key;
                     let w = self.files.get(fi)
@@ -1160,6 +1207,39 @@ impl App {
                     }
                 }
                 Task::none()
+            }
+
+            Message::WindowOpened(id) => {
+                self.window_id = Some(id);
+                if self.startup_maximize {
+                    self.startup_maximize = false;
+                    window::maximize(id, true)
+                } else {
+                    Task::none()
+                }
+            }
+
+            Message::WindowResized(size) => {
+                self.window_size = size;
+                Task::none()
+            }
+
+            Message::WindowMoved(pos) => {
+                self.window_pos = pos;
+                Task::none()
+            }
+
+            Message::CloseRequested(id) => {
+                window::get_maximized(id).map(move |m| Message::FinalizeClose { id, maximized: m })
+            }
+
+            Message::FinalizeClose { id, maximized } => {
+                save_window_state(
+                    self.window_size.width, self.window_size.height,
+                    self.window_pos.x, self.window_pos.y,
+                    maximized,
+                );
+                window::close(id)
             }
 
             Message::CopyPuzzleString(key) => {

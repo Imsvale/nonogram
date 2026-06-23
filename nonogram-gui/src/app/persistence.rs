@@ -83,6 +83,38 @@ pub(crate) fn load_session() -> Option<(String, String)> {
     Some((entry.path, entry.name))
 }
 
+// ---------------------------------------------------------------------------
+// Window state
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Deserialize)]
+struct SavedWindowState {
+    x: f32, y: f32, width: f32, height: f32,
+    #[serde(default)]
+    maximized: bool,
+}
+
+fn window_state_path() -> Option<PathBuf> {
+    ProjectDirs::from("", "nonogram", "nonogram-gui")
+        .map(|pd| pd.config_dir().join("window.json"))
+}
+
+/// Returns `(width, height, Option<(x, y)>, maximized)`. Position is `None`
+/// when no saved state exists so the caller can apply `window::Position::Default`.
+pub(crate) fn load_window_state() -> (f32, f32, Option<(f32, f32)>, bool) {
+    let path = match window_state_path() { Some(p) => p, None => return (1200.0, 780.0, None, false) };
+    let content = match std::fs::read_to_string(&path) { Ok(s) => s, Err(_) => return (1200.0, 780.0, None, false) };
+    let s: SavedWindowState = match serde_json::from_str(&content) { Ok(s) => s, Err(_) => return (1200.0, 780.0, None, false) };
+    (s.width, s.height, Some((s.x, s.y)), s.maximized)
+}
+
+pub(crate) fn save_window_state(width: f32, height: f32, x: f32, y: f32, maximized: bool) {
+    let Some(path) = window_state_path() else { return };
+    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+    let saved = SavedWindowState { x, y, width, height, maximized };
+    if let Ok(json) = serde_json::to_string(&saved) { let _ = std::fs::write(&path, json); }
+}
+
 /// Write the solved grid back into the puzzle file as the fourth `;`-field.
 /// Matches the puzzle line by name (first field). Skips gracefully on I/O errors.
 pub(crate) fn save_solution_to_file(file_path: &str, puzzle_name: &str, solution: &str) {

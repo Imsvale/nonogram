@@ -112,8 +112,7 @@ impl App {
         if indent > 0.0 { hdr.push(Space::with_width(Length::Fixed(indent)).into()); }
         hdr.push(button(bi(chevron).size(11)).on_press(Message::FileCollapseToggled(fi)).padding([2, 4]).style(style_chevron_btn).into());
         hdr.push(checkbox("", all_sel).on_toggle(move |c| Message::FileToggled(fi, c)).into());
-        hdr.push(text(file.name.as_str()).size(13).into());
-        hdr.push(Space::with_width(Length::Fill).into());
+        hdr.push(text(file.name.as_str()).size(13).width(Length::Fill).into());
         hdr.push(text(count_label).size(11).into());
         items.push(container(row(hdr).spacing(4).padding(Padding { top: 4.0, right: 20.0, bottom: 4.0, left: 8.0 }).align_y(Vertical::Center)).style(style_header_row).into());
 
@@ -280,8 +279,7 @@ impl App {
                 checkbox("", folder_all_sel)
                     .on_toggle(move |c| Message::FolderToggled(fn_select.clone(), c)),
                 bi(Bootstrap::Folder).size(12),
-                text(folder_name.clone()).size(13),
-                Space::with_width(Length::Fill),
+                text(folder_name.clone()).size(13).width(Length::Fill),
                 text(format!("{folder_sel}/{folder_valid}")).size(11),
             ]
             .spacing(4)

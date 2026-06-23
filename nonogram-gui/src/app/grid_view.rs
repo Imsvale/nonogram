@@ -1,10 +1,7 @@
 use std::collections::HashSet;
 
 use iced::{
-    alignment::{Horizontal, Vertical},
-    widget::{button, column, container, horizontal_rule, mouse_area, row, text, Space},
-    Color, Element, Font, Length, Padding,
-    font::Weight,
+    Border, Color, Element, Font, Length, Padding, alignment::{Horizontal, Vertical}, font::Weight, widget::{Space, button, column, container, horizontal_rule, mouse_area, row, text}
 };
 use iced_fonts::bootstrap::Bootstrap;
 use nonogram_core::{CellState, Puzzle, SolveResult};
@@ -218,6 +215,61 @@ fn trial_empty_color(tier: usize) -> Color {
 }
 
 // ---------------------------------------------------------------------------
+// Hover run
+// ---------------------------------------------------------------------------
+
+pub(crate) struct HoverRun {
+    pub horizontal: bool,
+    pub fixed: usize,   // row (horizontal) or col (vertical)
+    pub start: usize,   // inclusive
+    pub end: usize,     // inclusive
+}
+
+pub(crate) fn compute_hover_run(
+    hover_cell: Option<(Key, usize, usize)>,
+    hover_axis: bool,
+    for_key: Key,
+    puzzle: &Puzzle,
+    grid: &[CellState],
+) -> Option<HoverRun> {
+    let (hkey, hr, hc) = hover_cell?;
+    if hkey != for_key { return None; }
+    let w = puzzle.width;
+    let h = puzzle.height;
+    if hr >= h || hc >= w || grid[hr * w + hc] != CellState::Filled { return None; }
+
+    // Horizontal run
+    let mut hs = hc;
+    while hs > 0 && grid[hr * w + hs - 1] == CellState::Filled { hs -= 1; }
+    let mut he = hc;
+    while he + 1 < w && grid[hr * w + he + 1] == CellState::Filled { he += 1; }
+    let hlen = he - hs + 1;
+
+    // Vertical run
+    let mut vs = hr;
+    while vs > 0 && grid[(vs - 1) * w + hc] == CellState::Filled { vs -= 1; }
+    let mut ve = hr;
+    while ve + 1 < h && grid[(ve + 1) * w + hc] == CellState::Filled { ve += 1; }
+    let vlen = ve - vs + 1;
+
+    // If neither direction has a span > 1, nothing interesting to show.
+    if hlen == 1 && vlen == 1 { return None; }
+
+    // Only one direction is unambiguous — pick it; otherwise defer to mouse axis.
+    let use_h = match (hlen > 1, vlen > 1) {
+        (true, false) => true,
+        (false, true) => false,
+        _ => hover_axis,
+    };
+
+    if use_h {
+        Some(HoverRun { horizontal: true,  fixed: hr, start: hs, end: he })
+    } else {
+        Some(HoverRun { horizontal: false, fixed: hc, start: vs, end: ve })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Puzzle grid renderer (interactive)
 // ---------------------------------------------------------------------------
 
@@ -234,6 +286,7 @@ pub(crate) fn view_grid<'a>(
     has_redo: bool,
     prev_key: Option<Key>,
     next_key: Option<Key>,
+    hover_run: Option<HoverRun>,
 ) -> Element<'a, Message> {
     const C: f32 = 26.0;
     const N: f32 = 22.0;
@@ -585,21 +638,46 @@ pub(crate) fn view_grid<'a>(
                 settings.visual_for(state).color
             };
 
+            let in_hover_run = hover_run.as_ref().map_or(false, |hr| {
+                if hr.horizontal { r == hr.fixed && c >= hr.start && c <= hr.end }
+                else             { c == hr.fixed && r >= hr.start && r <= hr.end }
+            });
+            let is_run_head = in_hover_run && hover_run.as_ref().map_or(false, |hr| {
+                if hr.horizontal { c == hr.start } else { r == hr.start }
+            });
+            let run_len = hover_run.as_ref().map_or(0, |hr| hr.end - hr.start + 1);
+
             let cell_face: Element<'a, Message> = if let Some(t) = origin_tier {
                 match state {
                     CellState::Empty => {
-                        container(
-                            container(text(t.to_string()).size(9).color(Color::from_rgb(0.3, 0.3, 0.45)))
-                                .align_x(Horizontal::Right)
-                                .align_y(Vertical::Bottom)
-                                .width(Length::Fill)
-                                .height(Length::Fill)
-                                .padding(Padding { right: 2.0, bottom: 1.0, ..Padding::ZERO })
+                        let marker = container(
+                            text(t.to_string()).size(9).color(Color::from_rgb(0.3, 0.3, 0.45))
                         )
+                        .align_x(Horizontal::Right)
+                        .align_y(Vertical::Bottom)
                         .width(Length::Fill)
                         .height(Length::Fill)
-                        .style(move |_| container::Style { background: Some(bg.into()), ..Default::default() })
-                        .into()
+                        .padding(Padding { right: 2.0, bottom: 1.0, ..Padding::ZERO });
+
+                        if let Some(ic) = settings.empty.icon {
+                            let icon_col = trial_filled_color(tier);
+                            let icon_layer = container(bi(ic).size(C * 0.55).color(icon_col))
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .align_x(Horizontal::Center)
+                                .align_y(Vertical::Center)
+                                .style(move |_| container::Style { background: Some(bg.into()), ..Default::default() });
+                            iced::widget::stack![icon_layer, marker]
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .into()
+                        } else {
+                            container(marker)
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .style(move |_| container::Style { background: Some(bg.into()), ..Default::default() })
+                                .into()
+                        }
                     }
                     _ => {
                         container(text(t.to_string()).size(13).color(Color::WHITE))
@@ -647,6 +725,36 @@ pub(crate) fn view_grid<'a>(
                         .style(move |_| container::Style { background: Some(bg.into()), ..Default::default() })
                         .into()
                 }
+            };
+
+            // Hover-run highlight overlay
+            let cell_face: Element<'a, Message> = if in_hover_run && state == CellState::Filled {
+                let highlight = container(Space::new(0.0, 0.0))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(|_| container::Style {
+                        background: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.10).into()),
+                        ..Default::default()
+                    });
+                if is_run_head {
+                    let label = container(text(run_len.to_string()).size(9).color(Color::WHITE))
+                        .align_x(Horizontal::Left)
+                        .align_y(Vertical::Top)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .padding(Padding { top: 1.0, left: 2.0, ..Padding::ZERO });
+                    iced::widget::stack![cell_face, highlight, label]
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .into()
+                } else {
+                    iced::widget::stack![cell_face, highlight]
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .into()
+                }
+            } else {
+                cell_face
             };
 
             let bordered_cell = bordered!(
@@ -805,34 +913,78 @@ pub(crate) fn view_grid<'a>(
 
         // Fixed width sized to "Trial" so layout doesn't shift when label changes to "+1".
         let enter_label = if trial_tier == 0 { "Trial" } else { "+1" };
-        let enter_btn: Element<Message> = button(text(enter_label).size(12))
+        let enter_btn: Element<Message> = button(
+            text(enter_label)
+                .size(12)
+                .align_x(Horizontal::Center)
+            )
             .on_press(Message::TrialEnter)
             .width(Length::Fixed(40.0))
-            .padding([2, 8])
+            .padding([2, 4])
             .into();
 
-        // Accept and Reject are always shown; coloured green/red when active, washed-out when not.
+        // Accept and Reject are always shown; green/red when active, gray when not.
         let active = trial_tier > 0;
-        let accept_bg  = if active { COLOR_SUCCESS } else { Color { r: 0.72, g: 0.87, b: 0.72, a: 1.0 } };
-        let reject_bg  = if active { COLOR_ERROR   } else { Color { r: 0.90, g: 0.72, b: 0.72, a: 1.0 } };
-        let icon_color = Color::WHITE;
-        let reject_btn_base = button(bi(Bootstrap::XLg).size(16).color(icon_color))
-            .padding([2, 6])
-            .style(move |_, _| button::Style {
-                background: Some(reject_bg.into()),
-                border: Default::default(), shadow: Default::default(),
-                text_color: icon_color,
+        let icon_radius = Border { radius: 3.0.into(), ..Default::default() };
+
+        let reject_btn_base = button(
+            bi(Bootstrap::XLg)
+                .size(14)
+                .color(Color { r: 0.3, g: 0.1, b: 0.1, a: 1.0} )
+                .align_y(Vertical::Center)
+                .align_x(Horizontal::Center)
+            )
+            .padding([1, 3])
+            .style(move |_, status: button::Status| {
+                let (bg, border_col) = if !active {
+                    (Color { r: 0.50, g: 0.50, b: 0.50, a: 1.0 },
+                     Color { r: 0.38, g: 0.38, b: 0.38, a: 1.0 })
+                } else {
+                    let bg = match status {
+                        button::Status::Hovered | button::Status::Pressed =>
+                            Color { r: 0.90, g: 0.20, b: 0.20, a: 1.0 },
+                        _ => COLOR_ERROR,
+                    };
+                    (bg, Color { r: 0.55, g: 0.04, b: 0.04, a: 1.0 })
+                };
+                button::Style {
+                    background: Some(bg.into()),
+                    border: Border { color: border_col, width: 1.5, ..icon_radius },
+                    shadow: Default::default(),
+                    text_color: Color::WHITE,
+                }
             });
         let reject_btn: Element<Message> = if active {
             reject_btn_base.on_press(Message::TrialReject).into()
         } else { reject_btn_base.into() };
 
-        let accept_btn_base = button(bi(Bootstrap::CheckLg).size(16).color(icon_color))
-            .padding([2, 6])
-            .style(move |_, _| button::Style {
-                background: Some(accept_bg.into()),
-                border: Default::default(), shadow: Default::default(),
-                text_color: icon_color,
+        let accept_btn_base = button(
+            bi(Bootstrap::CheckLg)
+                .size(14)
+                .color(Color { r: 0.1, g: 0.3, b: 0.1, a: 1.0} )
+                .align_y(Vertical::Center)
+                .align_x(Horizontal::Center)
+            )
+            // Button itself
+            .padding([1, 3])
+            .style(move |_, status: button::Status| {
+                let (bg, border_col) = if !active {
+                    (Color { r: 0.50, g: 0.50, b: 0.50, a: 1.0 },
+                     Color { r: 0.38, g: 0.38, b: 0.38, a: 1.0 })
+                } else {
+                    let bg = match status {
+                        button::Status::Hovered | button::Status::Pressed =>
+                            Color { r: 0.12, g: 0.68, b: 0.12, a: 1.0 },
+                        _ => COLOR_SUCCESS,
+                    };
+                    (bg, Color { r: 0.04, g: 0.40, b: 0.04, a: 1.0 })
+                };
+                button::Style {
+                    background: Some(bg.into()),
+                    border: Border { color: border_col, width: 1.5, ..icon_radius },
+                    shadow: Default::default(),
+                    text_color: Color::WHITE,
+                }
             });
         let accept_btn: Element<Message> = if active {
             accept_btn_base.on_press(Message::TrialAccept).into()
