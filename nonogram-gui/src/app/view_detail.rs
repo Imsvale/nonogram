@@ -19,7 +19,7 @@ use super::style::{
 use super::settings::{CellVisual, FILLED_ICON_OPTIONS, EMPTY_ICON_OPTIONS};
 use super::export::ExportFormat;
 use super::persistence::relative_path;
-use super::grid_view::{view_grid, compute_hover_run, HoverRun};
+use super::grid_view::{view_grid, compute_hover_runs, HoverRuns};
 
 impl App {
     pub(crate) fn view_puzzle_detail(&self, fi: usize, pi: usize) -> Element<'_, Message> {
@@ -73,15 +73,21 @@ impl App {
                 let trial_info: &[(Vec<CellState>, Option<(usize, usize)>)] =
                     self.trial_stack.get(&key).map(|v| v.as_slice()).unwrap_or(&[]);
                 let pan_off = self.pan_offset;
-                let hover_run: Option<HoverRun> = display_grid.as_deref()
-                    .and_then(|g| compute_hover_run(self.hover_cell, self.hover_axis, key, puzzle, g));
+                let hover_runs: HoverRuns = display_grid.as_deref()
+                    .map(|g| compute_hover_runs(self.hover_cell, key, puzzle, g))
+                    .unwrap_or_else(HoverRuns::none);
+                let crosshair = if self.assistance.crosshair_enabled {
+                    self.hover_cell.and_then(|(hk, hr, hc)| {
+                        if hk == key { Some((hr, hc, self.assistance.crosshair_color)) } else { None }
+                    })
+                } else { None };
                 return column![
                     header,
                     horizontal_rule(1),
                     container(reason_banner).padding([8, 16]).width(Length::Fill),
                     horizontal_rule(1),
                     container(
-                        PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), None, None, hover_run), pan_off)
+                        PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), None, None, hover_runs, crosshair), pan_off)
                             .on_pan(|v| Message::PanOffsetChanged(v)),
                     )
                     .padding(Padding { left: 16.0, ..Padding::ZERO })
@@ -363,11 +369,17 @@ impl App {
         let next_key = pos.and_then(|i| all_keys.get(i + 1).copied());
 
         let pan_off = self.pan_offset;
-        let hover_run: Option<HoverRun> = display_grid.as_deref()
-            .and_then(|g| compute_hover_run(self.hover_cell, self.hover_axis, key, puzzle, g));
+        let hover_runs: HoverRuns = display_grid.as_deref()
+            .map(|g| compute_hover_runs(self.hover_cell, key, puzzle, g))
+            .unwrap_or_else(HoverRuns::none);
+        let crosshair = if self.assistance.crosshair_enabled {
+            self.hover_cell.and_then(|(hk, hr, hc)| {
+                if hk == key { Some((hr, hc, self.assistance.crosshair_color)) } else { None }
+            })
+        } else { None };
         items.push(
             container(
-                PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), prev_key, next_key, hover_run), pan_off)
+                PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), prev_key, next_key, hover_runs, crosshair), pan_off)
                     .on_pan(|v| Message::PanOffsetChanged(v)),
             )
             .padding(Padding { left: 16.0, ..Padding::ZERO })
@@ -590,6 +602,36 @@ impl App {
             sections.push(horizontal_rule(1).into());
         }
 
+        {
+            use iced::widget::checkbox;
+            let xc = self.assistance.crosshair_color;
+            let color_row = color_alpha_editor_row(
+                xc,
+                |v| Message::CrosshairColor(0, v),
+                |v| Message::CrosshairColor(1, v),
+                |v| Message::CrosshairColor(2, v),
+                |v| Message::CrosshairColor(3, v),
+            );
+            let section = container(
+                column![
+                    text("Crosshair highlight").size(13),
+                    checkbox(
+                        "Highlight hovered row and column",
+                        self.assistance.crosshair_enabled,
+                    )
+                    .on_toggle(|_| Message::AssistToggle(4))
+                    .size(14),
+                    color_row,
+                ]
+                .spacing(8),
+            )
+            .style(style_panel)
+            .padding(12)
+            .width(Length::Fill);
+            sections.push(section.into());
+            sections.push(horizontal_rule(1).into());
+        }
+
         let content = column(sections).spacing(0);
 
         container(
@@ -604,6 +646,48 @@ impl App {
         .height(Length::Fill)
         .into()
     }
+}
+
+// Color preview square + R/G/B/A sliders (for crosshair highlight).
+fn color_alpha_editor_row<'a>(
+    color: Color,
+    mk_r: impl Fn(f32) -> Message + 'static,
+    mk_g: impl Fn(f32) -> Message + 'static,
+    mk_b: impl Fn(f32) -> Message + 'static,
+    mk_a: impl Fn(f32) -> Message + 'static,
+) -> Element<'a, Message> {
+    let preview_color = Color { r: color.r, g: color.g, b: color.b, a: 1.0 };
+    let preview = container(Space::new(Length::Fixed(32.0), Length::Fixed(32.0)))
+        .style(move |_| container::Style {
+            background: Some(preview_color.into()),
+            border: iced::Border {
+                radius: 4.0.into(),
+                color: Color::from_rgb(0.4, 0.4, 0.4),
+                width: 1.0,
+            },
+            ..Default::default()
+        });
+    let r_slider = slider(0.0_f32..=1.0, color.r, mk_r).step(0.01_f32).width(Length::Fixed(120.0));
+    let g_slider = slider(0.0_f32..=1.0, color.g, mk_g).step(0.01_f32).width(Length::Fixed(120.0));
+    let b_slider = slider(0.0_f32..=1.0, color.b, mk_b).step(0.01_f32).width(Length::Fixed(120.0));
+    let a_slider = slider(0.0_f32..=1.0, color.a, mk_a).step(0.01_f32).width(Length::Fixed(120.0));
+    row![
+        preview,
+        Space::with_width(Length::Fixed(12.0)),
+        column![
+            row![text("R").size(11).width(Length::Fixed(12.0)), r_slider,
+                 text(format!("{:.2}", color.r)).size(11)].spacing(4).align_y(Vertical::Center),
+            row![text("G").size(11).width(Length::Fixed(12.0)), g_slider,
+                 text(format!("{:.2}", color.g)).size(11)].spacing(4).align_y(Vertical::Center),
+            row![text("B").size(11).width(Length::Fixed(12.0)), b_slider,
+                 text(format!("{:.2}", color.b)).size(11)].spacing(4).align_y(Vertical::Center),
+            row![text("A").size(11).width(Length::Fixed(12.0)), a_slider,
+                 text(format!("{:.2}", color.a)).size(11)].spacing(4).align_y(Vertical::Center),
+        ].spacing(4),
+    ]
+    .align_y(Vertical::Center)
+    .spacing(0)
+    .into()
 }
 
 // Color preview square + R/G/B sliders.

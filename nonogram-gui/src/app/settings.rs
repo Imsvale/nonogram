@@ -102,12 +102,27 @@ pub(crate) const EMPTY_ICON_OPTIONS: &[Option<Bootstrap>] = &[
 // Assistance settings
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct AssistanceSettings {
     pub(crate) auto_dim: bool,
     pub(crate) auto_fill_empty: bool,
     pub(crate) auto_cross_edges: bool,
     pub(crate) clue_sums_with_gaps: bool,
+    pub(crate) crosshair_enabled: bool,
+    pub(crate) crosshair_color: Color,
+}
+
+impl Default for AssistanceSettings {
+    fn default() -> Self {
+        Self {
+            auto_dim: false,
+            auto_fill_empty: false,
+            auto_cross_edges: false,
+            clue_sums_with_gaps: false,
+            crosshair_enabled: false,
+            crosshair_color: Color { r: 0.40, g: 0.72, b: 1.0, a: 0.18 },
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +139,10 @@ struct SavedCellVisual {
 
 fn default_clue_bg_channel() -> f32 { 0.97 }
 fn default_sum_bg_channel()  -> f32 { 0.82 }
+fn default_xhair_r()         -> f32 { 0.40 }
+fn default_xhair_g()         -> f32 { 0.72 }
+fn default_xhair_b()         -> f32 { 1.0  }
+fn default_xhair_a()         -> f32 { 0.18 }
 
 #[derive(Serialize, Deserialize)]
 struct SavedSettings {
@@ -140,6 +159,11 @@ struct SavedSettings {
     #[serde(default)] auto_fill_empty: bool,
     #[serde(default)] auto_cross_edges: bool,
     #[serde(default)] clue_sums_with_gaps: bool,
+    #[serde(default)] crosshair_enabled: bool,
+    #[serde(default = "default_xhair_r")] crosshair_r: f32,
+    #[serde(default = "default_xhair_g")] crosshair_g: f32,
+    #[serde(default = "default_xhair_b")] crosshair_b: f32,
+    #[serde(default = "default_xhair_a")] crosshair_a: f32,
 }
 
 pub(crate) fn icon_to_idx(icon: Option<Bootstrap>) -> usize {
@@ -197,6 +221,8 @@ pub(crate) fn load_settings() -> (CellSettings, AssistanceSettings) {
         auto_fill_empty:      saved.auto_fill_empty,
         auto_cross_edges:     saved.auto_cross_edges,
         clue_sums_with_gaps:  saved.clue_sums_with_gaps,
+        crosshair_enabled:    saved.crosshair_enabled,
+        crosshair_color:      Color { r: saved.crosshair_r, g: saved.crosshair_g, b: saved.crosshair_b, a: saved.crosshair_a },
     };
     (cell, assist)
 }
@@ -220,6 +246,11 @@ pub(crate) fn save_settings(settings: &CellSettings, assist: &AssistanceSettings
         auto_fill_empty:     assist.auto_fill_empty,
         auto_cross_edges:    assist.auto_cross_edges,
         clue_sums_with_gaps: assist.clue_sums_with_gaps,
+        crosshair_enabled:   assist.crosshair_enabled,
+        crosshair_r:         assist.crosshair_color.r,
+        crosshair_g:         assist.crosshair_color.g,
+        crosshair_b:         assist.crosshair_color.b,
+        crosshair_a:         assist.crosshair_color.a,
     };
     if let Ok(json) = serde_json::to_string_pretty(&saved) {
         let _ = std::fs::write(&path, json);

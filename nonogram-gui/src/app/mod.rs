@@ -78,10 +78,8 @@ pub struct App {
     redo_stack: HashMap<Key, Vec<Vec<CellState>>>,
     // Trial mode: each entry is (snapshot_before_tier, first_cell_changed_in_tier)
     trial_stack: HashMap<Key, Vec<(Vec<CellState>, Option<(usize, usize)>)>>,
-    // Hover-run detection
+    // Hover cell (for run highlight and crosshair)
     hover_cell: Option<(Key, usize, usize)>,
-    hover_cell_history: Vec<(usize, usize)>,
-    hover_axis: bool,
     // Window geometry (updated by events, persisted on close)
     window_id: Option<window::Id>,
     startup_maximize: bool,
@@ -177,6 +175,7 @@ pub enum Message {
     // Interactive grid
     CellClicked { key: Key, row: usize, col: usize, right: bool },
     CellEntered { key: Key, row: usize, col: usize },
+    GridLeft,
     DragEnded,
 
     // Settings
@@ -187,7 +186,8 @@ pub enum Message {
     SettingIcon(u8, Option<Bootstrap>),
     SettingClueBg(u8, f32),
     SettingSumBg(u8, f32),
-    AssistToggle(u8),  // 0=auto_dim, 1=auto_fill_empty, 2=clue_sums_with_gaps, 3=auto_cross_edges
+    AssistToggle(u8),  // 0=auto_dim, 1=auto_fill_empty, 2=clue_sums_with_gaps, 3=auto_cross_edges, 4=crosshair_enabled
+    CrosshairColor(u8, f32),  // channel: 0=R, 1=G, 2=B, 3=A
     ClueDimToggle(Key, bool, usize, usize),  // (puzzle key, is_col, line_idx, clue_idx)
 
     // Grid editing
@@ -253,8 +253,6 @@ impl App {
             redo_stack: HashMap::new(),
             trial_stack: HashMap::new(),
             hover_cell: None,
-            hover_cell_history: Vec::new(),
-            hover_axis: true,
             window_id: None,
             startup_maximize: was_maximized,
             window_size: Size::new(1200.0, 780.0),
@@ -989,24 +987,13 @@ impl App {
                 Task::none()
             }
 
+            Message::GridLeft => {
+                self.hover_cell = None;
+                Task::none()
+            }
+
             Message::CellEntered { key, row, col } => {
-                // Track hover cell and update axis from recent cell-entry sequence.
-                if self.hover_cell.map(|(k, _, _)| k) != Some(key) {
-                    self.hover_cell_history.clear();
-                }
                 self.hover_cell = Some((key, row, col));
-                self.hover_cell_history.push((row, col));
-                if self.hover_cell_history.len() > 5 { self.hover_cell_history.remove(0); }
-                let h = &self.hover_cell_history;
-                if h.len() >= 2 {
-                    let row_spread = h.iter().map(|&(r, _)| r).max().unwrap_or(0)
-                        .saturating_sub(h.iter().map(|&(r, _)| r).min().unwrap_or(0));
-                    let col_spread = h.iter().map(|&(_, c)| c).max().unwrap_or(0)
-                        .saturating_sub(h.iter().map(|&(_, c)| c).min().unwrap_or(0));
-                    if col_spread != row_spread {
-                        self.hover_axis = col_spread > row_spread;
-                    }
-                }
 
                 if let Some(target) = self.drag_state {
                     let (fi, pi) = key;
@@ -1159,6 +1146,19 @@ impl App {
                     1 => self.assistance.auto_fill_empty      = !self.assistance.auto_fill_empty,
                     2 => self.assistance.clue_sums_with_gaps  = !self.assistance.clue_sums_with_gaps,
                     3 => self.assistance.auto_cross_edges     = !self.assistance.auto_cross_edges,
+                    4 => self.assistance.crosshair_enabled    = !self.assistance.crosshair_enabled,
+                    _ => {}
+                }
+                save_settings(&self.cell_settings, &self.assistance);
+                Task::none()
+            }
+
+            Message::CrosshairColor(channel, value) => {
+                match channel {
+                    0 => self.assistance.crosshair_color.r = value,
+                    1 => self.assistance.crosshair_color.g = value,
+                    2 => self.assistance.crosshair_color.b = value,
+                    3 => self.assistance.crosshair_color.a = value,
                     _ => {}
                 }
                 save_settings(&self.cell_settings, &self.assistance);

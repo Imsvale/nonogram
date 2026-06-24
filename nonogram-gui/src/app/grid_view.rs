@@ -218,54 +218,69 @@ fn trial_empty_color(tier: usize) -> Color {
 // Hover run
 // ---------------------------------------------------------------------------
 
+// horizontal: fixed=row, start/end=col range
+// vertical:   fixed=col, start/end=row range
 pub(crate) struct HoverRun {
-    pub horizontal: bool,
-    pub fixed: usize,   // row (horizontal) or col (vertical)
-    pub start: usize,   // inclusive
-    pub end: usize,     // inclusive
+    pub fixed: usize,
+    pub start: usize,
+    pub end: usize,
 }
 
-pub(crate) fn compute_hover_run(
+pub(crate) struct HoverRuns {
+    pub h: Option<HoverRun>,
+    pub v: Option<HoverRun>,
+}
+
+impl HoverRuns {
+    pub fn none() -> Self { Self { h: None, v: None } }
+}
+
+pub(crate) fn compute_hover_runs(
     hover_cell: Option<(Key, usize, usize)>,
-    hover_axis: bool,
     for_key: Key,
     puzzle: &Puzzle,
     grid: &[CellState],
-) -> Option<HoverRun> {
-    let (hkey, hr, hc) = hover_cell?;
-    if hkey != for_key { return None; }
+) -> HoverRuns {
+    let (hkey, hr, hc) = match hover_cell {
+        Some(v) => v,
+        None => return HoverRuns::none(),
+    };
+    if hkey != for_key { return HoverRuns::none(); }
     let w = puzzle.width;
     let h = puzzle.height;
-    if hr >= h || hc >= w || grid[hr * w + hc] != CellState::Filled { return None; }
+    if hr >= h || hc >= w || grid[hr * w + hc] != CellState::Filled {
+        return HoverRuns::none();
+    }
 
     // Horizontal run
     let mut hs = hc;
     while hs > 0 && grid[hr * w + hs - 1] == CellState::Filled { hs -= 1; }
     let mut he = hc;
     while he + 1 < w && grid[hr * w + he + 1] == CellState::Filled { he += 1; }
-    let hlen = he - hs + 1;
 
     // Vertical run
     let mut vs = hr;
     while vs > 0 && grid[(vs - 1) * w + hc] == CellState::Filled { vs -= 1; }
     let mut ve = hr;
     while ve + 1 < h && grid[(ve + 1) * w + hc] == CellState::Filled { ve += 1; }
-    let vlen = ve - vs + 1;
 
-    // If neither direction has a span > 1, nothing interesting to show.
-    if hlen == 1 && vlen == 1 { return None; }
+    HoverRuns {
+        h: if he > hs { Some(HoverRun { fixed: hr, start: hs, end: he }) } else { None },
+        v: if ve > vs { Some(HoverRun { fixed: hc, start: vs, end: ve }) } else { None },
+    }
+}
 
-    // Only one direction is unambiguous — pick it; otherwise defer to mouse axis.
-    let use_h = match (hlen > 1, vlen > 1) {
-        (true, false) => true,
-        (false, true) => false,
-        _ => hover_axis,
-    };
+// ---------------------------------------------------------------------------
+// Color blend utility
+// ---------------------------------------------------------------------------
 
-    if use_h {
-        Some(HoverRun { horizontal: true,  fixed: hr, start: hs, end: he })
-    } else {
-        Some(HoverRun { horizontal: false, fixed: hc, start: vs, end: ve })
+fn blend_color(base: Color, overlay: Color) -> Color {
+    let a = overlay.a;
+    Color {
+        r: base.r * (1.0 - a) + overlay.r * a,
+        g: base.g * (1.0 - a) + overlay.g * a,
+        b: base.b * (1.0 - a) + overlay.b * a,
+        a: 1.0,
     }
 }
 
@@ -286,7 +301,8 @@ pub(crate) fn view_grid<'a>(
     has_redo: bool,
     prev_key: Option<Key>,
     next_key: Option<Key>,
-    hover_run: Option<HoverRun>,
+    hover_runs: HoverRuns,
+    crosshair: Option<(usize, usize, Color)>,
 ) -> Element<'a, Message> {
     const C: f32 = 26.0;
     const N: f32 = 22.0;
@@ -367,6 +383,12 @@ pub(crate) fn view_grid<'a>(
         b: (clue_bg.b - 0.07).max(0.0),
         a: 1.0,
     };
+
+    let (xhair_row, xhair_col, xhair_color): (Option<usize>, Option<usize>, Option<Color>) =
+        match crosshair {
+            Some((xr, xc, xc_col)) => (Some(xr), Some(xc), Some(xc_col)),
+            None => (None, None, None),
+        };
 
     macro_rules! bordered {
         (
@@ -462,10 +484,19 @@ pub(crate) fn view_grid<'a>(
             let lp = if c % 5 == 0 { 2.0_f32 } else { 1.0 };
             let vc = if c % 5 == 0 { border_maj } else { border_min };
 
+            let col_bg = match (xhair_col == Some(c), xhair_color) {
+                (true, Some(xc)) => blend_color(clue_bg, xc),
+                _ => clue_bg,
+            };
+            let col_bg_hover = match (xhair_col == Some(c), xhair_color) {
+                (true, Some(xc)) => blend_color(clue_bg_hover, xc),
+                _ => clue_bg_hover,
+            };
+
             let clues = &puzzle.col_clues[c];
             let pad   = max_cd - clues.len();
             let mut nums: Vec<Element<'a, Message>> = (0..pad)
-                .map(|_| solid!(C, N, clue_bg))
+                .map(|_| solid!(C, N, col_bg))
                 .collect();
             let col_indiv_dim: Vec<bool> = if assistance.auto_dim {
                 grid.as_ref().map(|g| {
@@ -478,7 +509,8 @@ pub(crate) fn view_grid<'a>(
                     || col_indiv_dim[i]
                     || manual_dim_cols.map(|s| s.contains(&(c, i))).unwrap_or(false);
                 let tc = if is_dim { Color::from_rgb(0.70, 0.70, 0.70) } else { Color::from_rgb(0.1, 0.1, 0.1) };
-                let bg = clue_bg;
+                let bg = col_bg;
+                let bg_h = col_bg_hover;
                 nums.push(
                     button(
                         container(text(n.to_string()).size(13).color(tc)
@@ -492,7 +524,7 @@ pub(crate) fn view_grid<'a>(
                     .padding(Padding::ZERO)
                     .style(move |_, status| button::Style {
                         background: Some(if matches!(status, button::Status::Hovered) {
-                            clue_bg_hover.into()
+                            bg_h.into()
                         } else {
                             bg.into()
                         }),
@@ -552,10 +584,19 @@ pub(crate) fn view_grid<'a>(
 
         // Row clue area
         {
+            let row_bg = match (xhair_row == Some(r), xhair_color) {
+                (true, Some(xc)) => blend_color(clue_bg, xc),
+                _ => clue_bg,
+            };
+            let row_bg_hover = match (xhair_row == Some(r), xhair_color) {
+                (true, Some(xc)) => blend_color(clue_bg_hover, xc),
+                _ => clue_bg_hover,
+            };
+
             let clues = &puzzle.row_clues[r];
             let pad   = max_rd - clues.len();
             let mut rnums: Vec<Element<'a, Message>> = (0..pad)
-                .map(|_| solid!(N, C, clue_bg))
+                .map(|_| solid!(N, C, row_bg))
                 .collect();
             let row_indiv_dim: Vec<bool> = if assistance.auto_dim {
                 grid.as_ref().map(|g| {
@@ -568,7 +609,8 @@ pub(crate) fn view_grid<'a>(
                     || row_indiv_dim[i]
                     || manual_dim_rows.map(|s| s.contains(&(r, i))).unwrap_or(false);
                 let tc = if is_dim { Color::from_rgb(0.70, 0.70, 0.70) } else { Color::from_rgb(0.1, 0.1, 0.1) };
-                let bg = clue_bg;
+                let bg = row_bg;
+                let bg_h = row_bg_hover;
                 rnums.push(
                     button(
                         container(text(n.to_string()).size(13).color(tc)
@@ -582,7 +624,7 @@ pub(crate) fn view_grid<'a>(
                     .padding(Padding::ZERO)
                     .style(move |_, status| button::Style {
                         background: Some(if matches!(status, button::Status::Hovered) {
-                            clue_bg_hover.into()
+                            bg_h.into()
                         } else {
                             bg.into()
                         }),
@@ -638,14 +680,18 @@ pub(crate) fn view_grid<'a>(
                 settings.visual_for(state).color
             };
 
-            let in_hover_run = hover_run.as_ref().map_or(false, |hr| {
-                if hr.horizontal { r == hr.fixed && c >= hr.start && c <= hr.end }
-                else             { c == hr.fixed && r >= hr.start && r <= hr.end }
-            });
-            let is_run_head = in_hover_run && hover_run.as_ref().map_or(false, |hr| {
-                if hr.horizontal { c == hr.start } else { r == hr.start }
-            });
-            let run_len = hover_run.as_ref().map_or(0, |hr| hr.end - hr.start + 1);
+            let bg = match (xhair_row == Some(r) || xhair_col == Some(c), xhair_color) {
+                (true, Some(xc)) => blend_color(bg, xc),
+                _ => bg,
+            };
+
+            let in_h_run = hover_runs.h.as_ref().map_or(false, |hr| r == hr.fixed && c >= hr.start && c <= hr.end);
+            let in_v_run = hover_runs.v.as_ref().map_or(false, |hr| c == hr.fixed && r >= hr.start && r <= hr.end);
+            let in_hover_run = in_h_run || in_v_run;
+            let is_h_head = in_h_run && hover_runs.h.as_ref().map_or(false, |hr| c == hr.start);
+            let is_v_head = in_v_run && hover_runs.v.as_ref().map_or(false, |hr| r == hr.start);
+            let h_run_len = hover_runs.h.as_ref().map_or(0, |hr| hr.end - hr.start + 1);
+            let v_run_len = hover_runs.v.as_ref().map_or(0, |hr| hr.end - hr.start + 1);
 
             let cell_face: Element<'a, Message> = if let Some(t) = origin_tier {
                 match state {
@@ -727,7 +773,7 @@ pub(crate) fn view_grid<'a>(
                 }
             };
 
-            // Hover-run highlight overlay
+            // Hover-run highlight overlay: white tint + run-length labels
             let cell_face: Element<'a, Message> = if in_hover_run && state == CellState::Filled {
                 let highlight = container(Space::new(0.0, 0.0))
                     .width(Length::Fill)
@@ -736,23 +782,35 @@ pub(crate) fn view_grid<'a>(
                         background: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.10).into()),
                         ..Default::default()
                     });
-                if is_run_head {
-                    let label = container(text(run_len.to_string()).size(9).color(Color::WHITE))
-                        .align_x(Horizontal::Left)
-                        .align_y(Vertical::Top)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .padding(Padding { top: 1.0, left: 2.0, ..Padding::ZERO });
-                    iced::widget::stack![cell_face, highlight, label]
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .into()
-                } else {
-                    iced::widget::stack![cell_face, highlight]
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .into()
+                let mut layers: Vec<Element<'a, Message>> = vec![cell_face, highlight.into()];
+                // H label: bottom-left of the leftmost cell in the horizontal run
+                if is_h_head {
+                    layers.push(
+                        container(text(h_run_len.to_string()).size(9).color(Color::WHITE))
+                            .align_x(Horizontal::Left)
+                            .align_y(Vertical::Bottom)
+                            .width(Length::Fill)
+                            .height(Length::Fill)
+                            .padding(Padding { bottom: 2.0, left: 2.0, ..Padding::ZERO })
+                            .into(),
+                    );
                 }
+                // V label: top-right of the topmost cell in the vertical run
+                if is_v_head {
+                    layers.push(
+                        container(text(v_run_len.to_string()).size(9).color(Color::WHITE))
+                            .align_x(Horizontal::Right)
+                            .align_y(Vertical::Top)
+                            .width(Length::Fill)
+                            .height(Length::Fill)
+                            .padding(Padding { top: 1.0, right: 2.0, ..Padding::ZERO })
+                            .into(),
+                    );
+                }
+                iced::widget::stack(layers)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into()
             } else {
                 cell_face
             };
@@ -1081,7 +1139,10 @@ pub(crate) fn view_grid<'a>(
         );
     }
 
-    container(column(all_rows))
-        .padding(Padding { top: 16.0, right: 16.0, bottom: 16.0, left: 0.0 })
-        .into()
+    mouse_area(
+        container(column(all_rows))
+            .padding(Padding { top: 16.0, right: 16.0, bottom: 16.0, left: 0.0 }),
+    )
+    .on_exit(Message::GridLeft)
+    .into()
 }
