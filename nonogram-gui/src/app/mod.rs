@@ -78,8 +78,12 @@ pub struct App {
     redo_stack: HashMap<Key, Vec<Vec<CellState>>>,
     // Trial mode: each entry is (snapshot_before_tier, first_cell_changed_in_tier)
     trial_stack: HashMap<Key, Vec<(Vec<CellState>, Option<(usize, usize)>)>>,
-    // Hover cell (for run highlight and crosshair)
+    // Hover cell (for run highlight)
     hover_cell: Option<(Key, usize, usize)>,
+    // Crosshair position — None on each axis hides that axis.
+    // Updated by CellEntered (cells) and GridRegionChanged (clue areas).
+    crosshair_row: Option<usize>,
+    crosshair_col: Option<usize>,
     // Window geometry (updated by events, persisted on close)
     window_id: Option<window::Id>,
     startup_maximize: bool,
@@ -208,6 +212,11 @@ pub enum Message {
 
     // Grid pan
     PanOffsetChanged(Vector),
+    // Crosshair axis visibility (fired by FrozenGridViewport on CursorMoved)
+    GridRegionChanged(crate::frozen_grid_viewport::FrozenRegion),
+
+    // Temporary debug
+    DebugGridDump,
 
     // Window geometry / lifecycle
     WindowOpened(window::Id),
@@ -253,6 +262,8 @@ impl App {
             redo_stack: HashMap::new(),
             trial_stack: HashMap::new(),
             hover_cell: None,
+            crosshair_row: None,
+            crosshair_col: None,
             window_id: None,
             startup_maximize: was_maximized,
             window_size: Size::new(1200.0, 780.0),
@@ -600,6 +611,8 @@ impl App {
                 self.focused = Some(key);
                 self.replaying = false;
                 self.show_export_menu = false;
+                self.crosshair_row = None;
+                self.crosshair_col = None;
 
                 // Persist this puzzle as the last focused for next-session restore.
                 if let Some(file) = self.files.get(fi) {
@@ -634,6 +647,8 @@ impl App {
                 self.focused = None;
                 self.replaying = false;
                 self.show_export_menu = false;
+                self.crosshair_row = None;
+                self.crosshair_col = None;
                 Task::none()
             }
 
@@ -989,11 +1004,40 @@ impl App {
 
             Message::GridLeft => {
                 self.hover_cell = None;
+                self.crosshair_row = None;
+                self.crosshair_col = None;
+                Task::none()
+            }
+
+            Message::GridRegionChanged(region) => {
+                use crate::frozen_grid_viewport::FrozenRegion;
+                match region {
+                    FrozenRegion::Cells => {
+                        // crosshair_row/col kept current — updated by CellEntered
+                    }
+                    FrozenRegion::RowAxis(row) => {
+                        self.hover_cell = None;
+                        self.crosshair_row = Some(row);
+                        self.crosshair_col = None;
+                    }
+                    FrozenRegion::ColAxis(col) => {
+                        self.hover_cell = None;
+                        self.crosshair_row = None;
+                        self.crosshair_col = Some(col);
+                    }
+                    FrozenRegion::Other => {
+                        self.hover_cell = None;
+                        self.crosshair_row = None;
+                        self.crosshair_col = None;
+                    }
+                }
                 Task::none()
             }
 
             Message::CellEntered { key, row, col } => {
                 self.hover_cell = Some((key, row, col));
+                self.crosshair_row = Some(row);
+                self.crosshair_col = Some(col);
 
                 if let Some(target) = self.drag_state {
                     let (fi, pi) = key;
@@ -1088,6 +1132,14 @@ impl App {
 
             Message::PanOffsetChanged(offset) => {
                 self.pan_offset = offset;
+                self.hover_cell = None;
+                self.crosshair_row = None;
+                self.crosshair_col = None;
+                Task::none()
+            }
+
+            Message::DebugGridDump => {
+                crate::frozen_grid_viewport::request_debug_dump();
                 Task::none()
             }
 
