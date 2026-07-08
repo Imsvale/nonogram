@@ -416,41 +416,6 @@ where
                     }
                 }
 
-                // Overlay crisp 2 px separator quads to cover sub-pixel bleed from
-                // minimap cell rendering.  Dimensions are constrained to the actual
-                // grid content (corner → top_right), NOT the full widget size.
-                let sep = Color::from_rgb(0.28, 0.32, 0.44);
-                let corner_b    = child_layouts[IDX_CORNER].bounds();
-                let top_right_b = child_layouts[IDX_TOP_RIGHT].bounds();
-                // Horizontal: from corner left edge to top_right right edge.
-                renderer.fill_quad(
-                    renderer::Quad {
-                        bounds: Rectangle {
-                            x:      corner_b.x,
-                            y:      corner_b.y + corner_b.height - 2.0,
-                            width:  top_right_b.x + top_right_b.width - corner_b.x,
-                            height: 2.0,
-                        },
-                        border: Default::default(),
-                        shadow: Default::default(),
-                    },
-                    Background::Color(sep),
-                );
-                // Vertical: right edge of corner/row-clue strip, header height only.
-                renderer.fill_quad(
-                    renderer::Quad {
-                        bounds: Rectangle {
-                            x:      corner_b.x + corner_b.width - 2.0,
-                            y:      corner_b.y,
-                            width:  2.0,
-                            height: corner_b.height,
-                        },
-                        border: Default::default(),
-                        shadow: Default::default(),
-                    },
-                    Background::Color(sep),
-                );
-
                 draw_scrollbars(
                     renderer,
                     clips[IDX_CELLS],
@@ -459,6 +424,53 @@ where
                 );
             });
         });
+
+        // Separator overlay — drawn in a separate layer opened AFTER the main
+        // layer closes.  iced's wgpu backend defers inner with_layer sub-layers
+        // (used for overflowing children such as col_clues on large puzzles) to
+        // end-of-frame compositing, so they land on top of anything drawn later
+        // inside the same outer layer.  By opening a fresh top-level layer here
+        // we guarantee the separator composites after every child sub-layer and
+        // is never buried.
+        {
+            let snap        = Vector::new(-bounds.x.fract(), -bounds.y.fract());
+            let corner_b    = child_layouts[IDX_CORNER].bounds();
+            let top_right_b = child_layouts[IDX_TOP_RIGHT].bounds();
+            let sep         = Color::from_rgb(0.28, 0.32, 0.44);
+
+            renderer.with_layer(bounds, |renderer| {
+                renderer.with_translation(snap, |renderer| {
+                    // Horizontal: corner left → top_right right, exactly the grid width.
+                    renderer.fill_quad(
+                        renderer::Quad {
+                            bounds: Rectangle {
+                                x:      corner_b.x,
+                                y:      corner_b.y + corner_b.height - 2.0,
+                                width:  top_right_b.x + top_right_b.width - corner_b.x,
+                                height: 2.0,
+                            },
+                            border: Default::default(),
+                            shadow: Default::default(),
+                        },
+                        Background::Color(sep),
+                    );
+                    // Vertical: right edge of corner/row-clue strip, header height only.
+                    renderer.fill_quad(
+                        renderer::Quad {
+                            bounds: Rectangle {
+                                x:      corner_b.x + corner_b.width - 2.0,
+                                y:      corner_b.y,
+                                width:  2.0,
+                                height: corner_b.height,
+                            },
+                            border: Default::default(),
+                            shadow: Default::default(),
+                        },
+                        Background::Color(sep),
+                    );
+                });
+            });
+        }
 
         // Debug snapshot — printed once when requested, then cleared.
         if DEBUG_REQUESTED.swap(false, Ordering::Relaxed) {
