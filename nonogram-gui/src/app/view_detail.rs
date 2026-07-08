@@ -416,7 +416,8 @@ impl App {
                     .into()
             }).collect();
             popup_items.push(
-                button(text("puzz.link (copy URL)").size(13))
+                button(row![bi(Bootstrap::LinkFourfivedeg).size(12), text("puzz.link").size(13)]
+                    .spacing(6).align_y(iced::alignment::Vertical::Center))
                     .on_press(Message::CopyPuzzLink(key))
                     .width(Length::Fill)
                     .padding([5, 10])
