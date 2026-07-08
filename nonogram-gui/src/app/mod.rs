@@ -33,7 +33,7 @@ use persistence::{
     save_solution_to_file, relative_path, save_window_state,
 };
 use scan::scan_puzzle_dirs;
-use export::{ExportFormat, puzzle_to_file_string, export_puzprv3};
+use export::{ExportFormat, puzzle_to_file_string, export_puzprv3, puzzle_to_puzzlink_url};
 use grid_view::{grid_at_step, is_puzzle_fully_solved, check_line_fulfilled, forced_empty_from_edges};
 
 // ---------------------------------------------------------------------------
@@ -206,6 +206,7 @@ pub enum Message {
 
     // Clipboard / export
     CopyPuzzleString(Key),
+    CopyPuzzLink(Key),
     ExportMenuToggled,
     ExportFormatSelected(ExportFormat),
     ExportSaved(String, Option<String>, Option<String>), // (content, path, error)
@@ -1305,6 +1306,21 @@ impl App {
                     })
                 else { return Task::none(); };
                 iced::clipboard::write(puzzle_to_file_string(puzzle))
+            }
+
+            Message::CopyPuzzLink(key) => {
+                let (fi, pi) = key;
+                let Some(puzzle) = self.files.get(fi)
+                    .and_then(|f| f.puzzles.get(pi))
+                    .and_then(|e| match e {
+                        nonogram_core::ParsedPuzzle::Valid(p) => Some(p),
+                        nonogram_core::ParsedPuzzle::Invalid { puzzle: Some(p), .. } => Some(p),
+                        _ => None,
+                    })
+                else { return Task::none(); };
+                let url = puzzle_to_puzzlink_url(puzzle);
+                self.status = format!("puzz.link URL copied to clipboard");
+                iced::clipboard::write(url)
             }
 
             Message::ExportMenuToggled => {

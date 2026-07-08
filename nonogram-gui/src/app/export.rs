@@ -1,5 +1,41 @@
 use nonogram_core::{CellState, Puzzle};
 
+pub(crate) fn puzzle_to_puzzlink_url(puzzle: &Puzzle) -> String {
+    let w = puzzle.width;
+    let h = puzzle.height;
+    let g_col = (h + 1) / 2;
+    let g_row = (w + 1) / 2;
+
+    fn encode_value(v: u32, out: &mut String) {
+        if v <= 9 {
+            out.push(char::from(b'0' + v as u8));
+        } else if v <= 15 {
+            out.push(char::from(b'a' + (v - 10) as u8));
+        } else {
+            out.push('-');
+            out.push_str(&format!("{:02x}", v));
+        }
+    }
+
+    fn encode_group(clues: &[u32], g: usize, out: &mut String) {
+        for &v in clues.iter().rev() {
+            encode_value(v, out);
+        }
+        let zeros = g.saturating_sub(clues.len());
+        out.push(char::from(b'f' + zeros as u8));
+    }
+
+    let mut data = String::new();
+    for c in 0..w {
+        encode_group(&puzzle.col_clues[c], g_col, &mut data);
+    }
+    for r in 0..h {
+        encode_group(&puzzle.row_clues[r], g_row, &mut data);
+    }
+
+    format!("https://puzz.link/p?nonogram/{}/{}/{}", w, h, data)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ExportFormat {
     PuzPreV3,

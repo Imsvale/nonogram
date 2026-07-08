@@ -1,7 +1,7 @@
 use iced::{
     alignment::Vertical,
     widget::{
-        button, column, container, horizontal_rule, row,
+        button, column, container, horizontal_rule, mouse_area, row,
         scrollable, slider, stack, text, Space,
     },
     Color, Element, Length, Padding, Theme,
@@ -9,7 +9,7 @@ use iced::{
 use iced_fonts::bootstrap::Bootstrap;
 use nonogram_core::{CellState, ParsedPuzzle, SolutionState};
 
-use crate::pan_viewport::PanViewport;
+use crate::frozen_grid_viewport::FrozenGridViewport;
 use super::{App, Key, Message};
 use super::style::{
     bi, icon_char, style_panel, style_header_row,
@@ -19,7 +19,7 @@ use super::style::{
 use super::settings::{CellVisual, FILLED_ICON_OPTIONS, EMPTY_ICON_OPTIONS};
 use super::export::ExportFormat;
 use super::persistence::relative_path;
-use super::grid_view::{view_grid, compute_hover_runs, HoverRuns};
+use super::grid_view::{build_grid_regions, compute_hover_runs, HoverRuns};
 
 impl App {
     pub(crate) fn view_puzzle_detail(&self, fi: usize, pi: usize) -> Element<'_, Message> {
@@ -77,22 +77,27 @@ impl App {
                     .map(|g| compute_hover_runs(self.hover_cell, key, puzzle, g))
                     .unwrap_or_else(HoverRuns::none);
                 let crosshair = if self.assistance.crosshair_enabled {
-                    self.hover_cell.and_then(|(hk, hr, hc)| {
-                        if hk == key { Some((hr, hc, self.assistance.crosshair_color)) } else { None }
-                    })
+                    let xr = self.crosshair_row;
+                    let xc = self.crosshair_col;
+                    if xr.is_none() && xc.is_none() { None }
+                    else { Some((xr, xc, self.assistance.crosshair_color)) }
                 } else { None };
+                let regions = build_grid_regions(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), None, None, hover_runs, crosshair);
+                let frozen = FrozenGridViewport::from_regions(regions, key, pan_off, self.theme.extended_palette().background.base.color)
+                    .on_pan(|v| Message::PanOffsetChanged(v))
+                    .on_region(Message::GridRegionChanged);
                 return column![
                     header,
                     horizontal_rule(1),
                     container(reason_banner).padding([8, 16]).width(Length::Fill),
                     horizontal_rule(1),
-                    container(
-                        PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), None, None, hover_runs, crosshair), pan_off)
-                            .on_pan(|v| Message::PanOffsetChanged(v)),
+                    mouse_area(
+                        container(frozen)
+                            .padding(Padding { left: 16.0, ..Padding::ZERO })
+                            .width(Length::Fill)
+                            .height(Length::Fill),
                     )
-                    .padding(Padding { left: 16.0, ..Padding::ZERO })
-                    .width(Length::Fill)
-                    .height(Length::Fill),
+                    .on_exit(Message::GridLeft),
                 ]
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -180,6 +185,13 @@ impl App {
         .on_press(Message::CopyPuzzleString(key))
         .padding([2, 8]);
 
+        let puzzlink_btn = button(
+            row![bi(Bootstrap::LinkFourfivedeg).size(12), text("puzz.link").size(12)]
+                .spacing(4).align_y(Vertical::Center),
+        )
+        .on_press(Message::CopyPuzzLink(key))
+        .padding([2, 8]);
+
         let export_active = self.show_export_menu;
         let export_btn = button(
             row![bi(Bootstrap::Download).size(12), text("Export").size(12)]
@@ -240,7 +252,12 @@ impl App {
                 .color(Color::from_rgb(0.4, 0.4, 0.4))
                 .into(),
             copy_btn.into(),
+            puzzlink_btn.into(),
             export_btn.into(),
+            button(text("Dbg").size(11))
+                .on_press(Message::DebugGridDump)
+                .padding([2, 6])
+                .into(),
             Space::with_width(Length::Fill).into(),
         ]);
         header_items.push(status_el);
@@ -373,18 +390,23 @@ impl App {
             .map(|g| compute_hover_runs(self.hover_cell, key, puzzle, g))
             .unwrap_or_else(HoverRuns::none);
         let crosshair = if self.assistance.crosshair_enabled {
-            self.hover_cell.and_then(|(hk, hr, hc)| {
-                if hk == key { Some((hr, hc, self.assistance.crosshair_color)) } else { None }
-            })
+            let xr = self.crosshair_row;
+            let xc = self.crosshair_col;
+            if xr.is_none() && xc.is_none() { None }
+            else { Some((xr, xc, self.assistance.crosshair_color)) }
         } else { None };
+        let regions = build_grid_regions(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), prev_key, next_key, hover_runs, crosshair);
+        let frozen = FrozenGridViewport::from_regions(regions, key, pan_off, self.theme.extended_palette().background.base.color)
+            .on_pan(|v| Message::PanOffsetChanged(v))
+            .on_region(Message::GridRegionChanged);
         items.push(
-            container(
-                PanViewport::new(key, view_grid(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), prev_key, next_key, hover_runs, crosshair), pan_off)
-                    .on_pan(|v| Message::PanOffsetChanged(v)),
+            mouse_area(
+                container(frozen)
+                    .padding(Padding { left: 16.0, ..Padding::ZERO })
+                    .width(Length::Fill)
+                    .height(Length::Fill),
             )
-            .padding(Padding { left: 16.0, ..Padding::ZERO })
-            .width(Length::Fill)
-            .height(Length::Fill)
+            .on_exit(Message::GridLeft)
             .into()
         );
 
