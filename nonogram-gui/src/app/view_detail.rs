@@ -185,13 +185,6 @@ impl App {
         .on_press(Message::CopyPuzzleString(key))
         .padding([2, 8]);
 
-        let puzzlink_btn = button(
-            row![bi(Bootstrap::LinkFourfivedeg).size(12), text("puzz.link").size(12)]
-                .spacing(4).align_y(Vertical::Center),
-        )
-        .on_press(Message::CopyPuzzLink(key))
-        .padding([2, 8]);
-
         let export_active = self.show_export_menu;
         let export_btn = button(
             row![bi(Bootstrap::Download).size(12), text("Export").size(12)]
@@ -252,7 +245,6 @@ impl App {
                 .color(Color::from_rgb(0.4, 0.4, 0.4))
                 .into(),
             copy_btn.into(),
-            puzzlink_btn.into(),
             export_btn.into(),
             button(text("Dbg").size(11))
                 .on_press(Message::DebugGridDump)
@@ -416,13 +408,20 @@ impl App {
             .into();
 
         if self.show_export_menu {
-            let popup_items: Vec<Element<Message>> = ExportFormat::ALL.iter().map(|&fmt| {
+            let mut popup_items: Vec<Element<Message>> = ExportFormat::ALL.iter().map(|&fmt| {
                 button(text(fmt.label()).size(13))
                     .on_press(Message::ExportFormatSelected(fmt))
                     .width(Length::Fill)
                     .padding([5, 10])
                     .into()
             }).collect();
+            popup_items.push(
+                button(text("puzz.link (copy URL)").size(13))
+                    .on_press(Message::CopyPuzzLink(key))
+                    .width(Length::Fill)
+                    .padding([5, 10])
+                    .into()
+            );
             let popup = container(column(popup_items).spacing(2).padding([4, 4]))
                 .width(160)
                 .style(|theme: &Theme| {
@@ -444,7 +443,7 @@ impl App {
                 });
             let popup_layer: Element<Message> = column![
                 Space::with_height(Length::Fixed(44.0)),
-                container(popup).padding(Padding { left: 16.0, ..Padding::ZERO }),
+                container(popup).padding(Padding { left: self.export_popup_x, ..Padding::ZERO }),
             ]
             .width(Length::Fill)
             .height(Length::Fill)

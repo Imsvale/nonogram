@@ -99,6 +99,8 @@ pub struct App {
     assistance: AssistanceSettings,
     show_settings: bool,
     show_export_menu: bool,
+    export_popup_x: f32,  // cursor x within the detail panel when export menu opened
+    last_cursor: Point,
     // Answer reveal spoiler state
     revealed_answers: HashSet<Key>,
     // Manually-solved puzzles: (relative_file_path, puzzle_name) — persisted across sessions
@@ -208,6 +210,7 @@ pub enum Message {
     CopyPuzzleString(Key),
     CopyPuzzLink(Key),
     ExportMenuToggled,
+    CursorMoved(Point),
     ExportFormatSelected(ExportFormat),
     ExportSaved(String, Option<String>, Option<String>), // (content, path, error)
 
@@ -276,6 +279,8 @@ impl App {
             assistance,
             show_settings: false,
             show_export_menu: false,
+            export_popup_x: 0.0,
+            last_cursor: Point::ORIGIN,
             revealed_answers: HashSet::new(),
             solved_manually: load_solved(),
             folder_collapsed: HashMap::new(),
@@ -305,6 +310,7 @@ impl App {
                 Some(Message::ModifiersChanged(mods))
             }
             Event::Mouse(mouse::Event::ButtonReleased(_)) => Some(Message::DragEnded),
+            Event::Mouse(mouse::Event::CursorMoved { position }) => Some(Message::CursorMoved(position)),
             Event::Window(window::Event::Opened { .. }) => Some(Message::WindowOpened(id)),
             Event::Window(window::Event::Resized(sz)) => Some(Message::WindowResized(sz)),
             Event::Window(window::Event::Moved(pt)) => Some(Message::WindowMoved(pt)),
@@ -1309,6 +1315,7 @@ impl App {
             }
 
             Message::CopyPuzzLink(key) => {
+                self.show_export_menu = false;
                 let (fi, pi) = key;
                 let Some(puzzle) = self.files.get(fi)
                     .and_then(|f| f.puzzles.get(pi))
@@ -1319,12 +1326,21 @@ impl App {
                     })
                 else { return Task::none(); };
                 let url = puzzle_to_puzzlink_url(puzzle);
-                self.status = format!("puzz.link URL copied to clipboard");
+                self.status = "puzz.link URL copied to clipboard".to_string();
                 iced::clipboard::write(url)
+            }
+
+            Message::CursorMoved(pos) => {
+                self.last_cursor = pos;
+                Task::none()
             }
 
             Message::ExportMenuToggled => {
                 self.show_export_menu = !self.show_export_menu;
+                if self.show_export_menu {
+                    // Cursor x relative to the detail panel (left panel 310px + 1px separator).
+                    self.export_popup_x = (self.last_cursor.x - 311.0).max(0.0);
+                }
                 Task::none()
             }
 
