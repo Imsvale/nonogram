@@ -54,6 +54,12 @@ pub struct LoadedFile {
 // App
 // ---------------------------------------------------------------------------
 
+#[derive(Debug, Clone, Default)]
+pub struct TimerState {
+    pub elapsed_secs: u64,
+    pub running: bool,
+}
+
 pub struct App {
     files: Vec<LoadedFile>,
     selected: HashSet<Key>,
@@ -107,6 +113,8 @@ pub struct App {
     solved_manually: HashSet<(String, String)>,
     // Folder-level collapse state
     folder_collapsed: HashMap<String, bool>,
+    // Puzzle timers (session-only, not persisted)
+    timers: HashMap<Key, TimerState>,
     // Incremental scan tracking
     pending_scans: usize,
     scan_total: usize,
@@ -206,6 +214,12 @@ pub enum Message {
     TrialAccept,
     TrialReject,
 
+    // Puzzle timer
+    TimerTick,
+    TimerStart(Key),
+    TimerPause(Key),
+    TimerReset(Key),
+
     // Clipboard / export
     CopyPuzzleString(Key),
     CopyPuzzLink(Key),
@@ -284,6 +298,7 @@ impl App {
             revealed_answers: HashSet::new(),
             solved_manually: load_solved(),
             folder_collapsed: HashMap::new(),
+            timers: HashMap::new(),
             pending_scans: 0,
             scan_total: 0,
         };
@@ -305,6 +320,13 @@ impl App {
             Subscription::none()
         };
 
+        let puzzle_timer = if self.timers.values().any(|t| t.running) {
+            iced::time::every(std::time::Duration::from_secs(1))
+                .map(|_| Message::TimerTick)
+        } else {
+            Subscription::none()
+        };
+
         let kbd_and_mouse = iced::event::listen_with(|event, _, id| match event {
             Event::Keyboard(keyboard::Event::ModifiersChanged(mods)) => {
                 Some(Message::ModifiersChanged(mods))
@@ -318,7 +340,7 @@ impl App {
             _ => None,
         });
 
-        Subscription::batch([timer, kbd_and_mouse])
+        Subscription::batch([timer, puzzle_timer, kbd_and_mouse])
     }
 
     pub fn update(&mut self, msg: Message) -> Task<Message> {
@@ -731,6 +753,9 @@ impl App {
                 let solved  = results.iter().filter(|(_, r)| r.state == SolutionState::Complete).count();
                 let aborted = results.iter().filter(|(_, r)| r.state == SolutionState::Aborted).count();
                 for (key, result) in results {
+                    if result.state == SolutionState::Complete {
+                        if let Some(t) = self.timers.get_mut(&key) { t.running = false; }
+                    }
                     if Some(key) == self.focused && solver_kind == self.solver {
                         self.step_cursor = result.steps.len();
                     }
@@ -993,6 +1018,7 @@ impl App {
                             .zip(self.manual_grids.get(&key))
                             .map(|(puzzle, grid)| (f.path.clone(), relative_path(&f.path), puzzle.name.clone(), puzzle.solution.is_none(), is_puzzle_fully_solved(puzzle, grid))));
                     if let Some((file_path, rel, name, no_file_solution, true)) = solved {
+                        if let Some(t) = self.timers.get_mut(&key) { t.running = false; }
                         let newly_tracked = self.solved_manually.insert((rel, name.clone()));
                         if newly_tracked {
                             save_solved(&self.solved_manually);
@@ -1116,6 +1142,7 @@ impl App {
                             .zip(self.manual_grids.get(&key))
                             .map(|(puzzle, grid)| (f.path.clone(), relative_path(&f.path), puzzle.name.clone(), puzzle.solution.is_none(), is_puzzle_fully_solved(puzzle, grid))));
                     if let Some((file_path, rel, name, no_file_solution, true)) = solved {
+                        if let Some(t) = self.timers.get_mut(&key) { t.running = false; }
                         let newly_tracked = self.solved_manually.insert((rel, name.clone()));
                         if newly_tracked {
                             save_solved(&self.solved_manually);
@@ -1134,6 +1161,25 @@ impl App {
 
             Message::DragEnded => {
                 self.drag_state = None;
+                Task::none()
+            }
+
+            Message::TimerTick => {
+                for t in self.timers.values_mut() {
+                    if t.running { t.elapsed_secs += 1; }
+                }
+                Task::none()
+            }
+            Message::TimerStart(key) => {
+                self.timers.entry(key).or_default().running = true;
+                Task::none()
+            }
+            Message::TimerPause(key) => {
+                if let Some(t) = self.timers.get_mut(&key) { t.running = false; }
+                Task::none()
+            }
+            Message::TimerReset(key) => {
+                self.timers.insert(key, TimerState::default());
                 Task::none()
             }
 

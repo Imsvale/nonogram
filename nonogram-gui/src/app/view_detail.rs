@@ -238,12 +238,37 @@ impl App {
                 );
             }
         }
+        let timer = self.timers.get(&key).cloned().unwrap_or_default();
+        let timer_label = {
+            let s = timer.elapsed_secs;
+            let h = s / 3600;
+            let m = (s % 3600) / 60;
+            let sec = s % 60;
+            if h > 0 { format!("{h}:{m:02}:{sec:02}") } else { format!("{m}:{sec:02}") }
+        };
+        let play_pause_btn = if timer.running {
+            button(bi(Bootstrap::PauseFill).size(13))
+                .on_press(Message::TimerPause(key))
+                .padding(4)
+        } else {
+            button(bi(Bootstrap::PlayFill).size(13))
+                .on_press(Message::TimerStart(key))
+                .padding(4)
+        };
+        let reset_btn = button(bi(Bootstrap::ArrowCounterclockwise).size(13))
+            .on_press(Message::TimerReset(key))
+            .padding(4);
+
         header_items.extend([
             Space::with_width(Length::Fixed(8.0)).into(),
             text(format!("{}x{}", puzzle.width, puzzle.height))
                 .size(13)
                 .color(Color::from_rgb(0.4, 0.4, 0.4))
                 .into(),
+            Space::with_width(Length::Fixed(6.0)).into(),
+            play_pause_btn.into(),
+            reset_btn.into(),
+            text(timer_label).size(13).into(),
             copy_btn.into(),
             export_btn.into(),
             button(text("Dbg").size(11))
