@@ -19,6 +19,18 @@ Token encoding: uppercase ASCII letters, A=1 … Z=26.
 
 This matches the Rosetta Code nonogram encoding convention.
 
+### `json`
+A JSON object (or array of such objects, one per puzzle) with `"rows"` and
+`"columns"` keys, each an array of clue arrays. Clue values may be JSON
+numbers or numeric strings (e.g. `"10"` or `10`).
+
+```json
+{ "columns": [["10", "1", "4"], ...], "rows": [["18", "2", "2"], ...] }
+```
+
+This matches the `Game.task` shape used by puzzle-nonograms.com and read by
+`nonogram-gui`'s URL importer.
+
 ## Usage
 
 ```

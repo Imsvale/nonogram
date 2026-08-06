@@ -88,6 +88,8 @@ enum InputFormat {
     Semicolon,
     /// One clue per line, spaces separate run lengths, "COLUMNS" divides rows from cols.
     Plain,
+    /// A JSON object (or array of objects) with "rows" and "columns" arrays of clue arrays.
+    Json,
 }
 
 // ---------------------------------------------------------------------------
@@ -667,6 +669,81 @@ fn convert_plain(content: &str, name_prefix: &str, col_major: bool) {
 }
 
 // ---------------------------------------------------------------------------
+// JSON format ({"rows": [[...]], "columns": [[...]]}, values as numbers or strings)
+// ---------------------------------------------------------------------------
+
+fn json_value_to_u32(v: &serde_json::Value) -> Option<u32> {
+    match v {
+        serde_json::Value::Number(n) => n.as_u64().map(|x| x as u32),
+        serde_json::Value::String(s) => s.parse().ok(),
+        _ => None,
+    }
+}
+
+fn json_clues(arr: &[serde_json::Value]) -> Result<Vec<Vec<u32>>, String> {
+    arr.iter()
+        .enumerate()
+        .map(|(i, line)| {
+            let items = line.as_array().ok_or_else(|| format!("line {i} is not an array"))?;
+            items
+                .iter()
+                .enumerate()
+                .map(|(j, v)| {
+                    json_value_to_u32(v).ok_or_else(|| format!("invalid clue value at [{i}][{j}]"))
+                })
+                .collect::<Result<Vec<u32>, String>>()
+        })
+        .collect()
+}
+
+fn convert_json_puzzle(
+    obj: &serde_json::Value,
+    name_prefix: &str,
+    num: usize,
+    col_major: bool,
+) -> Result<(), String> {
+    let rows = obj.get("rows").and_then(serde_json::Value::as_array).ok_or("missing \"rows\" array")?;
+    let columns = obj
+        .get("columns")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("missing \"columns\" array")?;
+
+    let row_clues = json_clues(rows)?;
+    let col_clues = json_clues(columns)?;
+    let (row_clues, col_clues) =
+        if col_major { (col_clues, row_clues) } else { (row_clues, col_clues) };
+
+    emit(name_prefix, num, &col_clues, &row_clues);
+    Ok(())
+}
+
+fn convert_json(content: &str, name_prefix: &str, col_major: bool) {
+    let value: serde_json::Value = match serde_json::from_str(content) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Error: invalid JSON: {e}");
+            return;
+        }
+    };
+
+    let puzzles: Vec<&serde_json::Value> = match &value {
+        serde_json::Value::Array(items) => items.iter().collect(),
+        serde_json::Value::Object(_) => vec![&value],
+        _ => {
+            eprintln!("Error: expected a JSON object or array of objects.");
+            return;
+        }
+    };
+
+    for (i, obj) in puzzles.into_iter().enumerate() {
+        let num = i + 1;
+        if let Err(e) = convert_json_puzzle(obj, name_prefix, num, col_major) {
+            eprintln!("Warning: puzzle {num}: {e} — skipping.");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -710,5 +787,6 @@ fn main() {
         InputFormat::Letter => convert_letter(&content, &cli.name, col_major),
         InputFormat::Semicolon => convert_semicolon(&content, &cli.name, col_major),
         InputFormat::Plain => convert_plain(&content, &cli.name, col_major),
+        InputFormat::Json => convert_json(&content, &cli.name, col_major),
     }
 }
