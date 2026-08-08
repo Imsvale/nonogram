@@ -10,6 +10,8 @@
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
+use std::io::Write;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use nonogram_core::{AllSolutions, CancelToken, CellState, ExhaustiveSolver, LineId, Puzzle, Solver, SolveContext, SolveResult, SolveStep, SolutionState};
 
@@ -585,9 +587,60 @@ impl ExhaustiveSolver for GraphSearchSolver {
     }
 }
 
+// ---------------------------------------------------------------------------
+// File-backed logger (dev convenience)
+// ---------------------------------------------------------------------------
+
+/// Minimal `log::Log` backend that appends formatted records to a file. Not
+/// this workspace's production logging story — just enough to point
+/// `ProgressConfig { log_steps: true, .. }` at a file while debugging a slow
+/// or stuck solve. A binary that wants a real logging setup (env-configurable
+/// filters, multiple targets, rotating files, etc.) should install its own
+/// `log::Log` implementation instead and skip this one — only one logger can
+/// be active per process.
+struct FileLogger {
+    file: Mutex<std::fs::File>,
+    level: log::LevelFilter,
+}
+
+impl log::Log for FileLogger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() <= self.level
+    }
+
+    fn log(&self, record: &log::Record) {
+        if !self.enabled(record.metadata()) { return; }
+        if let Ok(mut file) = self.file.lock() {
+            let _ = writeln!(file, "[{:>5} {}] {}", record.level(), record.target(), record.args());
+        }
+    }
+
+    fn flush(&self) {
+        if let Ok(mut file) = self.file.lock() { let _ = file.flush(); }
+    }
+}
+
+/// Install a simple file-backed logger, appending to `path` (created if it
+/// doesn't exist yet). Call once, early — e.g. at the top of `main` in a
+/// throwaway debug binary — before running a solve with `ProgressConfig`'s
+/// logging flags turned on.
+///
+/// Errors if a logger is already installed for this process (including a
+/// second call to this function), since `log` only permits one global
+/// backend. If the binary embedding this crate already sets up its own
+/// logger, use that instead of calling this.
+pub fn init_file_logger(path: impl AsRef<std::path::Path>, level: log::LevelFilter) -> Result<(), Box<dyn std::error::Error>> {
+    let file = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
+    let logger = FileLogger { file: Mutex::new(file), level };
+    log::set_boxed_logger(Box::new(logger))?;
+    log::set_max_level(level);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use log::Log;
 
     // n×n grid of single-cell clues: any permutation matrix satisfies every
     // line, so intersection propagation alone forces nothing and the solver
@@ -648,5 +701,28 @@ mod tests {
         // on_progress is Some, but every ProgressConfig flag is off, so it must never fire.
         solver.solve_with_progress(&puzzle, &ctx, &ProgressConfig::default(), Some(&mut on_progress));
         assert_eq!(calls, 0);
+    }
+
+    #[test]
+    fn file_logger_writes_records() {
+        // Exercises FileLogger's write path directly rather than going through
+        // log::set_boxed_logger, since that's process-global, one-shot state
+        // that would race with other tests running in the same binary.
+        let path = std::env::temp_dir().join(format!("nonogram-graph-search-test-{}.log", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+
+        let file = std::fs::OpenOptions::new().create(true).append(true).open(&path).unwrap();
+        let logger = FileLogger { file: Mutex::new(file), level: log::LevelFilter::Debug };
+        let record = log::Record::builder()
+            .args(format_args!("test message"))
+            .level(log::Level::Info)
+            .target("nonogram_graph_search")
+            .build();
+        logger.log(&record);
+        logger.flush();
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("test message"));
+        let _ = std::fs::remove_file(&path);
     }
 }
