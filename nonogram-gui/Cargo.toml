@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 nonogram-core         = { path = "../nonogram-core" }
-nonogram-propagation  = { path = "../nonogram-propagation" }
+nonogram-human-by-ai  = { path = "../nonogram-human-by-ai" }
 nonogram-graph-search = { path = "../nonogram-graph-search" }
 nonogram-human        = { path = "../nonogram-human" }
 iced         = { version = "0.13", features = ["tokio", "advanced"] }

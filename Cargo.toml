@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "nonogram-core",
+    "nonogram-human-by-ai",
     "nonogram-propagation",
     "nonogram-graph-search",
     "nonogram-human",

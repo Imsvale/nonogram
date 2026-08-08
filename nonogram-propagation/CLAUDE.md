@@ -1,75 +1,120 @@
 # nonogram-propagation
 
-Technique-driven constraint propagation solver. No backtracking, no search. If the current set of techniques cannot fully determine the grid, the solver returns `Outcome::Stuck` with the partial result.
+Category 3 (per `discussions/SolverTaxonomy.md`): fully computerized
+propagation — hard logic, no branching, no search, and *no obligation to be
+human-interpretable*. A cell is forced here iff it's forced across every
+valid completion of its line, full stop, regardless of whether any named,
+human-recognizable pattern would catch it.
 
-## Approach
+This is a different design goal from `nonogram-human-by-ai` (category 2),
+which deliberately *caps itself* at a curated set of named passes so its
+`Partial` result stays legible ("these techniques ran out"). This crate has
+no such cap. Its `Partial` means "propagation alone — the strongest
+per-line deductive argument possible — cannot fully solve this puzzle,"
+which is a different, strictly more powerful claim than category 2's.
 
-Each solving technique is a *pass function* with signature:
-```rust
-fn technique(cells: &mut [CellState], meta: &mut LineMeta) -> Result<bool, ()>
-```
-`Ok(true)` = at least one `Unknown` cell was changed. `Ok(false)` = no change. `Err(())` = logical contradiction.
+**History note for whoever reads this crate's git blame:** this directory
+previously held category 2's content (the technique-driven pass-function
+solver, struct `PropagationSolver`, kept unrenamed — not this move's call, per
+the identity-model correction below). That content moved to
+`nonogram-human-by-ai`; this crate was populated fresh with what's
+described below, extracted out of `nonogram-graph-search`, where it
+originated as an internal implementation detail before being split into its
+own crate. Per this workspace's convention, a Claude identity is bound to
+the directory, not the code in it — so despite the near-total content swap,
+this is still Claude-Propagation's crate.
 
-Passes are applied in a queue loop: when a line changes, all perpendicular lines are re-enqueued. The queue drains when no pass can make further progress.
+## Why this exists as its own crate
 
-## Pass Functions (in dependency order)
+`nonogram-graph-search` (category 4) needs propagation between every branch
+guess, and needs line-level completion counting/enumeration for its MRV
+heuristic and branch-candidate generation. None of that is
+graph-search-specific — it's general nonogram line deduction that happened
+to have exactly one caller before this split. See
+`discussions/SolverTaxonomy.md` for the full reasoning, and
+`docs/graph-search-propagation-performance.md` for the performance
+investigation that happened while this logic still lived inside
+`nonogram-graph-search` (the bug and fix described there are unaffected by
+the move — same algorithm, same complexity, just relocated).
 
-| Function | What it does |
+## Key Types
+
+### `Propagator`
+Holds a puzzle's dimensions and clues: `rows`, `cols`,
+`row_clues: Vec<Vec<usize>>`, `col_clues: Vec<Vec<usize>>` (clues stored as
+`usize` for arithmetic, converted from `u32` once at construction via
+`Propagator::from_puzzle`). All fields `pub` — `nonogram-graph-search`
+reads them directly for its own MRV loop, rather than this crate exposing a
+parallel accessor API for the same data.
+
+Methods: `propagate` (cascade to fixpoint), `min_completion_count` (MRV
+signal), `is_complete`, `check` (validates a fully-assigned grid against
+clues).
+
+Operates directly on `nonogram_core::CellState` — no private internal cell
+type. That's a deliberate difference from how `nonogram-graph-search` used
+to work (where a private `Cell` was converted to `CellState` only at a
+single `solve()` boundary): this crate has multiple public entry points at
+the line level, not just one top-level solve, so a redundant parallel type
+requiring conversion everywhere would cost more than it buys. `CellState`
+already *is* the three-valued representation this logic needs.
+
+## Line-Level Functions (pure, no `Propagator` needed)
+
+| Function | Description |
 |---|---|
-| `trim` | Shrinks the working window past confirmed `Empty` cells at either edge |
-| `preprocess` | Handles empty-clue lines and zero-slack lines (only one valid placement) |
-| `overlap` | Fills cells guaranteed `Filled` by any valid placement of the clues |
-| `edge_forcing` | When a clue touches the window edge, fills the rest of that run |
-| `completed_run` | Claims a fully-bounded run that matches an edge clue; removes that clue |
-| `extend` | Anchors partial runs to the single clue that can cover them |
-| `delim` | Narrows possible span of a single-clue line using existing filled cells |
-| `split` | Divides at interior `Empty` barriers; uses forward/backward DP to assign clues to sub-windows |
-
-`run_core_passes` = all except `split`. `run_passes_on_line` = core + split.
-
-## Key Types (private to this crate)
-
-### `LineMeta`
-Working window `[start, end)` into the line's cell array, plus the current clue list. `completed_run` and `split` may shrink the clue list and advance the window bounds. `complete` flag short-circuits all passes once set.
-
-### `SolverState<'a>`
-Borrows `&'a Puzzle` plus owns `cells: Vec<CellState>`, `row_meta`, `col_meta`. Access helpers: `row_slice`, `row_slice_mut`, `col_vec`, `write_col`.
+| `count_completions` | Memoized DP; counts valid completions without ever enumerating them |
+| `enumerate_completions` | Recursive placer; materializes every valid completion — expensive on sparse lines, only safe to call on a line already known to have a small count |
+| `forced_cells_dp` (private) | The DP `Propagator::propagate` uses internally: forces cells via two DP passes over the same state space `count_completions` uses, without enumerating anything. See its doc comment for the algorithm and a subtle bug (reversed-line-mirror shortcut) it does *not* use because that shortcut is wrong for per-cell forcing. |
+| `line_matches` (private) | Validates one fully-assigned line against its clues |
 
 ## Public API
 
 ```rust
+pub struct Propagator { pub rows: usize, pub cols: usize, pub row_clues: Vec<Vec<usize>>, pub col_clues: Vec<Vec<usize>> }
+pub fn count_completions(cells: &[CellState], clues: &[usize]) -> usize;
+pub fn enumerate_completions(cells: &[CellState], clues: &[usize]) -> Vec<Vec<CellState>>;
+
 pub struct PropagationSolver;
 impl Solver for PropagationSolver { ... }
 ```
 
-## Termination Invariant
+`PropagationSolver` is category 3 exposed as a standalone `Solver` —
+propagation alone, returns `Partial` if it can't finish the grid. Whether
+this should be wired into `nonogram-cli`/`nonogram-gui` as a user-selectable
+solver is an open question (see `discussions/SolverTaxonomy.md`) — not
+decided as of this writing. The impl exists because it costs almost nothing
+on top of `Propagator` and keeps the option open without committing to it.
 
-A pass may only return `Ok(true)` when at least one `Unknown` cell was set. Since the cell count is finite and cells never revert to `Unknown`, the queue must eventually drain.
+## Design Constraints
 
-## Column Copy–Modify–Writeback
-
-Columns are non-contiguous in the flat row-major grid. All column passes operate on a `Vec<CellState>` copy (`col_vec`), then scatter back with `write_col`. Change detection for columns uses an explicit before/after comparison of cell values, not the pass return value (which includes window-bound changes that do not affect cells).
-
-## Authorship Note
-
-This solver was implemented with AI assistance. The pass logic is correct and well-tested, but the structure may not fully reflect the author's intended human-logic approach. See `nonogram-human` for the fully author-driven implementation.
-
-## Adding a New Pass
-
-1. Write a function with the signature above.
-2. Add it to `run_core_passes` (or `run_passes_on_line` if it calls `run_core_passes` internally, like `split`).
-3. Obey the termination invariant.
-4. Add a puzzle to `puzzles/` that requires the technique.
+- Keep this crate's `Partial` meaning "hard logic exhausted," full stop —
+  do not add a fallback to any named-technique restriction here. That
+  restriction is `nonogram-human-by-ai`'s entire reason for existing
+  separately; blurring it here defeats the point of both crates. (See the
+  discussion doc for the fuller argument, made by this crate's own
+  identity, against ever routing category-2-style technique attribution
+  through this crate's DP.)
+- `nonogram-graph-search` should depend on *this* crate for propagation,
+  never on `nonogram-human-by-ai` — category 2's technique cap is a feature
+  for explainability, not a computational floor, and would only make a
+  machine search branch on cells that were in fact forced, for zero
+  benefit.
+- Clue arithmetic stays in `usize`; the cast from `u32` happens once, at
+  `Propagator::from_puzzle`.
 
 ## Ownership
 
-This crate is owned by **Claude-Propagation**. For cross-crate changes or design questions involving `nonogram-core`, coordinate with **Claude-Main**.
+This crate is owned by **Claude-Propagation**. For cross-crate changes —
+most notably anything touching `nonogram-graph-search`'s use of this
+crate's API, or `nonogram-core` — coordinate via a `discussions/` doc rather
+than assuming either side unilaterally.
 
 ## Git Commits
 
 **Before committing, verify scope.**
 
 - Change is entirely within this crate and the workspace compiles without touching anything else → commit from here.
-- Change was triggered by a `nonogram-core` update, touches files in other crates, or modifies the workspace `Cargo.toml` → defer to **Claude-Main** (workspace root).
+- Change was triggered by a `nonogram-core` update, touches files in other crates (including `nonogram-graph-search`'s use of this crate), or modifies the workspace `Cargo.toml` → defer to **Claude-Main** (workspace root).
 
-This rule applies even if the user explicitly asks this Claude to commit. Git has no technical barrier — any Claude can commit from any working directory in the repo — but a partial cross-boundary commit leaves the workspace broken. When in doubt, check scope first.
+This rule applies even if the user explicitly asks this Claude to commit. A partial cross-boundary commit leaves the workspace broken. When in doubt, check scope first.

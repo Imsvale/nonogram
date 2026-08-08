@@ -17,7 +17,7 @@ The working directory at runtime must be the workspace root so that the default 
 | `rfd 0.15` | Native file-open dialogs (`AsyncFileDialog`) |
 | `tokio 1` (feature `rt-multi-thread`) | `spawn_blocking` for sync solvers |
 | `nonogram-core` | `Puzzle`, `CellState`, `SolveResult`, `Solver` trait, `parse_file` |
-| `nonogram-propagation` | `PropagationSolver` |
+| `nonogram-human-by-ai` | `PropagationSolver` |
 | `nonogram-graph-search` | `GraphSearchSolver` |
 | `nonogram-human` | `HumanSolver` (currently a stub) |
 

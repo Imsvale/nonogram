@@ -1,21 +1,30 @@
 //! Command-line interface for the nonogram workspace.
 //!
-//! Usage: nonogram-cli <file> [--solver propagation|graph-search|human]
+//! Usage: nonogram-cli <file> [--solver propagation|human-by-ai|graph-search|human] [--progress] [--verbose]
 //!
 //! Parses every puzzle in the file, solves each with the chosen solver, and
 //! prints the result. If a puzzle has a known solution attached, the grid is
 //! verified against it.
 
+use std::io::Write;
+use std::time::Duration;
+
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
-use nonogram_core::{AllSolutions, CellState, ExhaustiveSolver, ParsedPuzzle, Puzzle, SolutionState, Solver, SolveContext, parse_file};
-use nonogram_graph_search::GraphSearchSolver;
+use nonogram_core::{AllSolutions, CellState, ExhaustiveSolver, ParsedPuzzle, Puzzle, SolutionState, Solver, SolveContext, SolveResult, parse_file};
+use nonogram_graph_search::{GraphSearchSolver, ProgressConfig, ProgressUpdate};
 use nonogram_human::HumanSolver;
+use nonogram_human_by_ai::PropagationSolver as HumanByAiSolver;
 use nonogram_propagation::PropagationSolver;
 
 #[derive(Clone, ValueEnum)]
 enum SolverChoice {
+    /// Full per-line hard-logic deduction (category 3) — no named techniques,
+    /// no search, proves everything a per-line argument can prove.
     Propagation,
+    /// Named, human-legible technique passes only (category 2) — what
+    /// `--solver propagation` used to mean before the category-3 extraction.
+    HumanByAi,
     GraphSearch,
     Human,
 }
@@ -26,7 +35,7 @@ struct Cli {
     /// Path to a puzzle file (UTF-8, one puzzle per line).
     file: String,
 
-    /// Which solver to use (default: propagation).
+    /// Which solver to use (default: propagation — full hard-logic deduction).
     #[arg(short, long, value_enum, default_value = "propagation")]
     solver: SolverChoice,
 
@@ -41,6 +50,15 @@ struct Cli {
     /// Solve only puzzle N from the file (1-indexed).
     #[arg(short, long)]
     number: Option<usize>,
+
+    /// Show a live search-progress status line on stderr (graph-search only).
+    #[arg(long)]
+    progress: bool,
+
+    /// Log every productive solve step and a periodic summary to stderr
+    /// (graph-search only). Independent of --progress.
+    #[arg(short, long)]
+    verbose: bool,
 }
 
 fn print_grid(puzzle: &Puzzle, grid: &[CellState], complete: bool) {
@@ -65,9 +83,46 @@ fn verify(puzzle: &Puzzle, grid: &[CellState]) -> Option<Vec<(usize, usize)>> {
 }
 
 fn run_puzzle(solver: &dyn Solver, puzzle: &Puzzle, quiet: bool) {
-    if quiet { solver.solve(puzzle, &SolveContext::default()); return; }
-    println!("=== {} ({}×{}) ===", puzzle.name, puzzle.width, puzzle.height);
     let result = solver.solve(puzzle, &SolveContext::default());
+    print_result(puzzle, &result, quiet);
+}
+
+/// Print a status line of pushed/expanded/heap/known-cell counters, overwriting
+/// itself in place via `\r`. Used by `--progress`; ended with a bare `eprintln!()`
+/// once the solve finishes so later output starts on a fresh line.
+fn print_progress_line(u: &ProgressUpdate) {
+    let pct = if u.cells_total > 0 { u.cells_known as f64 / u.cells_total as f64 * 100.0 } else { 0.0 };
+    eprint!(
+        "\rpushed={} expanded={} heap={} min_count={} known={}/{} ({pct:.1}%) elapsed={:.1}s   ",
+        u.nodes_pushed, u.nodes_expanded, u.heap_len, u.best_min_count,
+        u.cells_known, u.cells_total, u.elapsed.as_secs_f64(),
+    );
+    let _ = std::io::stderr().flush();
+}
+
+/// Like `run_puzzle`, but drives `GraphSearchSolver::solve_with_progress` so
+/// `--progress`/`--verbose` can observe the search. `--quiet` suppresses the
+/// live status line along with the rest of the output; it does not affect
+/// `--verbose`'s log-crate output, which is configured independently via
+/// `RUST_LOG`/`env_logger`.
+fn run_puzzle_progress(puzzle: &Puzzle, verbose: bool, progress: bool, quiet: bool) {
+    let config = ProgressConfig {
+        log_steps: verbose,
+        log_meta_interval: verbose.then(|| Duration::from_millis(500)),
+        snapshot_interval: (progress && !quiet).then(|| Duration::from_millis(200)),
+        emit_start_snapshot: progress && !quiet,
+    };
+    let mut on_progress = |u: ProgressUpdate| print_progress_line(&u);
+    let cb: Option<&mut dyn FnMut(ProgressUpdate)> =
+        if config.snapshot_interval.is_some() { Some(&mut on_progress) } else { None };
+    let result = GraphSearchSolver.solve_with_progress(puzzle, &SolveContext::default(), &config, cb);
+    if config.snapshot_interval.is_some() { eprintln!(); }
+    print_result(puzzle, &result, quiet);
+}
+
+fn print_result(puzzle: &Puzzle, result: &SolveResult, quiet: bool) {
+    if quiet { return; }
+    println!("=== {} ({}×{}) ===", puzzle.name, puzzle.width, puzzle.height);
     match &result.state {
         SolutionState::Complete => {
             println!("Solved.");
@@ -145,10 +200,29 @@ fn main() -> Result<()> {
         puzzles = vec![puzzles.remove(n - 1)];
     }
 
+    if cli.progress || cli.verbose {
+        let flag = if cli.progress { "--progress" } else { "--verbose" };
+        match cli.solver {
+            SolverChoice::GraphSearch => {}
+            SolverChoice::Propagation => { eprintln!("error: {flag} is not supported by the 'propagation' solver; use --solver graph-search"); std::process::exit(1); }
+            SolverChoice::HumanByAi   => { eprintln!("error: {flag} is not supported by the 'human-by-ai' solver; use --solver graph-search"); std::process::exit(1); }
+            SolverChoice::Human       => { eprintln!("error: {flag} is not supported by the 'human' solver; use --solver graph-search"); std::process::exit(1); }
+        }
+        if cli.all {
+            eprintln!("error: {flag} is not supported together with --all yet");
+            std::process::exit(1);
+        }
+    }
+
+    if cli.verbose {
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("nonogram_graph_search=debug")).init();
+    }
+
     if cli.all {
         match cli.solver {
             SolverChoice::GraphSearch => {}
             SolverChoice::Propagation => { eprintln!("error: --all is not supported by the 'propagation' solver; use --solver graph-search"); std::process::exit(1); }
+            SolverChoice::HumanByAi   => { eprintln!("error: --all is not supported by the 'human-by-ai' solver; use --solver graph-search"); std::process::exit(1); }
             SolverChoice::Human       => { eprintln!("error: --all is not supported by the 'human' solver; use --solver graph-search"); std::process::exit(1); }
         }
         let solver = GraphSearchSolver;
@@ -164,8 +238,19 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    if cli.progress || cli.verbose {
+        for entry in &puzzles {
+            match entry {
+                ParsedPuzzle::Valid(p) => run_puzzle_progress(p, cli.verbose, cli.progress, cli.quiet),
+                ParsedPuzzle::Invalid { name, reason, .. } => eprintln!("[INVALID] {name} — {reason}"),
+            }
+        }
+        return Ok(());
+    }
+
     let solver: Box<dyn Solver> = match cli.solver {
         SolverChoice::Propagation => Box::new(PropagationSolver),
+        SolverChoice::HumanByAi   => Box::new(HumanByAiSolver),
         SolverChoice::GraphSearch => Box::new(GraphSearchSolver),
         SolverChoice::Human       => Box::new(HumanSolver),
     };

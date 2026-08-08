@@ -5,8 +5,11 @@ edition = "2024"
 
 [dependencies]
 nonogram-core         = { path = "../nonogram-core" }
+nonogram-human-by-ai  = { path = "../nonogram-human-by-ai" }
 nonogram-propagation  = { path = "../nonogram-propagation" }
 nonogram-graph-search = { path = "../nonogram-graph-search" }
 nonogram-human        = { path = "../nonogram-human" }
 clap  = { version = "4", features = ["derive"] }
 anyhow = "1"
+log = "0.4"
+env_logger = "0.11"

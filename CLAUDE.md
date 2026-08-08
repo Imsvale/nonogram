@@ -5,13 +5,21 @@
 | Crate | Kind | Role | Owner |
 |---|---|---|---|
 | `nonogram-core` | lib | Shared types, parser, `Solver` trait — no solving logic | **Claude-Main** |
-| `nonogram-propagation` | lib | Technique-driven constraint propagation solver | **Claude-Propagation** |
+| `nonogram-propagation` | lib | Full per-line hard-logic deduction, no named techniques (category 3; extracted from `nonogram-graph-search`) | **Claude-Propagation** |
+| `nonogram-human-by-ai` | lib | Technique-driven, human-legible constraint propagation solver (category 2; content moved from `nonogram-propagation`) | **unassigned** |
 | `nonogram-graph-search` | lib | Best-first search with MRV heuristic | **Claude-graph** |
 | `nonogram-human` | lib | Author-written human-logic solver (AI-free implementation) | **User (human author)** |
 | `nonogram-cli` | bin | CLI entry point; dispatches to any solver | **Claude-CLI** |
 | `nonogram-convert` | bin | Format converter; letter-encoded → native `name\|col/row` | **Claude-Convert** |
 | `nonogram-gui` | bin | iced 0.13 graphical front-end | **Claude-GUI** |
 | `utils/katana-img-import` | bin | Image→puzzle importer; downloads from wiki, detects grid, emits puzzle format | **User** |
+
+See `discussions/SolverTaxonomy.md` for the four-category taxonomy behind the
+`nonogram-propagation` / `nonogram-human-by-ai` split, and its identity-model
+correction: agent identity binds to the *path*, not the content that happens
+to occupy it at a given time — Claude-Propagation stayed the owner of
+`nonogram-propagation` across the swap from category-2 to category-3 content;
+Claude-graph performed the extraction labor but does not own the result.
 
 ## Key Conventions
 
@@ -52,4 +60,4 @@ If a crate-local Claude is asked by the user to commit something cross-cutting, 
 - Solving logic → solver crates, never in `nonogram-core`
 - Puzzle file parsing → `nonogram-core::parse_file`
 - CLI rendering and dispatch → `nonogram-cli`
-- `LineMeta` and propagation-specific bookkeeping → `nonogram-propagation` only
+- `LineMeta` and technique-pass bookkeeping → `nonogram-human-by-ai` only

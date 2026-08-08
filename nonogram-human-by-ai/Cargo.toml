@@ -1,8 +1,7 @@
 [package]
-name = "nonogram-propagation"
+name = "nonogram-human-by-ai"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 nonogram-core = { path = "../nonogram-core" }
-log = { version = "0.4", features = ["std"] }

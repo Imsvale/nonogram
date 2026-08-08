@@ -5,10 +5,34 @@ Binary entry point for the nonogram workspace. Parses puzzle files, dispatches t
 ## Usage
 
 ```
-nonogram-cli <file> [--solver propagation|graph-search|human]
+nonogram-cli <file> [--solver propagation|human-by-ai|graph-search|human] [--progress] [--verbose]
 ```
 
-Default solver: `propagation`.
+Default solver: `propagation` (category 3 — full per-line hard-logic deduction, see below).
+
+## Search Progress Observability
+
+`--progress` and `--verbose` expose `GraphSearchSolver::solve_with_progress` (see
+`discussions/SearchProgressObservability.md`). Both are graph-search-only —
+gated the same way `--all` is, with an error telling the user to switch
+solvers — and not yet supported together with `--all` (`solve_all` has no
+progress hooks).
+
+- `--progress`: attaches an `on_progress` callback that overwrites a single
+  status line on stderr (`pushed=… expanded=… heap=… min_count=… known=…/…
+  elapsed=…s`), throttled via `ProgressConfig::snapshot_interval`
+  (`Duration::from_millis(200)`) plus `emit_start_snapshot` for an immediate
+  first line. Suppressed by `--quiet`, same as the rest of stdout output.
+- `--verbose`: sets `ProgressConfig::log_steps` and `log_meta_interval`, and
+  installs `env_logger` with a default filter (`nonogram_graph_search=debug`)
+  so `log`-crate output shows up without the user having to set `RUST_LOG`.
+  This goes to stderr independently of `--quiet` — quiet only controls the
+  normal result printing (`print_result`), not the logger.
+- Both flags reuse `SolveResult` directly rather than going through `dyn
+  Solver`, since `solve_with_progress` is a `GraphSearchSolver` inherent
+  method, not part of the `Solver` trait (deliberately — see the discussion
+  doc's "Why no core change" section). `run_puzzle`/`run_puzzle_progress` both
+  funnel into a shared `print_result` so output formatting stays in one place.
 
 ## Dispatch
 
@@ -16,11 +40,27 @@ Default solver: `propagation`.
 
 ```rust
 let solver: Box<dyn Solver> = match cli.solver {
-    SolverChoice::Propagation => Box::new(PropagationSolver),
+    SolverChoice::Propagation => Box::new(PropagationSolver),   // nonogram_propagation — category 3
+    SolverChoice::HumanByAi   => Box::new(HumanByAiSolver),     // nonogram_human_by_ai::PropagationSolver, aliased — category 2
     SolverChoice::GraphSearch => Box::new(GraphSearchSolver),
     SolverChoice::Human       => Box::new(HumanSolver),
 };
 ```
+
+**`--solver propagation` changed meaning**, per the resolution in
+`discussions/SolverTaxonomy.md`: it used to select the named-technique solver
+(category 2); it now selects the newly extracted `nonogram-propagation`
+(category 3, full per-line hard-logic deduction — strictly stronger,
+never weaker, since category 3 proves a superset of what category 2's named
+passes prove). The user's own framing: the flag value stays the same, the
+solver behind it upgrades — "entirely transparent." Category 2 (today's
+named-technique solver, now living in `nonogram-human-by-ai`) is still
+reachable, via the new `--solver human-by-ai` value. Both crates export a
+struct literally named `PropagationSolver` (neither name was this move's to
+change — see the discussion doc's identity-model correction), so `main.rs`
+imports `nonogram_human_by_ai::PropagationSolver` under a local alias
+(`HumanByAiSolver`) to disambiguate; that alias exists only at the `use` site
+and is not a claim about either crate's real public name.
 
 ## Rendering
 

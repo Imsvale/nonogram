@@ -1,6 +1,6 @@
 use std::fmt;
 use nonogram_core::{AllSolutions, ExhaustiveSolver, Puzzle, Solver, SolveContext, SolveResult};
-use nonogram_propagation::PropagationSolver;
+use nonogram_human_by_ai::PropagationSolver;
 use nonogram_graph_search::GraphSearchSolver;
 use nonogram_human::HumanSolver;
 

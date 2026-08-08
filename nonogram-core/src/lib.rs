@@ -167,7 +167,7 @@ pub struct AllSolutions {
 
 /// Implemented by solvers capable of enumerating all solutions to a puzzle.
 ///
-/// Currently only `GraphSearchSolver`. The propagation and human solvers
+/// Currently only `GraphSearchSolver`. The human-by-ai and human solvers
 /// cannot enumerate solutions without fundamental rethinking.
 pub trait ExhaustiveSolver {
     fn solve_all(&self, puzzle: &Puzzle, ctx: &SolveContext) -> AllSolutions;
