@@ -86,6 +86,124 @@ fn count_inner(
     v
 }
 
+/// Determine forced cells for a line via dynamic programming, without ever
+/// materializing individual completions. Returns `None` if no valid
+/// completion exists (contradiction); otherwise one `Option<Cell>` per cell —
+/// `Some(v)` when every valid completion agrees on `v` at that position.
+///
+/// This is what `propagate()` uses instead of `enumerate_completions` +
+/// `forced_cells`: those are exponential in the number of completions (a
+/// line can validly have tens of millions of them), while this is
+/// `O(n * clues.len())` states, each `O(1)` amortized via memoization —
+/// nothing is ever enumerated, only counted or asked "does at least one
+/// completion exist consistent with this partial choice?"
+///
+/// Combines two DPs over the same `(ci, qi)` state space `count_inner` uses
+/// ("`ci` cells consumed, `qi` clues fully placed"): `fwd_reach`, built by
+/// direct forward simulation using the exact same transitions, answers "is
+/// this state reachable from the start?"; `count_inner` itself, called
+/// as-is, answers "can this state still reach the end?" (its existing
+/// purpose for `count_completions`). A cell is forced to Filled or Empty iff,
+/// across every combination of a reachable state and a transition out of it
+/// that still leads to the end, only one of the two values ever occurs at
+/// that position.
+///
+/// `fwd_reach` has to be its own explicit forward pass rather than a mirror
+/// call to `count_inner` on the reversed line — that reversal is tempting
+/// (and does hold for the *total count*: reversing a line and its clues
+/// preserves the number of completions) but it computes a subtly different,
+/// more permissive question for *individual* states. `count_inner`'s
+/// transitions bundle a clue's mandatory trailing gap into the same step as
+/// placing the clue, so e.g. cells `[Filled, Unknown, Unknown]` with clues
+/// `[1, 1]` never actually visits the state "one clue placed, one cell
+/// consumed" — placing the first clue at position 0 jumps straight to
+/// position 2 (past the mandatory gap at position 1) in a single transition.
+/// The reversed-line mirror doesn't know about that bundling and reports the
+/// skipped-over state reachable anyway, which then lets a spurious second
+/// transition fire through the gap cell and corrupts its forced value. See
+/// `forced_cells_dp_matches_exhaustive_enumeration`, which caught this.
+fn forced_cells_dp(cells: &[Cell], clues: &[usize]) -> Option<Vec<Option<Cell>>> {
+    let n = cells.len();
+    let k = clues.len();
+
+    let mut memo = HashMap::new();
+    if count_inner(cells, 0, clues, 0, &mut memo) == 0 { return None; }
+
+    let mut fwd_reach = vec![vec![false; k + 1]; n + 1];
+    fwd_reach[0][0] = true;
+    for ci in 0..n {
+        for qi in 0..=k {
+            if !fwd_reach[ci][qi] { continue; }
+
+            // Treat cells[ci] as Empty; stay on the same clue.
+            if cells[ci] != Cell::Filled {
+                fwd_reach[ci + 1][qi] = true;
+            }
+
+            // Place clue qi starting exactly at ci (gap included, if any).
+            if qi < k {
+                let g = clues[qi];
+                if ci + g <= n {
+                    let fits = cells[ci..ci + g].iter().all(|&c| c != Cell::Empty);
+                    let after_ok = ci + g == n || cells[ci + g] != Cell::Filled;
+                    if fits && after_ok {
+                        let next_ci = if ci + g < n { ci + g + 1 } else { n };
+                        fwd_reach[next_ci][qi + 1] = true;
+                    }
+                }
+            }
+        }
+    }
+
+    let suffix_feasible = |ci: usize, qi: usize, memo: &mut HashMap<(usize, usize), usize>| {
+        count_inner(cells, ci, clues, qi, memo) > 0
+    };
+
+    let mut can_fill = vec![false; n];
+    let mut can_empty = vec![false; n];
+
+    for ci in 0..n {
+        for qi in 0..=k {
+            if !fwd_reach[ci][qi] { continue; }
+
+            // Treat cells[ci] as Empty; stay on the same clue.
+            if cells[ci] != Cell::Filled && suffix_feasible(ci + 1, qi, &mut memo) {
+                can_empty[ci] = true;
+            }
+
+            // Start clue qi exactly at ci.
+            if qi < k {
+                let g = clues[qi];
+                if ci + g <= n {
+                    let fits = cells[ci..ci + g].iter().all(|&c| c != Cell::Empty);
+                    let after_ok = ci + g == n || cells[ci + g] != Cell::Filled;
+                    if fits && after_ok {
+                        let next_ci = if ci + g < n { ci + g + 1 } else { n };
+                        if suffix_feasible(next_ci, qi + 1, &mut memo) {
+                            for p in ci..ci + g { can_fill[p] = true; }
+                            // The mandatory gap cell right after this group (if any) is
+                            // consumed *within* this same transition — it jumps straight
+                            // to `next_ci`, so (ci + g, qi + 1) is never itself a reachable
+                            // DP state to hang an Option-A check off of. Mark it here.
+                            if ci + g < n { can_empty[ci + g] = true; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Some((0..n).map(|i| match (can_fill[i], can_empty[i]) {
+        (true, false) => Some(Cell::Filled),
+        (false, true) => Some(Cell::Empty),
+        _ => None,
+    }).collect())
+}
+
+/// Materializes every valid completion of a line. Only used by
+/// `most_constrained` to produce actual branches to try, for the single line
+/// chosen *because* it has the fewest completions (via `count_completions`).
+/// `propagate()` no longer calls this — see `forced_cells_dp`.
 fn enumerate_completions(cells: &[Cell], clues: &[usize]) -> Vec<Vec<Cell>> {
     let mut out = Vec::new();
     let mut buf = cells.to_vec();
@@ -116,14 +234,6 @@ fn place(orig: &[Cell], buf: &mut Vec<Cell>, ci: usize, clues: &[usize], qi: usi
         place(orig, buf, next_ci, clues, qi + 1, out);
         for i in ci..next_ci { buf[i] = orig[i]; }
     }
-}
-
-fn forced_cells(completions: &[Vec<Cell>]) -> Vec<Option<Cell>> {
-    let n = completions[0].len();
-    (0..n).map(|i| {
-        let v = completions[0][i];
-        if completions[1..].iter().all(|c| c[i] == v) { Some(v) } else { None }
-    }).collect()
 }
 
 fn line_matches(cells: &[Cell], clues: &[usize]) -> bool {
@@ -183,10 +293,9 @@ impl SearchState {
             for r in 0..self.rows {
                 let cells = grid[r * self.cols..(r + 1) * self.cols].to_vec();
                 if cells.iter().all(|&c| c != Cell::Unknown) { continue; }
-                let completions = enumerate_completions(&cells, &self.row_clues[r]);
-                if completions.is_empty() { return false; }
+                let Some(forced_row) = forced_cells_dp(&cells, &self.row_clues[r]) else { return false; };
                 let mut cells_changed = Vec::new();
-                for (c, forced) in forced_cells(&completions).into_iter().enumerate() {
+                for (c, forced) in forced_row.into_iter().enumerate() {
                     if let Some(v) = forced {
                         if grid[r * self.cols + c] != v {
                             grid[r * self.cols + c] = v;
@@ -207,10 +316,9 @@ impl SearchState {
             for c in 0..self.cols {
                 let cells: Vec<Cell> = (0..self.rows).map(|r| grid[r * self.cols + c]).collect();
                 if cells.iter().all(|&c2| c2 != Cell::Unknown) { continue; }
-                let completions = enumerate_completions(&cells, &self.col_clues[c]);
-                if completions.is_empty() { return false; }
+                let Some(forced_col) = forced_cells_dp(&cells, &self.col_clues[c]) else { return false; };
                 let mut cells_changed = Vec::new();
-                for (r, forced) in forced_cells(&completions).into_iter().enumerate() {
+                for (r, forced) in forced_col.into_iter().enumerate() {
                     if let Some(v) = forced {
                         if grid[r * self.cols + c] != v {
                             grid[r * self.cols + c] = v;
@@ -330,6 +438,22 @@ impl SearchState {
         let mut heap: BinaryHeap<Reverse<Node>> = BinaryHeap::new();
         heap.push(Reverse(Node { min_count: self.min_completion_count(&grid), grid, steps }));
         pushed += 1;
+
+        if config.emit_start_snapshot {
+            if let Some(cb) = on_progress.as_deref_mut() {
+                let known = partial_grid.iter().filter(|&&c| c != Cell::Unknown).count();
+                cb(ProgressUpdate {
+                    nodes_pushed: pushed,
+                    nodes_expanded: expanded,
+                    heap_len: heap.len(),
+                    best_min_count: self.min_completion_count(&partial_grid),
+                    cells_known: known,
+                    cells_total: partial_grid.len(),
+                    elapsed: start.elapsed(),
+                    grid: partial_grid.iter().map(|&c| to_state(c)).collect(),
+                });
+            }
+        }
 
         while let Some(Reverse(node)) = heap.pop() {
             expanded += 1;
@@ -499,6 +623,14 @@ pub struct ProgressConfig {
     /// Invoke the `on_progress` callback with a grid snapshot, no more often
     /// than this interval. Has no effect if `on_progress` is `None`.
     pub snapshot_interval: Option<Duration>,
+    /// Fire `on_progress` exactly once, immediately before the heap loop begins,
+    /// carrying the post-propagation grid with `nodes_expanded = 0`. This gives
+    /// the caller a view of what the initial propagation pass resolved — useful
+    /// when propagation does significant work but the puzzle still requires
+    /// branching, since the regular `snapshot_interval` throttle only fires
+    /// during the heap loop. Has no effect if `on_progress` is `None`.
+    /// Independent of `snapshot_interval` — both can be set simultaneously.
+    pub emit_start_snapshot: bool,
 }
 
 /// A point-in-time snapshot of search progress, delivered to the `on_progress`
@@ -642,6 +774,80 @@ mod tests {
     use super::*;
     use log::Log;
 
+    // Old exhaustive-enumeration definition of forced cells, kept only in
+    // tests as an oracle to check `forced_cells_dp` against: materialize
+    // every completion, then intersect. This is what `propagate()` used
+    // before the DP rewrite — exponential, but trivially correct, which
+    // makes it a good reference implementation for small lines.
+    fn old_forced_cells(cells: &[Cell], clues: &[usize]) -> Option<Vec<Option<Cell>>> {
+        let completions = enumerate_completions(cells, clues);
+        if completions.is_empty() { return None; }
+        let n = completions[0].len();
+        Some((0..n).map(|i| {
+            let v = completions[0][i];
+            if completions[1..].iter().all(|c| c[i] == v) { Some(v) } else { None }
+        }).collect())
+    }
+
+    fn run_lengths(cells: &[Cell]) -> Vec<usize> {
+        let mut out = Vec::new();
+        let mut run = 0usize;
+        for &c in cells {
+            if c == Cell::Filled { run += 1; } else if run > 0 { out.push(run); run = 0; }
+        }
+        if run > 0 { out.push(run); }
+        out
+    }
+
+    #[test]
+    fn forced_cells_dp_matches_exhaustive_enumeration() {
+        // Exhaustive, not random: for every line length up to 7, every full
+        // Filled/Empty assignment (defining a clue list), and every subset of
+        // positions hidden as Unknown, the DP and the old enumerate-then-
+        // intersect approach must agree exactly. ~87k cases, all fast because
+        // n is small.
+        for n in 1..=7usize {
+            for bits in 0u32..(1 << n) {
+                let full: Vec<Cell> = (0..n)
+                    .map(|i| if (bits >> i) & 1 == 1 { Cell::Filled } else { Cell::Empty })
+                    .collect();
+                let clues = run_lengths(&full);
+                for hide in 0u32..(1 << n) {
+                    let cells: Vec<Cell> = (0..n)
+                        .map(|i| if (hide >> i) & 1 == 1 { Cell::Unknown } else { full[i] })
+                        .collect();
+                    let expected = old_forced_cells(&cells, &clues);
+                    let actual = forced_cells_dp(&cells, &clues);
+                    assert_eq!(
+                        expected, actual,
+                        "n={n} full={full:?} clues={clues:?} cells={cells:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn forced_cells_dp_detects_contradiction() {
+        // clue [3] needs 3 consecutive Filled cells somewhere in a line of 4,
+        // but every placement of that run covers position 1, which is fixed Empty.
+        let cells = vec![Cell::Unknown, Cell::Empty, Cell::Unknown, Cell::Unknown];
+        assert_eq!(forced_cells_dp(&cells, &[3]), None);
+    }
+
+    #[test]
+    fn forced_cells_dp_handles_huge_completion_counts() {
+        // The line that motivated this rewrite: 50 cells, clues summing to far
+        // less than the line, admitting 86,493,225 completions per the crate's
+        // own (memoized, non-materializing) counter — enumerate_completions
+        // would never finish building all of them.
+        let clues = vec![2, 1, 1, 2, 1, 1, 5, 1, 1, 1, 1, 4];
+        let cells = vec![Cell::Unknown; 50];
+        assert_eq!(count_completions(&cells, &clues), 86_493_225);
+        let forced = forced_cells_dp(&cells, &clues).expect("line is feasible");
+        assert_eq!(forced.len(), 50);
+    }
+
     // n×n grid of single-cell clues: any permutation matrix satisfies every
     // line, so intersection propagation alone forces nothing and the solver
     // must branch — exactly the code path progress observability hooks into.
@@ -678,6 +884,7 @@ mod tests {
             log_steps: true,
             log_meta_interval: Some(Duration::ZERO),
             snapshot_interval: Some(Duration::ZERO),
+            ..ProgressConfig::default()
         };
         let mut snapshots = 0usize;
         let mut on_progress = |update: ProgressUpdate| {

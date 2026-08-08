@@ -37,6 +37,7 @@ fn main() {
         log_steps: true,
         log_meta_interval: Some(Duration::from_secs(1)),
         snapshot_interval: None,
+        ..ProgressConfig::default()
     };
     let ctx = SolveContext::default();
     let start = std::time::Instant::now();
