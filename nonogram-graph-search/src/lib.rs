@@ -10,6 +10,7 @@
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
+use std::time::{Duration, Instant};
 use nonogram_core::{AllSolutions, CancelToken, CellState, ExhaustiveSolver, LineId, Puzzle, Solver, SolveContext, SolveResult, SolveStep, SolutionState};
 
 // ---------------------------------------------------------------------------
@@ -172,7 +173,9 @@ enum Line { Row(usize), Col(usize) }
 impl SearchState {
     /// Cascade intersection-forced cells until stable. Returns false on conflict.
     /// Appends one SolveStep per line that produces at least one forced cell.
-    fn propagate(&self, grid: &mut Vec<Cell>, steps: &mut Vec<SolveStep>) -> bool {
+    /// When `log_steps` is set, each such step is also logged live at `debug`
+    /// level via the `log` crate — a terse one-liner, not a branching trace.
+    fn propagate(&self, grid: &mut Vec<Cell>, steps: &mut Vec<SolveStep>, log_steps: bool) -> bool {
         loop {
             let mut changed = false;
             for r in 0..self.rows {
@@ -191,6 +194,7 @@ impl SearchState {
                     }
                 }
                 if !cells_changed.is_empty() {
+                    if log_steps { log::debug!("row {r}: propagation forced {} cell(s)", cells_changed.len()); }
                     steps.push(SolveStep {
                         description: format!("row {}: propagation", r),
                         line: Some(LineId::Row(r)),
@@ -214,6 +218,7 @@ impl SearchState {
                     }
                 }
                 if !cells_changed.is_empty() {
+                    if log_steps { log::debug!("col {c}: propagation forced {} cell(s)", cells_changed.len()); }
                     steps.push(SolveStep {
                         description: format!("col {}: propagation", c),
                         line: Some(LineId::Col(c)),
@@ -288,12 +293,18 @@ impl SearchState {
         true
     }
 
-    fn solve_counted(&self, cancel: &CancelToken) -> (SolutionState, Vec<Cell>, Vec<SolveStep>, usize) {
+    fn solve_counted(
+        &self,
+        cancel: &CancelToken,
+        config: &ProgressConfig,
+        mut on_progress: Option<&mut dyn FnMut(ProgressUpdate)>,
+    ) -> (SolutionState, Vec<Cell>, Vec<SolveStep>, usize) {
         let mut grid = vec![Cell::Unknown; self.rows * self.cols];
         let mut steps: Vec<SolveStep> = Vec::new();
         let mut pushed = 0usize;
+        let mut expanded = 0usize;
 
-        if !self.propagate(&mut grid, &mut steps) {
+        if !self.propagate(&mut grid, &mut steps, config.log_steps) {
             return (SolutionState::Unsolvable, grid, steps, pushed);
         }
         if self.is_complete(&grid) {
@@ -309,11 +320,17 @@ impl SearchState {
         let partial_grid = grid.clone();
         let partial_steps = steps.clone();
 
+        let watch_progress = config.log_meta_interval.is_some() || config.snapshot_interval.is_some();
+        let start = Instant::now();
+        let mut last_meta_log: Option<Instant> = None;
+        let mut last_snapshot: Option<Instant> = None;
+
         let mut heap: BinaryHeap<Reverse<Node>> = BinaryHeap::new();
         heap.push(Reverse(Node { min_count: self.min_completion_count(&grid), grid, steps }));
         pushed += 1;
 
         while let Some(Reverse(node)) = heap.pop() {
+            expanded += 1;
             if cancel.is_cancelled() {
                 return (SolutionState::Aborted, node.grid, node.steps, pushed);
             }
@@ -339,11 +356,12 @@ impl SearchState {
                         LineId::Row(r) => format!("row {}: branch", r),
                         LineId::Col(c) => format!("col {}: branch", c),
                     };
+                    if config.log_steps { log::debug!("{desc} ({} cell(s))", cells_changed.len()); }
                     steps.push(SolveStep { description: desc, line: Some(line_id), cells_changed });
                 }
 
                 self.apply_line(&mut grid, line, &completion);
-                if !self.propagate(&mut grid, &mut steps) { continue; }
+                if !self.propagate(&mut grid, &mut steps, config.log_steps) { continue; }
                 if self.is_complete(&grid) {
                     if self.check(&grid) {
                         return (SolutionState::Complete, grid, steps, pushed);
@@ -351,8 +369,45 @@ impl SearchState {
                     continue;
                 }
                 let min_count = self.min_completion_count(&grid);
-                heap.push(Reverse(Node { min_count, grid, steps }));
                 pushed += 1;
+
+                if watch_progress {
+                    let now = Instant::now();
+                    let due_meta = config.log_meta_interval
+                        .is_some_and(|iv| last_meta_log.is_none_or(|t| now.duration_since(t) >= iv));
+                    let due_snap = config.snapshot_interval
+                        .is_some_and(|iv| last_snapshot.is_none_or(|t| now.duration_since(t) >= iv));
+                    if due_meta || due_snap {
+                        let known = grid.iter().filter(|&&c| c != Cell::Unknown).count();
+                        let total = grid.len();
+                        let heap_len = heap.len() + 1;
+                        if due_meta {
+                            log::info!(
+                                "search: pushed={pushed} expanded={expanded} heap={heap_len} \
+                                 min_count={min_count} known={known}/{total} elapsed={:.1}s",
+                                start.elapsed().as_secs_f32(),
+                            );
+                            last_meta_log = Some(now);
+                        }
+                        if due_snap {
+                            if let Some(cb) = on_progress.as_deref_mut() {
+                                cb(ProgressUpdate {
+                                    nodes_pushed: pushed,
+                                    nodes_expanded: expanded,
+                                    heap_len,
+                                    best_min_count: min_count,
+                                    cells_known: known,
+                                    cells_total: total,
+                                    elapsed: start.elapsed(),
+                                    grid: grid.iter().map(|&c| to_state(c)).collect(),
+                                });
+                            }
+                            last_snapshot = Some(now);
+                        }
+                    }
+                }
+
+                heap.push(Reverse(Node { min_count, grid, steps }));
             }
         }
         (SolutionState::Unsolvable, partial_grid, partial_steps, pushed)
@@ -365,7 +420,7 @@ impl SearchState {
         let mut pushed = 0usize;
         let mut solutions: Vec<(Vec<Cell>, Vec<SolveStep>)> = Vec::new();
 
-        if !self.propagate(&mut grid, &mut steps) { return (solutions, expanded, pushed, false); }
+        if !self.propagate(&mut grid, &mut steps, false) { return (solutions, expanded, pushed, false); }
         if self.is_complete(&grid) {
             if self.check(&grid) { solutions.push((grid, steps)); }
             return (solutions, expanded, pushed, false);
@@ -405,7 +460,7 @@ impl SearchState {
                 }
 
                 self.apply_line(&mut grid, line, &completion);
-                if !self.propagate(&mut grid, &mut steps) { continue; }
+                if !self.propagate(&mut grid, &mut steps, false) { continue; }
                 if self.is_complete(&grid) {
                     if self.check(&grid) { solutions.push((grid, steps)); }
                     continue;
@@ -420,6 +475,56 @@ impl SearchState {
 }
 
 // ---------------------------------------------------------------------------
+// Progress observability (opt-in; see GraphSearchSolver::solve_with_progress)
+// ---------------------------------------------------------------------------
+
+/// Controls the opt-in observability hooks in [`GraphSearchSolver::solve_with_progress`].
+///
+/// Every field defaults to disabled, so `ProgressConfig::default()` behaves
+/// identically to the plain `Solver::solve` path: no extra logging, no snapshot
+/// clones, no behavioural difference. Turn on only what you need — each flag
+/// has its own cost, paid only while it's on.
+#[derive(Clone, Debug, Default)]
+pub struct ProgressConfig {
+    /// Log every propagation or branch step that changed at least one cell, via
+    /// the `log` crate at `debug` level. One line per step (line + cell count),
+    /// not a dump of the branching search itself — discarded branches are never
+    /// logged, only the steps that survive on the winning path so far.
+    pub log_steps: bool,
+    /// Log a one-line search summary via the `log` crate at `info` level, no
+    /// more often than this interval.
+    pub log_meta_interval: Option<Duration>,
+    /// Invoke the `on_progress` callback with a grid snapshot, no more often
+    /// than this interval. Has no effect if `on_progress` is `None`.
+    pub snapshot_interval: Option<Duration>,
+}
+
+/// A point-in-time snapshot of search progress, delivered to the `on_progress`
+/// callback passed to [`GraphSearchSolver::solve_with_progress`].
+#[derive(Clone, Debug)]
+pub struct ProgressUpdate {
+    /// Heap nodes pushed so far (candidate branches generated).
+    pub nodes_pushed: usize,
+    /// Heap nodes popped so far (candidate branches expanded).
+    pub nodes_expanded: usize,
+    /// Current heap size — how many unexplored branches are queued.
+    pub heap_len: usize,
+    /// Fewest valid completions among the tightest unresolved line in this node.
+    /// Lower means the search is closer to being forced; a rough proxy for how
+    /// constrained the current branch is.
+    pub best_min_count: usize,
+    /// Cells resolved (Filled or Empty) in this snapshot's grid.
+    pub cells_known: usize,
+    /// Total cells in the grid.
+    pub cells_total: usize,
+    /// Wall-clock time since the search (post-initial-propagation) began.
+    pub elapsed: Duration,
+    /// Grid snapshot, present only because `ProgressConfig::snapshot_interval`
+    /// was set — building it costs a full grid clone, skipped otherwise.
+    pub grid: Vec<CellState>,
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -431,16 +536,36 @@ fn clue_totals_match(puzzle: &Puzzle) -> bool {
     row_total == col_total
 }
 
-impl Solver for GraphSearchSolver {
-    fn solve(&self, puzzle: &Puzzle, ctx: &SolveContext) -> SolveResult {
+impl GraphSearchSolver {
+    /// Like `Solver::solve`, but with opt-in observability: `config` controls
+    /// what gets logged and how often `on_progress` is invoked with a
+    /// structured [`ProgressUpdate`]. Pass `&ProgressConfig::default()` and
+    /// `None` for behaviour identical to `Solver::solve`.
+    ///
+    /// Intended for long-running solves (large or difficult puzzles) where a
+    /// caller wants to watch what the search is doing rather than block
+    /// silently until it finishes.
+    pub fn solve_with_progress(
+        &self,
+        puzzle: &Puzzle,
+        ctx: &SolveContext,
+        config: &ProgressConfig,
+        on_progress: Option<&mut dyn FnMut(ProgressUpdate)>,
+    ) -> SolveResult {
         if !clue_totals_match(puzzle) {
             let row_total: u32 = puzzle.row_clues.iter().flat_map(|r| r.iter()).sum();
             let col_total: u32 = puzzle.col_clues.iter().flat_map(|c| c.iter()).sum();
             return SolveResult { state: SolutionState::Invalid(format!("row clues sum to {row_total} but column clues sum to {col_total}")), grid: vec![], steps: vec![] };
         }
         let search = SearchState::from_puzzle(puzzle);
-        let (state, grid, steps, _nodes) = search.solve_counted(&ctx.cancel);
+        let (state, grid, steps, _nodes) = search.solve_counted(&ctx.cancel, config, on_progress);
         SolveResult { state, grid: grid.into_iter().map(to_state).collect(), steps }
+    }
+}
+
+impl Solver for GraphSearchSolver {
+    fn solve(&self, puzzle: &Puzzle, ctx: &SolveContext) -> SolveResult {
+        self.solve_with_progress(puzzle, ctx, &ProgressConfig::default(), None)
     }
 }
 
@@ -457,5 +582,71 @@ impl ExhaustiveSolver for GraphSearchSolver {
             steps,
         }).collect();
         AllSolutions { solutions, nodes_expanded, nodes_pushed, aborted }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // n×n grid of single-cell clues: any permutation matrix satisfies every
+    // line, so intersection propagation alone forces nothing and the solver
+    // must branch — exactly the code path progress observability hooks into.
+    fn permutation_puzzle(n: usize) -> Puzzle {
+        Puzzle {
+            name: "permutation".into(),
+            answer: None,
+            width: n,
+            height: n,
+            row_clues: vec![vec![1]; n],
+            col_clues: vec![vec![1]; n],
+            solution: None,
+        }
+    }
+
+    #[test]
+    fn solve_with_progress_default_config_matches_plain_solve() {
+        let puzzle = permutation_puzzle(4);
+        let ctx = SolveContext::default();
+        let solver = GraphSearchSolver;
+        let plain = solver.solve(&puzzle, &ctx);
+        let observed = solver.solve_with_progress(&puzzle, &ctx, &ProgressConfig::default(), None);
+        assert_eq!(plain.state, observed.state);
+        assert_eq!(plain.grid.len(), observed.grid.len());
+        assert_eq!(plain.state, SolutionState::Complete);
+    }
+
+    #[test]
+    fn progress_callback_fires_during_branching_solve() {
+        let puzzle = permutation_puzzle(4);
+        let ctx = SolveContext::default();
+        let solver = GraphSearchSolver;
+        let config = ProgressConfig {
+            log_steps: true,
+            log_meta_interval: Some(Duration::ZERO),
+            snapshot_interval: Some(Duration::ZERO),
+        };
+        let mut snapshots = 0usize;
+        let mut on_progress = |update: ProgressUpdate| {
+            snapshots += 1;
+            assert_eq!(update.cells_total, 16);
+            assert!(update.cells_known <= update.cells_total);
+            assert_eq!(update.grid.len(), update.cells_total);
+        };
+        let result = solver.solve_with_progress(&puzzle, &ctx, &config, Some(&mut on_progress));
+        assert_eq!(result.state, SolutionState::Complete);
+        assert!(snapshots > 0, "expected at least one progress snapshot for a branching solve");
+    }
+
+    #[test]
+    fn progress_disabled_by_default_never_invokes_callback() {
+        let puzzle = permutation_puzzle(4);
+        let ctx = SolveContext::default();
+        let solver = GraphSearchSolver;
+        let mut calls = 0usize;
+        let mut on_progress = |_: ProgressUpdate| { calls += 1; };
+        // on_progress is Some, but every ProgressConfig flag is off, so it must never fire.
+        solver.solve_with_progress(&puzzle, &ctx, &ProgressConfig::default(), Some(&mut on_progress));
+        assert_eq!(calls, 0);
     }
 }
