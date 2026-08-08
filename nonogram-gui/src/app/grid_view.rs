@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use iced::{
-    Border, Color, Element, Font, Length, Padding, alignment::{Horizontal, Vertical}, font::Weight, widget::{Space, button, column, container, horizontal_rule, mouse_area, row, text}
+    Border, Color, Element, Font, Length, Padding, alignment::{Horizontal, Vertical}, font::Weight, widget::{Space, button, column, container, mouse_area, row, text}
 };
 use iced_fonts::bootstrap::Bootstrap;
 use nonogram_core::{CellState, Puzzle, SolveResult};
@@ -285,10 +285,34 @@ fn blend_color(base: Color, overlay: Color) -> Color {
 }
 
 // ---------------------------------------------------------------------------
+// Grid regions
+// ---------------------------------------------------------------------------
+
+pub(crate) struct GridRegions<'a> {
+    pub corner:       Element<'a, Message>,
+    pub col_clues:    Element<'a, Message>,
+    pub top_right:    Element<'a, Message>,
+    pub row_clues:    Element<'a, Message>,
+    pub cells:        Element<'a, Message>,
+    pub row_sums:     Element<'a, Message>,
+    pub col_sums:     Element<'a, Message>,
+    pub bottom_left:  Element<'a, Message>,
+    pub bottom_right: Element<'a, Message>,
+    pub controls:     Element<'a, Message>,
+    pub nav:          Element<'a, Message>,
+    pub corner_w:  f32,
+    pub corner_h:  f32,
+    pub sum_w:     f32,
+    pub sum_h:     f32,
+    pub puzzle_w:  usize,
+    pub puzzle_h:  usize,
+}
+
+// ---------------------------------------------------------------------------
 // Puzzle grid renderer (interactive)
 // ---------------------------------------------------------------------------
 
-pub(crate) fn view_grid<'a>(
+pub(crate) fn build_grid_regions<'a>(
     puzzle: &'a Puzzle,
     grid: Option<Vec<CellState>>,
     key: Key,
@@ -302,8 +326,9 @@ pub(crate) fn view_grid<'a>(
     prev_key: Option<Key>,
     next_key: Option<Key>,
     hover_runs: HoverRuns,
-    crosshair: Option<(usize, usize, Color)>,
-) -> Element<'a, Message> {
+    crosshair: Option<(Option<usize>, Option<usize>, Color)>,
+    show_manual_btns: bool,
+) -> GridRegions<'a> {
     const C: f32 = 26.0;
     const N: f32 = 22.0;
 
@@ -319,9 +344,6 @@ pub(crate) fn view_grid<'a>(
 
     let w = puzzle.width;
     let h = puzzle.height;
-
-    let right_border = true;
-    let bot_border   = true;
 
     let line_sum = |clues: &[u32]| -> u32 {
         let s: u32 = clues.iter().sum();
@@ -343,13 +365,9 @@ pub(crate) fn view_grid<'a>(
 
     let sum_w: f32 = match total_row.max(total_col) {
         0..=9   => N,
-        10..=99  => N + 4.0,
-        _ => N + 10.0,
+        10..=99 => N + 4.0,
+        _       => N + 10.0,
     };
-
-    let grid_total_w: f32 = row_clue_w + C * w as f32
-        + if right_border { 2.0 } else { 0.0 }
-        + sum_w;
 
     let warn_text = WARN_COLOR;
 
@@ -386,7 +404,7 @@ pub(crate) fn view_grid<'a>(
 
     let (xhair_row, xhair_col, xhair_color): (Option<usize>, Option<usize>, Option<Color>) =
         match crosshair {
-            Some((xr, xc, xc_col)) => (Some(xr), Some(xc), Some(xc_col)),
+            Some((xr, xc, xc_col)) => (xr, xc, Some(xc_col)),
             None => (None, None, None),
         };
 
@@ -412,63 +430,64 @@ pub(crate) fn view_grid<'a>(
         }};
     }
 
-    let mut all_rows: Vec<Element<'a, Message>> = Vec::new();
+    // ── Region accumulators ───────────────────────────────────────────────────
+    let mut col_clue_cells: Vec<Element<'a, Message>> = Vec::new();
+    let mut row_clue_vec:   Vec<Element<'a, Message>> = Vec::new();
+    let mut cells_rows:     Vec<Element<'a, Message>> = Vec::new();
+    let mut row_sum_vec:    Vec<Element<'a, Message>> = Vec::new();
+    let mut col_sum_cells:  Vec<Element<'a, Message>> = Vec::new();
 
-    // ── Col clue header row ───────────────────────────────────────────────
-    {
-        let mut cells: Vec<Element<'a, Message>> = Vec::new();
+    // ── Corner: minimap ───────────────────────────────────────────────────────
+    let corner_el: Element<'a, Message> = {
+        let cell_size = (row_clue_w / (w + 2) as f32).min(col_clue_h / (h + 2) as f32).max(1.0);
+        let map_w = cell_size * w as f32;
+        let map_h = cell_size * h as f32;
+        let pad_left = ((row_clue_w - map_w) / 2.0).max(0.0);
+        let pad_top  = ((col_clue_h - map_h) / 2.0).max(0.0);
 
-        // Corner: minimap
-        {
-            let cell_size = (row_clue_w / (w + 2) as f32).min(col_clue_h / (h + 2) as f32).max(1.0);
-            let map_w = cell_size * w as f32;
-            let map_h = cell_size * h as f32;
-            let pad_left = ((row_clue_w - map_w) / 2.0).max(0.0);
-            let pad_top  = ((col_clue_h - map_h) / 2.0).max(0.0);
-
-            let mut mini_rows: Vec<Element<'a, Message>> = Vec::new();
-            for mr in 0..h {
-                let mut mini_cells: Vec<Element<'a, Message>> = Vec::new();
-                for mc in 0..w {
-                    let state = grid.as_ref().map(|g| g[mr * w + mc]).unwrap_or(CellState::Unknown);
-                    let idx   = mr * w + mc;
-                    let tier: usize = if !trial.is_empty() && state != CellState::Unknown {
-                        trial.iter().enumerate().rev()
-                            .find_map(|(i, (snap, _))| {
-                                if snap.get(idx).copied().unwrap_or(CellState::Unknown) != state {
-                                    Some(i + 1)
-                                } else {
-                                    None
-                                }
-                            })
-                            .unwrap_or(0)
-                    } else {
-                        0
-                    };
-                    let cell_color = if tier > 0 {
-                        match state {
-                            CellState::Filled  => trial_filled_color(tier),
-                            CellState::Empty   => trial_empty_color(tier),
-                            CellState::Unknown => settings.visual_for(state).color,
-                        }
-                    } else {
-                        settings.visual_for(state).color
-                    };
-                    mini_cells.push(
-                        container(Space::new(0.0, 0.0))
-                            .width(Length::Fixed(cell_size))
-                            .height(Length::Fixed(cell_size))
-                            .style(move |_| container::Style {
-                                background: Some(cell_color.into()),
-                                ..Default::default()
-                            })
-                            .into(),
-                    );
-                }
-                mini_rows.push(row(mini_cells).into());
+        let mut mini_rows: Vec<Element<'a, Message>> = Vec::new();
+        for mr in 0..h {
+            let mut mini_cells: Vec<Element<'a, Message>> = Vec::new();
+            for mc in 0..w {
+                let state = grid.as_ref().map(|g| g[mr * w + mc]).unwrap_or(CellState::Unknown);
+                let idx   = mr * w + mc;
+                let tier: usize = if !trial.is_empty() && state != CellState::Unknown {
+                    trial.iter().enumerate().rev()
+                        .find_map(|(i, (snap, _))| {
+                            if snap.get(idx).copied().unwrap_or(CellState::Unknown) != state {
+                                Some(i + 1)
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
+                let cell_color = if tier > 0 {
+                    match state {
+                        CellState::Filled  => trial_filled_color(tier),
+                        CellState::Empty   => trial_empty_color(tier),
+                        CellState::Unknown => settings.visual_for(state).color,
+                    }
+                } else {
+                    settings.visual_for(state).color
+                };
+                mini_cells.push(
+                    container(Space::new(0.0, 0.0))
+                        .width(Length::Fixed(cell_size))
+                        .height(Length::Fixed(cell_size))
+                        .style(move |_| container::Style {
+                            background: Some(cell_color.into()),
+                            ..Default::default()
+                        })
+                        .into(),
+                );
             }
-
-            cells.push(
+            mini_rows.push(row(mini_cells).into());
+        }
+        column(vec![
+            row(vec![
                 container(
                     container(column(mini_rows))
                         .padding(Padding { top: pad_top, left: pad_left, ..Padding::ZERO }),
@@ -477,112 +496,116 @@ pub(crate) fn view_grid<'a>(
                 .height(Length::Fixed(col_clue_h))
                 .style(|_| container::Style { background: Some(Color::WHITE.into()), ..Default::default() })
                 .into(),
+                solid!(2.0, col_clue_h, border_maj),
+            ]).into(),
+            solid!(row_clue_w + 2.0, 2.0, border_maj),
+        ])
+        .into()
+    };
+
+    // ── Col clue columns ──────────────────────────────────────────────────────
+    for c in 0..w {
+        let lp = if c == 0 { 0.0_f32 } else if c % 5 == 0 { 2.0 } else { 1.0 };
+        let vc = if c == 0 { border_min } else if c % 5 == 0 { border_maj } else { border_min };
+
+        let col_bg = match (xhair_col == Some(c), xhair_color) {
+            (true, Some(xc)) => blend_color(clue_bg, xc),
+            _ => clue_bg,
+        };
+        let col_bg_hover = match (xhair_col == Some(c), xhair_color) {
+            (true, Some(xc)) => blend_color(clue_bg_hover, xc),
+            _ => clue_bg_hover,
+        };
+
+        let clues = &puzzle.col_clues[c];
+        let pad   = max_cd - clues.len();
+        let mut nums: Vec<Element<'a, Message>> = (0..pad)
+            .map(|_| solid!(C, N, col_bg))
+            .collect();
+        let col_indiv_dim: Vec<bool> = if assistance.auto_dim {
+            grid.as_ref().map(|g| {
+                let col_cells: Vec<CellState> = (0..h).map(|r| g[r * w + c]).collect();
+                individually_fulfilled_clues(clues, &col_cells)
+            }).unwrap_or_else(|| vec![false; clues.len()])
+        } else { vec![false; clues.len()] };
+        for (i, &n) in clues.iter().enumerate() {
+            let is_dim = fulfilled_cols[c]
+                || col_indiv_dim[i]
+                || manual_dim_cols.map(|s| s.contains(&(c, i))).unwrap_or(false);
+            let tc = if is_dim { Color::from_rgb(0.70, 0.70, 0.70) } else { Color::from_rgb(0.1, 0.1, 0.1) };
+            let bg = col_bg;
+            let bg_h = col_bg_hover;
+            nums.push(
+                button(
+                    container(text(n.to_string()).size(13).color(tc)
+                        .font(Font { weight: Weight::Bold, ..Font::DEFAULT }))
+                        .width(Length::Fixed(C))
+                        .height(Length::Fixed(N))
+                        .align_x(Horizontal::Center)
+                        .align_y(Vertical::Center)
+                )
+                .on_press(Message::ClueDimToggle(key, true, c, i))
+                .padding(Padding::ZERO)
+                .style(move |_, status| button::Style {
+                    background: Some(if matches!(status, button::Status::Hovered) {
+                        bg_h.into()
+                    } else {
+                        bg.into()
+                    }),
+                    border: Default::default(),
+                    shadow: Default::default(),
+                    text_color: Color::BLACK,
+                })
+                .into()
             );
         }
-
-        for c in 0..w {
-            let lp = if c % 5 == 0 { 2.0_f32 } else { 1.0 };
-            let vc = if c % 5 == 0 { border_maj } else { border_min };
-
-            let col_bg = match (xhair_col == Some(c), xhair_color) {
-                (true, Some(xc)) => blend_color(clue_bg, xc),
-                _ => clue_bg,
-            };
-            let col_bg_hover = match (xhair_col == Some(c), xhair_color) {
-                (true, Some(xc)) => blend_color(clue_bg_hover, xc),
-                _ => clue_bg_hover,
-            };
-
-            let clues = &puzzle.col_clues[c];
-            let pad   = max_cd - clues.len();
-            let mut nums: Vec<Element<'a, Message>> = (0..pad)
-                .map(|_| solid!(C, N, col_bg))
-                .collect();
-            let col_indiv_dim: Vec<bool> = if assistance.auto_dim {
-                grid.as_ref().map(|g| {
-                    let col_cells: Vec<CellState> = (0..h).map(|r| g[r * w + c]).collect();
-                    individually_fulfilled_clues(clues, &col_cells)
-                }).unwrap_or_else(|| vec![false; clues.len()])
-            } else { vec![false; clues.len()] };
-            for (i, &n) in clues.iter().enumerate() {
-                let is_dim = fulfilled_cols[c]
-                    || col_indiv_dim[i]
-                    || manual_dim_cols.map(|s| s.contains(&(c, i))).unwrap_or(false);
-                let tc = if is_dim { Color::from_rgb(0.70, 0.70, 0.70) } else { Color::from_rgb(0.1, 0.1, 0.1) };
-                let bg = col_bg;
-                let bg_h = col_bg_hover;
-                nums.push(
-                    button(
-                        container(text(n.to_string()).size(13).color(tc)
-                            .font(Font { weight: Weight::Bold, ..Font::DEFAULT }))
-                            .width(Length::Fixed(C))
-                            .height(Length::Fixed(N))
-                            .align_x(Horizontal::Center)
-                            .align_y(Vertical::Center)
-                    )
-                    .on_press(Message::ClueDimToggle(key, true, c, i))
-                    .padding(Padding::ZERO)
-                    .style(move |_, status| button::Style {
-                        background: Some(if matches!(status, button::Status::Hovered) {
-                            bg_h.into()
-                        } else {
-                            bg.into()
-                        }),
-                        border: Default::default(),
-                        shadow: Default::default(),
-                        text_color: Color::BLACK,
-                    })
-                    .into()
-                );
-            }
-
-            cells.push(
-                container(column(nums))
-                    .width(Length::Fixed(C))
-                    .height(Length::Fixed(col_clue_h))
-                    .padding(Padding { left: lp, ..Padding::ZERO })
-                    .style(move |_| container::Style { background: Some(vc.into()), ..Default::default() })
-                    .into(),
-            );
-        }
-
-        if right_border { cells.push(solid!(2.0, col_clue_h, border_maj)); }
-
-        // Top-right corner: col grand total
-        {
-            let txt_color = if total_mismatch { warn_text } else { Color::from_rgb(0.1, 0.1, 0.1) };
-            let corner_inner = if total_mismatch {
-                container(text(total_col.to_string()).size(13).color(txt_color))
-                    .width(Length::Fill).height(Length::Fill)
-                    .align_x(Horizontal::Center).align_y(Vertical::Bottom)
-                    .padding(Padding { bottom: 2.0, ..Padding::ZERO })
-                    .style(|_| warn_inline_style())
-            } else {
-                container(text(total_col.to_string()).size(13).color(txt_color))
-                    .width(Length::Fill).height(Length::Fill)
-                    .align_x(Horizontal::Center).align_y(Vertical::Bottom)
-                    .padding(Padding { bottom: 2.0, ..Padding::ZERO })
-                    .style(move |_| container::Style { background: Some(sum_bg.into()), ..Default::default() })
-            };
-            cells.push(
-                container(corner_inner)
-                    .width(Length::Fixed(sum_w))
-                    .height(Length::Fixed(col_clue_h))
-                    .into(),
-            );
-        }
-
-        all_rows.push(row(cells).into());
+        col_clue_cells.push(
+            container(column(nums))
+                .width(Length::Fixed(C))
+                .height(Length::Fixed(col_clue_h))
+                .padding(Padding { left: lp, ..Padding::ZERO })
+                .style(move |_| container::Style { background: Some(vc.into()), ..Default::default() })
+                .into(),
+        );
     }
+    col_clue_cells.push(solid!(2.0, col_clue_h, border_maj));
 
-    // ── Cell rows ─────────────────────────────────────────────────────────
+    // ── Top-right corner: col grand total ─────────────────────────────────────
+    let top_right_el: Element<'a, Message> = {
+        let txt_color = if total_mismatch { warn_text } else { Color::from_rgb(0.1, 0.1, 0.1) };
+        let corner_inner = if total_mismatch {
+            container(
+                container(text(total_col.to_string()).size(13).color(txt_color))
+                    .padding([2, 5])
+                    .style(|_| warn_inline_style())
+            )
+            .width(Length::Fill).height(Length::Fill)
+            .align_x(Horizontal::Center).align_y(Vertical::Bottom)
+            .padding(Padding { bottom: 2.0, ..Padding::ZERO })
+            .style(move |_| container::Style { background: Some(sum_bg.into()), ..Default::default() })
+        } else {
+            container(text(total_col.to_string()).size(13).color(txt_color))
+                .width(Length::Fill).height(Length::Fill)
+                .align_x(Horizontal::Center).align_y(Vertical::Bottom)
+                .padding(Padding { bottom: 2.0, ..Padding::ZERO })
+                .style(move |_| container::Style { background: Some(sum_bg.into()), ..Default::default() })
+        };
+        column(vec![
+            container(corner_inner)
+                .width(Length::Fixed(sum_w))
+                .height(Length::Fixed(col_clue_h))
+                .into(),
+            solid!(sum_w, 2.0, border_maj),
+        ])
+        .into()
+    };
+
+    // ── Cell rows ─────────────────────────────────────────────────────────────
     for r in 0..h {
-        let tp = if r % 5 == 0 { 2.0_f32 } else { 1.0 };
-        let hc = if r % 5 == 0 { border_maj } else { border_min };
+        let tp = if r == 0 { 0.0_f32 } else if r % 5 == 0 { 2.0 } else { 1.0 };
+        let hc = if r == 0 { border_min } else if r % 5 == 0 { border_maj } else { border_min };
 
-        let mut cells: Vec<Element<'a, Message>> = Vec::new();
-
-        // Row clue area
+        // Row clue
         {
             let row_bg = match (xhair_row == Some(r), xhair_color) {
                 (true, Some(xc)) => blend_color(clue_bg, xc),
@@ -635,7 +658,7 @@ pub(crate) fn view_grid<'a>(
                     .into()
                 );
             }
-            cells.push(
+            row_clue_vec.push(
                 container(row(rnums))
                     .width(Length::Fixed(row_clue_w))
                     .height(Length::Fixed(C))
@@ -645,10 +668,11 @@ pub(crate) fn view_grid<'a>(
             );
         }
 
-        // Grid cells
+        // Grid cells for this row
+        let mut row_cells: Vec<Element<'a, Message>> = Vec::new();
         for c in 0..w {
-            let lp = if c % 5 == 0 { 2.0_f32 } else { 1.0 };
-            let vc = if c % 5 == 0 { border_maj } else { border_min };
+            let lp = if c == 0 { 0.0_f32 } else if c % 5 == 0 { 2.0 } else { 1.0 };
+            let vc = if c == 0 { border_min } else if c % 5 == 0 { border_maj } else { border_min };
 
             let state = grid.as_ref().map(|g| g[r * w + c]).unwrap_or(CellState::Unknown);
             let idx   = r * w + c;
@@ -773,7 +797,6 @@ pub(crate) fn view_grid<'a>(
                 }
             };
 
-            // Hover-run highlight overlay: white tint + run-length labels
             let cell_face: Element<'a, Message> = if in_hover_run && state == CellState::Filled {
                 let highlight = container(Space::new(0.0, 0.0))
                     .width(Length::Fill)
@@ -783,7 +806,6 @@ pub(crate) fn view_grid<'a>(
                         ..Default::default()
                     });
                 let mut layers: Vec<Element<'a, Message>> = vec![cell_face, highlight.into()];
-                // H label: bottom-left of the leftmost cell in the horizontal run
                 if is_h_head {
                     layers.push(
                         container(text(h_run_len.to_string()).size(9).color(Color::WHITE))
@@ -795,7 +817,6 @@ pub(crate) fn view_grid<'a>(
                             .into(),
                     );
                 }
-                // V label: top-right of the topmost cell in the vertical run
                 if is_v_head {
                     layers.push(
                         container(text(v_run_len.to_string()).size(9).color(Color::WHITE))
@@ -822,7 +843,7 @@ pub(crate) fn view_grid<'a>(
                 left_pad: lp, left_color: vc
             );
 
-            cells.push(
+            row_cells.push(
                 mouse_area(bordered_cell)
                     .on_press(Message::CellClicked { key, row: r, col: c, right: false })
                     .on_right_press(Message::CellClicked { key, row: r, col: c, right: true })
@@ -830,8 +851,8 @@ pub(crate) fn view_grid<'a>(
                     .into(),
             );
         }
-
-        if right_border { cells.push(solid!(2.0, C, border_maj)); }
+        row_cells.push(solid!(2.0, C, border_maj));
+        cells_rows.push(row(row_cells).into());
 
         // Row sum
         {
@@ -839,17 +860,21 @@ pub(crate) fn view_grid<'a>(
             let warn = row_infeasible[r];
             let txt_color = if warn { warn_text } else { Color::from_rgb(0.1, 0.1, 0.1) };
             let rsum_inner = if warn {
-                container(text(row_sum.to_string()).size(13).color(txt_color))
-                    .width(Length::Fill).height(Length::Fill)
-                    .align_x(Horizontal::Center).align_y(Vertical::Center)
-                    .style(|_| warn_inline_style())
+                container(
+                    container(text(row_sum.to_string()).size(13).color(txt_color))
+                        .padding([2, 4])
+                        .style(|_| warn_inline_style())
+                )
+                .width(Length::Fill).height(Length::Fill)
+                .align_x(Horizontal::Center).align_y(Vertical::Center)
+                .style(move |_| container::Style { background: Some(sum_bg.into()), ..Default::default() })
             } else {
                 container(text(row_sum.to_string()).size(13).color(txt_color))
                     .width(Length::Fill).height(Length::Fill)
                     .align_x(Horizontal::Center).align_y(Vertical::Center)
                     .style(move |_| container::Style { background: Some(sum_bg.into()), ..Default::default() })
             };
-            cells.push(
+            row_sum_vec.push(
                 container(rsum_inner)
                     .width(Length::Fixed(sum_w))
                     .height(Length::Fixed(C))
@@ -858,103 +883,109 @@ pub(crate) fn view_grid<'a>(
                     .into(),
             );
         }
-
-        all_rows.push(row(cells).into());
     }
 
-    // Outer bottom border
-    if bot_border {
-        all_rows.push(
-            container(Space::new(0.0, 0.0))
-                .width(Length::Fixed(grid_total_w))
-                .height(Length::Fixed(2.0))
-                .style(move |_| container::Style { background: Some(border_maj.into()), ..Default::default() })
+    let cells_row_w = C * w as f32 + 2.0;
+    // No bottom border on the scrollable regions — the separator belongs to the
+    // frozen footer (col_sums / bottom_left / bottom_right) so it stays visible
+    // while panning and when grid height is not a multiple of 5.
+
+    // ── Col sum row ───────────────────────────────────────────────────────────
+    let bottom_left_el: Element<'a, Message> = {
+        let txt_color = if total_mismatch { warn_text } else { Color::from_rgb(0.1, 0.1, 0.1) };
+        let corner_inner = if total_mismatch {
+            container(
+                container(text(total_row.to_string()).size(13).color(txt_color))
+                    .padding([2, 4])
+                    .style(|_| warn_inline_style())
+            )
+            .width(Length::Fill).height(Length::Fill)
+            .align_x(Horizontal::Right).align_y(Vertical::Center)
+            .padding(Padding { right: 4.0, ..Padding::ZERO })
+            .style(move |_| container::Style { background: Some(sum_bg.into()), ..Default::default() })
+        } else {
+            container(text(total_row.to_string()).size(13).color(txt_color))
+                .width(Length::Fill).height(Length::Fill)
+                .align_x(Horizontal::Right).align_y(Vertical::Center)
+                .padding(Padding { right: 4.0, ..Padding::ZERO })
+                .style(move |_| container::Style { background: Some(sum_bg.into()), ..Default::default() })
+        };
+        column(vec![
+            solid!(row_clue_w + 2.0, 2.0, border_maj),
+            container(
+                container(corner_inner)
+                    .width(Length::Fixed(row_clue_w))
+                    .height(Length::Fixed(N)),
+            )
+            .width(Length::Fixed(row_clue_w + 2.0))
+            .height(Length::Fixed(N))
+            .style(move |_| container::Style { background: Some(border_maj.into()), ..Default::default() })
+            .into(),
+        ])
+        .into()
+    };
+
+    for c in 0..w {
+        let lp = if c == 0 { 0.0_f32 } else if c % 5 == 0 { 2.0 } else { 1.0 };
+        let vc = if c == 0 { border_min } else if c % 5 == 0 { border_maj } else { border_min };
+        let col_sum: u32 = line_sum(&puzzle.col_clues[c]);
+        let warn = col_infeasible[c];
+        let txt_color = if warn { warn_text } else { Color::from_rgb(0.1, 0.1, 0.1) };
+        let csum_inner = if warn {
+            container(
+                container(text(col_sum.to_string()).size(13).color(txt_color))
+                    .padding([2, 4])
+                    .style(|_| warn_inline_style())
+            )
+            .width(Length::Fill).height(Length::Fill)
+            .align_x(Horizontal::Center).align_y(Vertical::Center)
+            .style(move |_| container::Style { background: Some(sum_bg.into()), ..Default::default() })
+        } else {
+            container(text(col_sum.to_string()).size(13).color(txt_color))
+                .width(Length::Fill).height(Length::Fill)
+                .align_x(Horizontal::Center).align_y(Vertical::Center)
+                .style(move |_| container::Style { background: Some(sum_bg.into()), ..Default::default() })
+        };
+        col_sum_cells.push(
+            container(csum_inner)
+                .width(Length::Fixed(C))
+                .height(Length::Fixed(N))
+                .padding(Padding { left: lp, ..Padding::ZERO })
+                .style(move |_| container::Style { background: Some(vc.into()), ..Default::default() })
                 .into(),
         );
     }
+    col_sum_cells.push(solid!(2.0, N, border_maj));
+    // Top separator belongs to the footer so it stays frozen while the grid scrolls.
+    let col_sums_el: Element<'a, Message> = column(vec![
+        solid!(cells_row_w, 2.0, border_maj),
+        row(col_sum_cells).into(),
+    ])
+    .into();
 
-    // ── Col sum row ───────────────────────────────────────────────────────
-    {
-        let mut cells: Vec<Element<'a, Message>> = Vec::new();
+    let bottom_right_el: Element<'a, Message> = column(vec![
+        solid!(sum_w, 2.0, border_maj),
+        button(Space::new(0.0, 0.0))
+            .on_press(Message::AssistToggle(2))
+            .width(Length::Fixed(sum_w))
+            .height(Length::Fixed(N))
+            .padding(Padding::ZERO)
+            .style(move |_, status| button::Style {
+                background: Some(if matches!(status, button::Status::Hovered) {
+                    Color { r: sum_bg.r * 0.88, g: sum_bg.g * 0.88, b: sum_bg.b * 0.88, a: 1.0 }.into()
+                } else {
+                    sum_bg.into()
+                }),
+                border: Default::default(),
+                shadow: Default::default(),
+                text_color: Color::BLACK,
+            })
+            .into(),
+    ])
+    .into();
 
-        // Bottom-left corner: row grand total
-        {
-            let txt_color = if total_mismatch { warn_text } else { Color::from_rgb(0.1, 0.1, 0.1) };
-            let corner_inner = if total_mismatch {
-                container(text(total_row.to_string()).size(13).color(txt_color))
-                    .width(Length::Fill).height(Length::Fill)
-                    .align_x(Horizontal::Right).align_y(Vertical::Center)
-                    .padding(Padding { right: 4.0, ..Padding::ZERO })
-                    .style(|_| warn_inline_style())
-            } else {
-                container(text(total_row.to_string()).size(13).color(txt_color))
-                    .width(Length::Fill).height(Length::Fill)
-                    .align_x(Horizontal::Right).align_y(Vertical::Center)
-                    .padding(Padding { right: 4.0, ..Padding::ZERO })
-                    .style(move |_| container::Style { background: Some(sum_bg.into()), ..Default::default() })
-            };
-            cells.push(
-                container(corner_inner)
-                    .width(Length::Fixed(row_clue_w))
-                    .height(Length::Fixed(N))
-                    .into(),
-            );
-        }
-
-        for c in 0..w {
-            let lp = if c % 5 == 0 { 2.0_f32 } else { 1.0 };
-            let vc = if c % 5 == 0 { border_maj } else { border_min };
-            let col_sum: u32 = line_sum(&puzzle.col_clues[c]);
-            let warn = col_infeasible[c];
-            let txt_color = if warn { warn_text } else { Color::from_rgb(0.1, 0.1, 0.1) };
-            let csum_inner = if warn {
-                container(text(col_sum.to_string()).size(13).color(txt_color))
-                    .width(Length::Fill).height(Length::Fill)
-                    .align_x(Horizontal::Center).align_y(Vertical::Center)
-                    .style(|_| warn_inline_style())
-            } else {
-                container(text(col_sum.to_string()).size(13).color(txt_color))
-                    .width(Length::Fill).height(Length::Fill)
-                    .align_x(Horizontal::Center).align_y(Vertical::Center)
-                    .style(move |_| container::Style { background: Some(sum_bg.into()), ..Default::default() })
-            };
-            cells.push(
-                container(csum_inner)
-                    .width(Length::Fixed(C))
-                    .height(Length::Fixed(N))
-                    .padding(Padding { left: lp, ..Padding::ZERO })
-                    .style(move |_| container::Style { background: Some(vc.into()), ..Default::default() })
-                    .into(),
-            );
-        }
-
-        if right_border { cells.push(solid!(2.0, N, border_maj)); }
-
-        // Bottom-right corner: toggle clue sums with gaps
-        cells.push(
-            button(Space::new(0.0, 0.0))
-                .on_press(Message::AssistToggle(2))
-                .width(Length::Fixed(sum_w))
-                .height(Length::Fixed(N))
-                .padding(Padding::ZERO)
-                .style(move |_, status| button::Style {
-                    background: Some(if matches!(status, button::Status::Hovered) {
-                        Color { r: sum_bg.r * 0.88, g: sum_bg.g * 0.88, b: sum_bg.b * 0.88, a: 1.0 }.into()
-                    } else {
-                        sum_bg.into()
-                    }),
-                    border: Default::default(),
-                    shadow: Default::default(),
-                    text_color: Color::BLACK,
-                })
-                .into()
-        );
-
-        all_rows.push(row(cells).into());
-    }
-
-    // ── Controls below the grid ───────────────────────────────────────────
-    {
+    // ── Controls ──────────────────────────────────────────────────────────────
+    let controls_el: Element<'a, Message> = if !show_manual_btns { row![].into() } else {
         let trial_tier = trial.len();
 
         let clear_btn = button(text("Clear answer").size(12))
@@ -969,7 +1000,6 @@ pub(crate) fn view_grid<'a>(
             redo_btn_base.on_press(Message::RedoGrid(key)).into()
         } else { redo_btn_base.into() };
 
-        // Fixed width sized to "Trial" so layout doesn't shift when label changes to "+1".
         let enter_label = if trial_tier == 0 { "Trial" } else { "+1" };
         let enter_btn: Element<Message> = button(
             text(enter_label)
@@ -981,14 +1011,13 @@ pub(crate) fn view_grid<'a>(
             .padding([2, 4])
             .into();
 
-        // Accept and Reject are always shown; green/red when active, gray when not.
         let active = trial_tier > 0;
         let icon_radius = Border { radius: 3.0.into(), ..Default::default() };
 
         let reject_btn_base = button(
             bi(Bootstrap::XLg)
                 .size(14)
-                .color(Color { r: 0.3, g: 0.1, b: 0.1, a: 1.0} )
+                .color(Color { r: 0.3, g: 0.1, b: 0.1, a: 1.0 })
                 .align_y(Vertical::Center)
                 .align_x(Horizontal::Center)
             )
@@ -1019,11 +1048,10 @@ pub(crate) fn view_grid<'a>(
         let accept_btn_base = button(
             bi(Bootstrap::CheckLg)
                 .size(14)
-                .color(Color { r: 0.1, g: 0.3, b: 0.1, a: 1.0} )
+                .color(Color { r: 0.1, g: 0.3, b: 0.1, a: 1.0 })
                 .align_y(Vertical::Center)
                 .align_x(Horizontal::Center)
             )
-            // Button itself
             .padding([1, 3])
             .style(move |_, status: button::Status| {
                 let (bg, border_col) = if !active {
@@ -1066,7 +1094,7 @@ pub(crate) fn view_grid<'a>(
         let grid_center = row_clue_w + (C * w as f32) / 2.0;
         let left_gap = grid_center - CLEAR_W - UR_W / 2.0;
 
-        let btn_row: Element<Message> = if left_gap >= 4.0 {
+        if left_gap >= 4.0 {
             row![
                 clear_btn,
                 Space::with_width(Length::Fixed(left_gap)),
@@ -1086,23 +1114,11 @@ pub(crate) fn view_grid<'a>(
                 Space::with_width(Length::Fill),
                 tr_group,
             ].align_y(Vertical::Center).into()
-        };
+        }
+    };
 
-        all_rows.push(
-            container(horizontal_rule(1))
-                .width(Length::Fixed(grid_total_w))
-                .into()
-        );
-        all_rows.push(
-            container(btn_row)
-                .padding([6, 0])
-                .width(Length::Fixed(grid_total_w))
-                .into()
-        );
-    }
-
-    // ── Prev / Next navigation ────────────────────────────────────────────
-    {
+    // ── Nav ───────────────────────────────────────────────────────────────────
+    let nav_el: Element<'a, Message> = {
         let prev_btn: Element<Message> = if let Some(pk) = prev_key {
             button(row![bi(Bootstrap::ChevronLeft).size(13), text("Previous").size(12)].spacing(4).align_y(Vertical::Center))
                 .on_press(Message::PuzzleFocused(pk))
@@ -1123,26 +1139,39 @@ pub(crate) fn view_grid<'a>(
                 .padding([4, 10])
                 .into()
         };
-        all_rows.push(
-            container(horizontal_rule(1))
-                .width(Length::Fixed(grid_total_w))
-                .into()
-        );
-        all_rows.push(
-            container(
-                row![prev_btn, Space::with_width(Length::Fill), next_btn]
-                    .align_y(Vertical::Center),
-            )
-            .padding([6, 0])
-            .width(Length::Fixed(grid_total_w))
+        row![prev_btn, Space::with_width(Length::Fill), next_btn]
+            .align_y(Vertical::Center)
             .into()
-        );
-    }
+    };
 
-    mouse_area(
-        container(column(all_rows))
-            .padding(Padding { top: 16.0, right: 16.0, bottom: 16.0, left: 0.0 }),
-    )
-    .on_exit(Message::GridLeft)
-    .into()
+    // The 2-px separator between clue strips and the cell grid is owned by the
+    // frozen header regions, not by the scrollable cells.  corner_w/corner_h are
+    // bumped by 2 so the layout engine positions cells correctly.
+    let col_clues_el = column(vec![
+        row(col_clue_cells).into(),
+        solid!(cells_row_w, 2.0, border_maj),
+    ]);
+    let row_clues_el = row(vec![
+        column(row_clue_vec).into(),
+        solid!(2.0, C * h as f32, border_maj),
+    ]);
+    GridRegions {
+        corner:       corner_el,
+        col_clues:    col_clues_el.into(),
+        top_right:    top_right_el,
+        row_clues:    row_clues_el.into(),
+        cells:        column(cells_rows).into(),
+        row_sums:     column(row_sum_vec).into(),
+        col_sums:     col_sums_el,
+        bottom_left:  bottom_left_el,
+        bottom_right: bottom_right_el,
+        controls:     controls_el,
+        nav:          nav_el,
+        corner_w:     row_clue_w + 2.0,
+        corner_h:     col_clue_h + 2.0,
+        sum_w,
+        sum_h:        N + 2.0,
+        puzzle_w:     w,
+        puzzle_h:     h,
+    }
 }

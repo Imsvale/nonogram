@@ -1,4 +1,4 @@
-use nonogram_core::{CellState, Puzzle};
+use nonogram_core::{CellState, ParsedPuzzle, Puzzle};
 
 pub(crate) fn puzzle_to_puzzlink_url(puzzle: &Puzzle) -> String {
     let w = puzzle.width;
@@ -22,7 +22,12 @@ pub(crate) fn puzzle_to_puzzlink_url(puzzle: &Puzzle) -> String {
             encode_value(v, out);
         }
         let zeros = g.saturating_sub(clues.len());
-        out.push(char::from(b'f' + zeros as u8));
+        if zeros <= 20 {
+            out.push(char::from(b'f' + zeros as u8));
+        } else {
+            out.push('z');
+            out.push(char::from(b'f' + (zeros - 20) as u8));
+        }
     }
 
     let mut data = String::new();
@@ -79,6 +84,114 @@ pub(crate) fn puzzle_to_file_string(puzzle: &Puzzle) -> String {
 /// clues (bottom-aligned). Left section holds row clues (right-aligned).
 /// Bottom-right section is the puzzle grid (`.` = empty/unknown, `#` = filled).
 /// Clues for fulfilled lines are prefixed with `c`.
+/// Decode a puzz.link nonogram URL into a puzzle list.
+///
+/// Accepts the full URL form `https://puzz.link/p?nonogram/W/H/data` or any
+/// string containing that path segment. The decode is purely local — no HTTP.
+pub(crate) fn parse_puzzlink_url(url: &str) -> Result<(String, Vec<ParsedPuzzle>), String> {
+    let marker = "nonogram/";
+    let pos = url.find(marker).ok_or("Not a puzz.link nonogram URL")?;
+    let rest = &url[pos + marker.len()..];
+
+    let mut parts = rest.splitn(3, '/');
+    let w: usize = parts.next().ok_or("Missing width")?.parse().map_err(|_| "Invalid width")?;
+    let h: usize = parts.next().ok_or("Missing height")?.parse().map_err(|_| "Invalid height")?;
+    let data = parts.next().ok_or("Missing encoded data")?;
+
+    if w == 0 || h == 0 { return Err("Zero-dimension puzzle".into()); }
+
+    let g_col = (h + 1) / 2;
+    let g_row = (w + 1) / 2;
+
+    let mut chars = data.chars().peekable();
+
+    let mut col_clues: Vec<Vec<u32>> = Vec::with_capacity(w);
+    for c in 0..w {
+        col_clues.push(
+            decode_pz_group(&mut chars, g_col)
+                .map_err(|e| format!("col {}: {e}", c + 1))?
+        );
+    }
+
+    let mut row_clues: Vec<Vec<u32>> = Vec::with_capacity(h);
+    for r in 0..h {
+        row_clues.push(
+            decode_pz_group(&mut chars, g_row)
+                .map_err(|e| format!("row {}: {e}", r + 1))?
+        );
+    }
+
+    let name = format!("{}×{}", w, h);
+    let puzzle = Puzzle {
+        name:      name.clone(),
+        width:     w,
+        height:    h,
+        col_clues,
+        row_clues,
+        answer:    None,
+        solution:  None,
+    };
+
+    Ok((format!("puzz.link {name}"), vec![ParsedPuzzle::Valid(puzzle)]))
+}
+
+fn decode_pz_group(
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+    g: usize,
+) -> Result<Vec<u32>, String> {
+    let mut values: Vec<u32> = Vec::new();
+
+    let zeros = loop {
+        // When all g slots are filled, the next char must be 'f' (0-zeros suffix).
+        if values.len() == g {
+            match chars.next() {
+                Some('f') => break 0,
+                Some(c)   => return Err(format!("expected 'f' suffix, got '{c}'")),
+                None      => return Err("unexpected end of data".into()),
+            }
+        }
+        match chars.next() {
+            None => return Err("unexpected end of data in group".into()),
+            // Suffix character ≥ 'g': single-char or two-char 'z?' form.
+            // 'f' never appears here when values.len() < g because that would
+            // imply 0 zeros = g − values.len() > 0, a contradiction.
+            Some(c) if c >= 'g' => {
+                break if c == 'z' {
+                    // Peek: if next char ≥ 'g', it's a 2-char suffix (zeros 21+).
+                    match chars.peek().copied() {
+                        Some(c2) if c2 >= 'g' => {
+                            chars.next();
+                            20 + (c2 as u8 - b'f') as usize
+                        }
+                        _ => 20,
+                    }
+                } else {
+                    (c as u8 - b'f') as usize
+                };
+            }
+            Some(c @ '0'..='9') => values.push(c as u32 - '0' as u32),
+            Some(c @ 'a'..='f') => values.push(10 + c as u32 - 'a' as u32),
+            Some('-') => {
+                let h1 = chars.next().ok_or("truncated hex value")?;
+                let h2 = chars.next().ok_or("truncated hex value")?;
+                let hex = format!("{h1}{h2}");
+                values.push(u32::from_str_radix(&hex, 16)
+                    .map_err(|_| format!("invalid hex: -{hex}"))?);
+            }
+            Some(c) => return Err(format!("unexpected char '{c}'")),
+        }
+    };
+
+    if values.len() + zeros != g {
+        return Err(format!(
+            "group size mismatch: {} values + {zeros} zeros ≠ {g}",
+            values.len()
+        ));
+    }
+    values.reverse();
+    Ok(values)
+}
+
 pub(crate) fn export_puzprv3(
     row_clues: &[Vec<u32>],
     col_clues: &[Vec<u32>],

@@ -1,4 +1,4 @@
-use iced::Color;
+use iced::{Color, keyboard::key::Named as NamedKey};
 use iced_fonts::bootstrap::Bootstrap;
 use serde::{Deserialize, Serialize};
 use directories::ProjectDirs;
@@ -99,6 +99,72 @@ pub(crate) const EMPTY_ICON_OPTIONS: &[Option<Bootstrap>] = &[
 ];
 
 // ---------------------------------------------------------------------------
+// Focus-mode key binding
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub(crate) enum FocusKey { F9, F10, F11, F12, Escape }
+
+impl FocusKey {
+    pub(crate) const ALL: &'static [Self] =
+        &[Self::F9, Self::F10, Self::F11, Self::F12, Self::Escape];
+
+    pub(crate) fn matches(&self, named: &NamedKey) -> bool {
+        match self {
+            Self::F9     => matches!(named, NamedKey::F9),
+            Self::F10    => matches!(named, NamedKey::F10),
+            Self::F11    => matches!(named, NamedKey::F11),
+            Self::F12    => matches!(named, NamedKey::F12),
+            Self::Escape => matches!(named, NamedKey::Escape),
+        }
+    }
+}
+
+impl std::fmt::Display for FocusKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::F9     => write!(f, "F9"),
+            Self::F10    => write!(f, "F10"),
+            Self::F11    => write!(f, "F11"),
+            Self::F12    => write!(f, "F12"),
+            Self::Escape => write!(f, "Esc"),
+        }
+    }
+}
+
+/// Secondary (character-key) fullscreen toggle. Esc is always hardcoded as
+/// an exit-only key and is not listed here.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub(crate) enum SecondaryFocusKey { None, F, G, H, Z }
+
+impl SecondaryFocusKey {
+    pub(crate) const ALL: &'static [Self] =
+        &[Self::None, Self::F, Self::G, Self::H, Self::Z];
+
+    pub(crate) fn matches_str(&self, c: &str) -> bool {
+        match self {
+            Self::None => false,
+            Self::F    => matches!(c, "f" | "F"),
+            Self::G    => matches!(c, "g" | "G"),
+            Self::H    => matches!(c, "h" | "H"),
+            Self::Z    => matches!(c, "z" | "Z"),
+        }
+    }
+}
+
+impl std::fmt::Display for SecondaryFocusKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "None"),
+            Self::F    => write!(f, "F"),
+            Self::G    => write!(f, "G"),
+            Self::H    => write!(f, "H"),
+            Self::Z    => write!(f, "Z"),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Assistance settings
 // ---------------------------------------------------------------------------
 
@@ -110,6 +176,8 @@ pub(crate) struct AssistanceSettings {
     pub(crate) clue_sums_with_gaps: bool,
     pub(crate) crosshair_enabled: bool,
     pub(crate) crosshair_color: Color,
+    pub(crate) focus_key: FocusKey,
+    pub(crate) focus_key2: SecondaryFocusKey,
 }
 
 impl Default for AssistanceSettings {
@@ -121,6 +189,8 @@ impl Default for AssistanceSettings {
             clue_sums_with_gaps: false,
             crosshair_enabled: false,
             crosshair_color: Color { r: 0.40, g: 0.72, b: 1.0, a: 0.18 },
+            focus_key: FocusKey::F11,
+            focus_key2: SecondaryFocusKey::F,
         }
     }
 }
@@ -139,6 +209,8 @@ struct SavedCellVisual {
 
 fn default_clue_bg_channel() -> f32 { 0.97 }
 fn default_sum_bg_channel()  -> f32 { 0.82 }
+fn default_focus_key()       -> FocusKey { FocusKey::F11 }
+fn default_focus_key2()      -> SecondaryFocusKey { SecondaryFocusKey::F }
 fn default_xhair_r()         -> f32 { 0.40 }
 fn default_xhair_g()         -> f32 { 0.72 }
 fn default_xhair_b()         -> f32 { 1.0  }
@@ -164,6 +236,8 @@ struct SavedSettings {
     #[serde(default = "default_xhair_g")] crosshair_g: f32,
     #[serde(default = "default_xhair_b")] crosshair_b: f32,
     #[serde(default = "default_xhair_a")] crosshair_a: f32,
+    #[serde(default = "default_focus_key")]  focus_key:  FocusKey,
+    #[serde(default = "default_focus_key2")] focus_key2: SecondaryFocusKey,
 }
 
 pub(crate) fn icon_to_idx(icon: Option<Bootstrap>) -> usize {
@@ -223,6 +297,8 @@ pub(crate) fn load_settings() -> (CellSettings, AssistanceSettings) {
         clue_sums_with_gaps:  saved.clue_sums_with_gaps,
         crosshair_enabled:    saved.crosshair_enabled,
         crosshair_color:      Color { r: saved.crosshair_r, g: saved.crosshair_g, b: saved.crosshair_b, a: saved.crosshair_a },
+        focus_key:            saved.focus_key,
+        focus_key2:           saved.focus_key2,
     };
     (cell, assist)
 }
@@ -251,6 +327,8 @@ pub(crate) fn save_settings(settings: &CellSettings, assist: &AssistanceSettings
         crosshair_g:         assist.crosshair_color.g,
         crosshair_b:         assist.crosshair_color.b,
         crosshair_a:         assist.crosshair_color.a,
+        focus_key:           assist.focus_key,
+        focus_key2:          assist.focus_key2,
     };
     if let Ok(json) = serde_json::to_string_pretty(&saved) {
         let _ = std::fs::write(&path, json);

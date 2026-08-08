@@ -4,7 +4,7 @@ use std::path::Path;
 use iced::{
     alignment::{Horizontal, Vertical},
     keyboard, mouse,
-    widget::{column, container, horizontal_rule, row, text, vertical_rule},
+    widget::{column, container, horizontal_rule, row, stack, text, vertical_rule},
     Color, Element, Event, Length, Point, Size, Subscription, Task, Theme, Vector,
     window,
 };
@@ -17,6 +17,7 @@ use nonogram_core::{
 
 use crate::convert::convert_letter_content;
 use crate::solver::SolverKind;
+use nonogram_graph_search::{GraphSearchSolver, ProgressConfig, ProgressUpdate};
 
 pub(crate) mod style;
 pub(crate) mod settings;
@@ -24,16 +25,17 @@ pub(crate) mod persistence;
 pub(crate) mod scan;
 pub(crate) mod export;
 pub(crate) mod grid_view;
+mod url_import;
 mod view_panel;
 mod view_detail;
 
-use settings::{CellSettings, AssistanceSettings, load_settings, save_settings};
+use settings::{CellSettings, AssistanceSettings, SecondaryFocusKey, load_settings, save_settings};
 use persistence::{
     load_solved, save_solved, save_session, load_session,
     save_solution_to_file, relative_path, save_window_state,
 };
 use scan::scan_puzzle_dirs;
-use export::{ExportFormat, puzzle_to_file_string, export_puzprv3, puzzle_to_puzzlink_url};
+use export::{ExportFormat, puzzle_to_file_string, export_puzprv3, puzzle_to_puzzlink_url, parse_puzzlink_url};
 use grid_view::{grid_at_step, is_puzzle_fully_solved, check_line_fulfilled, forced_empty_from_edges};
 
 // ---------------------------------------------------------------------------
@@ -118,6 +120,17 @@ pub struct App {
     // Incremental scan tracking
     pending_scans: usize,
     scan_total: usize,
+    // URL import
+    url_input: String,
+    show_url_import: bool,
+    // Keyboard-driven modes
+    space_held: bool,
+    focus_mode: bool,
+    // Auto-hide toolbar in fullscreen: visible while cursor is near top edge
+    toolbar_visible: bool,
+    // Live solve progress snapshots (only populated during GraphSearch+progress solves)
+    solve_progress: HashMap<Key, ProgressUpdate>,
+    show_solve_progress: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +164,9 @@ pub enum Message {
     SolveSelected,
     SolveAll,
     SolveDone(SolverKind, Vec<(Key, SolveResult)>),
+    SolveProgress(Key, ProgressUpdate),
+    SolveProgressToggled,
+    CopyToManual(Key),
 
     // Exhaustive search
     FindAllSelected,
@@ -224,6 +240,7 @@ pub enum Message {
     CopyPuzzleString(Key),
     CopyPuzzLink(Key),
     ExportMenuToggled,
+    ExportBtnHovered,
     CursorMoved(Point),
     ExportFormatSelected(ExportFormat),
     ExportSaved(String, Option<String>, Option<String>), // (content, path, error)
@@ -246,6 +263,22 @@ pub enum Message {
     // Spoiler reveal
     RevealAnswer(Key),
 
+    // URL import
+    UrlImportToggled,
+    UrlInputChanged(String),
+    UrlFetchClicked,
+    UrlFetched(Result<(String, Vec<ParsedPuzzle>), String>),
+
+    // Keyboard-driven modes
+    NamedKeyPressed(keyboard::key::Named),
+    CharKeyPressed(String),
+    SpaceReleased,
+    FocusModeToggled,
+
+    // Focus-key bindings changed in settings
+    FocusKeyChanged(crate::app::settings::FocusKey),
+    FocusKey2Changed(SecondaryFocusKey),
+
     // Errors
     Error(String),
 }
@@ -264,7 +297,7 @@ impl App {
             results: HashMap::new(),
             all_solutions: HashMap::new(),
             solution_index: 0,
-            solver: SolverKind::GraphSearch,
+            solver: SolverKind::Manual,
             focused: None,
             status: String::from("Loading default puzzle files…"),
             busy: true,
@@ -301,6 +334,13 @@ impl App {
             timers: HashMap::new(),
             pending_scans: 0,
             scan_total: 0,
+            url_input: String::new(),
+            show_url_import: false,
+            space_held: false,
+            focus_mode: false,
+            toolbar_visible: true,
+            solve_progress: HashMap::new(),
+            show_solve_progress: false,
         };
 
         let task = Task::perform(scan_puzzle_dirs(), Message::FilePathsDiscovered);
@@ -330,6 +370,15 @@ impl App {
         let kbd_and_mouse = iced::event::listen_with(|event, _, id| match event {
             Event::Keyboard(keyboard::Event::ModifiersChanged(mods)) => {
                 Some(Message::ModifiersChanged(mods))
+            }
+            Event::Keyboard(keyboard::Event::KeyPressed { key: keyboard::Key::Named(n), .. }) => {
+                Some(Message::NamedKeyPressed(n))
+            }
+            Event::Keyboard(keyboard::Event::KeyPressed { key: keyboard::Key::Character(c), .. }) => {
+                Some(Message::CharKeyPressed(c.to_string()))
+            }
+            Event::Keyboard(keyboard::Event::KeyReleased { key: keyboard::Key::Named(keyboard::key::Named::Space), .. }) => {
+                Some(Message::SpaceReleased)
             }
             Event::Mouse(mouse::Event::ButtonReleased(_)) => Some(Message::DragEnded),
             Event::Mouse(mouse::Event::CursorMoved { position }) => Some(Message::CursorMoved(position)),
@@ -696,6 +745,7 @@ impl App {
             }
 
             Message::SolveSelected => {
+                if !self.solver.is_machine() { return Task::none(); }
                 let to_solve: Vec<(Key, Puzzle)> = self.selected.iter()
                     .filter_map(|&(fi, pi)| {
                         self.files.get(fi)?.puzzles.get(pi)?.as_puzzle().map(|p| ((fi, pi), p.clone()))
@@ -704,24 +754,29 @@ impl App {
                 if to_solve.is_empty() { return Task::none(); }
                 let solver = self.solver;
                 self.cancel.reset();
-                let ctx = SolveContext { cancel: self.cancel.clone() };
                 self.busy = true;
                 self.status = format!("Solving {} puzzle(s)…", to_solve.len());
-                Task::perform(
-                    async move {
-                        tokio::task::spawn_blocking(move || {
-                            to_solve.into_iter()
-                                .map(|(key, puzzle)| (key, solver.solve(&puzzle, &ctx)))
-                                .collect::<Vec<_>>()
-                        })
-                        .await
-                        .unwrap_or_default()
-                    },
-                    move |results| Message::SolveDone(solver, results),
-                )
+                if solver == SolverKind::Cuttlefish && self.show_solve_progress {
+                    Task::run(solve_progress_stream(to_solve, self.cancel.clone(), 350), |msg| msg)
+                } else {
+                    let ctx = SolveContext { cancel: self.cancel.clone() };
+                    Task::perform(
+                        async move {
+                            tokio::task::spawn_blocking(move || {
+                                to_solve.into_iter()
+                                    .map(|(key, puzzle)| (key, solver.solve(&puzzle, &ctx)))
+                                    .collect::<Vec<_>>()
+                            })
+                            .await
+                            .unwrap_or_default()
+                        },
+                        move |results| Message::SolveDone(solver, results),
+                    )
+                }
             }
 
             Message::SolveAll => {
+                if !self.solver.is_machine() { return Task::none(); }
                 let to_solve: Vec<(Key, Puzzle)> = self.files.iter().enumerate()
                     .flat_map(|(fi, f)| {
                         f.puzzles.iter().enumerate()
@@ -731,21 +786,25 @@ impl App {
                 if to_solve.is_empty() { return Task::none(); }
                 let solver = self.solver;
                 self.cancel.reset();
-                let ctx = SolveContext { cancel: self.cancel.clone() };
                 self.busy = true;
                 self.status = format!("Solving {} puzzle(s)…", to_solve.len());
-                Task::perform(
-                    async move {
-                        tokio::task::spawn_blocking(move || {
-                            to_solve.into_iter()
-                                .map(|(key, puzzle)| (key, solver.solve(&puzzle, &ctx)))
-                                .collect::<Vec<_>>()
-                        })
-                        .await
-                        .unwrap_or_default()
-                    },
-                    move |results| Message::SolveDone(solver, results),
-                )
+                if solver == SolverKind::Cuttlefish && self.show_solve_progress {
+                    Task::run(solve_progress_stream(to_solve, self.cancel.clone(), 350), |msg| msg)
+                } else {
+                    let ctx = SolveContext { cancel: self.cancel.clone() };
+                    Task::perform(
+                        async move {
+                            tokio::task::spawn_blocking(move || {
+                                to_solve.into_iter()
+                                    .map(|(key, puzzle)| (key, solver.solve(&puzzle, &ctx)))
+                                    .collect::<Vec<_>>()
+                            })
+                            .await
+                            .unwrap_or_default()
+                        },
+                        move |results| Message::SolveDone(solver, results),
+                    )
+                }
             }
 
             Message::SolveDone(solver_kind, results) => {
@@ -761,12 +820,60 @@ impl App {
                     }
                     self.results.insert((key, solver_kind), result);
                 }
+                self.solve_progress.clear();
                 self.busy = false;
                 self.status = if aborted > 0 {
                     format!("Done: {solved}/{n} solved, {aborted} aborted")
                 } else {
                     format!("Done: {solved}/{n} fully solved")
                 };
+                Task::none()
+            }
+
+            Message::SolveProgress(key, update) => {
+                if Some(key) == self.focused && self.solver == SolverKind::Cuttlefish {
+                    self.status = format!(
+                        "Solving… {}/{} cells ({:.0}%)  nodes expanded: {}  heap: {}",
+                        update.cells_known, update.cells_total,
+                        100.0 * update.cells_known as f32 / update.cells_total.max(1) as f32,
+                        update.nodes_expanded,
+                        update.heap_len,
+                    );
+                }
+                self.solve_progress.insert(key, update);
+                Task::none()
+            }
+
+            Message::SolveProgressToggled => {
+                self.show_solve_progress = !self.show_solve_progress;
+                Task::none()
+            }
+
+            Message::CopyToManual(key) => {
+                let solver = self.solver;
+                let Some(puzzle) = self.files.get(key.0)
+                    .and_then(|f| f.puzzles.get(key.1))
+                    .and_then(|e| e.as_puzzle())
+                else { return Task::none(); };
+                let Some(result) = self.results.get(&(key, solver)) else {
+                    return Task::none();
+                };
+                let final_grid = result.grid.clone();
+                // Cursor 0..n-1: blank through penultimate step. final_grid becomes the
+                // new current state and must not also sit on top of the undo stack.
+                let steps: Vec<_> = (0..result.steps.len())
+                    .map(|c| grid_at_step(puzzle, result, c))
+                    .collect();
+                if let Some(current) = self.manual_grids.get(&key) {
+                    self.undo_stack.entry(key).or_default().push(current.clone());
+                }
+                let undo = self.undo_stack.entry(key).or_default();
+                for step_grid in steps {
+                    undo.push(step_grid);
+                }
+                self.manual_grids.insert(key, final_grid);
+                self.redo_stack.remove(&key);
+                self.solver = SolverKind::Manual;
                 Task::none()
             }
 
@@ -932,7 +1039,6 @@ impl App {
                     let snapshot = self.manual_grids[&key].clone();
                     let stack = self.undo_stack.entry(key).or_default();
                     stack.push(snapshot);
-                    if stack.len() > 500 { stack.remove(0); }
                     self.redo_stack.remove(&key);
                 }
 
@@ -1378,15 +1484,29 @@ impl App {
 
             Message::CursorMoved(pos) => {
                 self.last_cursor = pos;
+                if self.focus_mode {
+                    if pos.y <= 4.0 {
+                        self.toolbar_visible = true;
+                    } else if pos.y > 55.0 {
+                        self.toolbar_visible = false;
+                    }
+                    // Between 4 and 55: hysteresis — keep current state so toolbar
+                    // stays visible while the cursor is over it.
+                }
+                Task::none()
+            }
+
+            Message::ExportBtnHovered => {
+                // Anchor the popup when the cursor enters the button (before the click).
+                // Entering from the left positions cursor near the button's left edge.
+                if !self.show_export_menu {
+                    self.export_popup_x = (self.last_cursor.x - 311.0 - 10.0).max(0.0);
+                }
                 Task::none()
             }
 
             Message::ExportMenuToggled => {
                 self.show_export_menu = !self.show_export_menu;
-                if self.show_export_menu {
-                    // Cursor x relative to the detail panel (left panel 310px + 1px separator).
-                    self.export_popup_x = (self.last_cursor.x - 311.0).max(0.0);
-                }
                 Task::none()
             }
 
@@ -1522,6 +1642,141 @@ impl App {
                 Task::none()
             }
 
+            // ── Keyboard modes ────────────────────────────────────────────
+            Message::NamedKeyPressed(named) => {
+                use keyboard::key::Named;
+                match named {
+                    Named::Space if !self.show_url_import => {
+                        self.space_held = true;
+                        Task::none()
+                    }
+                    // Esc always exits fullscreen (non-rebindable, exit-only).
+                    Named::Escape if self.focus_mode => {
+                        self.focus_mode = false;
+                        self.apply_window_mode()
+                    }
+                    n if self.assistance.focus_key.matches(&n) => {
+                        self.focus_mode = !self.focus_mode;
+                        if self.focus_mode {
+                            self.toolbar_visible = false;
+                            self.pan_offset = self.center_pan_for_fullscreen();
+                        }
+                        self.apply_window_mode()
+                    }
+                    _ => Task::none()
+                }
+            }
+            Message::CharKeyPressed(c) => {
+                if self.modifiers.alt() || self.modifiers.control() || self.modifiers.logo() {
+                    return Task::none();
+                }
+                if !self.show_url_import && self.assistance.focus_key2.matches_str(&c) {
+                    self.focus_mode = !self.focus_mode;
+                    if self.focus_mode {
+                        self.toolbar_visible = false;
+                        self.pan_offset = self.center_pan_for_fullscreen();
+                    }
+                    self.apply_window_mode()
+                } else {
+                    Task::none()
+                }
+            }
+            Message::SpaceReleased => {
+                self.space_held = false;
+                Task::none()
+            }
+            Message::FocusModeToggled => {
+                self.focus_mode = !self.focus_mode;
+                if self.focus_mode {
+                    self.toolbar_visible = false;
+                    self.pan_offset = self.center_pan_for_fullscreen();
+                }
+                self.apply_window_mode()
+            }
+            Message::FocusKeyChanged(key) => {
+                self.assistance.focus_key = key;
+                save_settings(&self.cell_settings, &self.assistance);
+                Task::none()
+            }
+            Message::FocusKey2Changed(key) => {
+                self.assistance.focus_key2 = key;
+                save_settings(&self.cell_settings, &self.assistance);
+                Task::none()
+            }
+
+            // ── URL import ────────────────────────────────────────────────
+            Message::UrlImportToggled => {
+                self.show_url_import = !self.show_url_import;
+                Task::none()
+            }
+
+            Message::UrlInputChanged(s) => {
+                self.url_input = s;
+                Task::none()
+            }
+
+            Message::UrlFetchClicked => {
+                let url = self.url_input.trim().to_string();
+                if url.is_empty() || self.busy { return Task::none(); }
+                if url.contains("puzz.link/p?nonogram") {
+                    // Decode locally — no HTTP.
+                    match parse_puzzlink_url(&url) {
+                        Ok((name, puzzles)) => {
+                            let n_valid = puzzles.iter().filter(|e| e.is_valid()).count();
+                            self.status = format!("Imported {n_valid} puzzle(s) from puzz.link as \"{name}\"");
+                            let path = format!("__url__{name}");
+                            if !self.files.iter().any(|f| f.path == path) {
+                                self.files.push(LoadedFile {
+                                    path,
+                                    name,
+                                    folder: None,
+                                    auto_loaded: false,
+                                    puzzles,
+                                    collapsed: false,
+                                });
+                            }
+                            self.show_url_import = false;
+                        }
+                        Err(e) => {
+                            self.status = format!("Import failed: {e}");
+                        }
+                    }
+                    Task::none()
+                } else {
+                    self.status = format!("Fetching {url}…");
+                    self.busy = true;
+                    Task::perform(
+                        url_import::fetch_puzzle_from_url(url),
+                        Message::UrlFetched,
+                    )
+                }
+            }
+
+            Message::UrlFetched(Ok((name, puzzles))) => {
+                let n_valid = puzzles.iter().filter(|e| e.is_valid()).count();
+                self.status = format!("Imported {n_valid} puzzle(s) from URL as \"{name}\"");
+                self.busy = false;
+                let path = format!("__url__{name}");
+                if !self.files.iter().any(|f| f.path == path) {
+                    self.files.push(LoadedFile {
+                        path,
+                        name,
+                        folder: None,
+                        auto_loaded: false,
+                        puzzles,
+                        collapsed: false,
+                    });
+                }
+                self.show_url_import = false;
+                Task::none()
+            }
+
+            Message::UrlFetched(Err(e)) => {
+                self.status = format!("Import failed: {e}");
+                self.busy = false;
+                Task::none()
+            }
+
             Message::Error(e) => {
                 self.status = format!("Error: {e}");
                 self.busy = false;
@@ -1533,19 +1788,34 @@ impl App {
     // ── Top-level view ───────────────────────────────────────────────────
 
     pub fn view(&self) -> Element<'_, Message> {
-        column![
-            self.view_toolbar(),
-            horizontal_rule(1),
-            row![
-                self.view_left_panel(),
-                vertical_rule(1),
-                self.view_right_panel(),
+        if self.focus_mode {
+            let puzzle = row![self.view_right_panel()].height(Length::Fill);
+            if self.toolbar_visible {
+                let overlay = container(column![self.view_toolbar(), horizontal_rule(1)])
+                    .width(Length::Fill)
+                    .style(|theme: &Theme| container::Style {
+                        background: Some(theme.palette().background.into()),
+                        ..Default::default()
+                    });
+                stack![puzzle, overlay].into()
+            } else {
+                puzzle.into()
+            }
+        } else {
+            column![
+                self.view_toolbar(),
+                horizontal_rule(1),
+                row![
+                    self.view_left_panel(),
+                    vertical_rule(1),
+                    self.view_right_panel(),
+                ]
+                .height(Length::Fill),
+                horizontal_rule(1),
+                self.view_status_bar(),
             ]
-            .height(Length::Fill),
-            horizontal_rule(1),
-            self.view_status_bar(),
-        ]
-        .into()
+            .into()
+        }
     }
 
 
@@ -1651,6 +1921,56 @@ impl App {
             .unwrap_or(0);
     }
 
+    fn apply_window_mode(&self) -> Task<Message> {
+        let mode = if self.focus_mode { window::Mode::Fullscreen } else { window::Mode::Windowed };
+        if let Some(id) = self.window_id {
+            window::change_mode(id, mode)
+        } else {
+            Task::none()
+        }
+    }
+
+    /// Compute a pan_offset that centers the focused puzzle in the fullscreen
+    /// viewport. Returns Vector::ZERO when no puzzle is focused or it is too
+    /// large to center (content exceeds viewport on that axis).
+    fn center_pan_for_fullscreen(&self) -> Vector {
+        const C: f32 = 26.0; // cell px
+        const N: f32 = 22.0; // clue-number cell px
+
+        let Some((fi, pi)) = self.focused else { return Vector::ZERO };
+        let Some(puzzle) = self.files.get(fi)
+            .and_then(|f| f.puzzles.get(pi))
+            .and_then(|e| e.as_puzzle())
+        else { return Vector::ZERO };
+
+        let max_rd = puzzle.row_clues.iter().map(|v| v.len()).max().unwrap_or(0).max(1);
+        let max_cd = puzzle.col_clues.iter().map(|v| v.len()).max().unwrap_or(0).max(1);
+
+        let corner_w = max_rd as f32 * N + 2.0;
+        let corner_h = max_cd as f32 * N + 2.0;
+
+        // cells area: dim * C + (dim-1) * 1px spacing
+        let cells_w = puzzle.width  as f32 * (C + 1.0) - 1.0;
+        let cells_h = puzzle.height as f32 * (C + 1.0) - 1.0;
+
+        // sum panel width (clue-sum column appended to the right)
+        let total_clue: u32 = puzzle.col_clues.iter().flat_map(|c| c.iter()).sum();
+        let sum_w: f32 = match total_clue { 0..=9 => N, 10..=99 => N + 4.0, _ => N + 10.0 };
+
+        // In fullscreen the detail panel fills the whole window; the
+        // FrozenGridViewport container has 16px left padding.
+        // Subtract ~40px vertically for the puzzle title header + separator.
+        let vp_w = self.window_size.width  - 16.0;
+        let vp_h = self.window_size.height - 40.0;
+
+        // Round to whole pixels — fractional positions cause anti-aliased borders
+        // that render 1-2px thicker and shift sub-pixel-aligned content.
+        Vector::new(
+            ((vp_w - corner_w - cells_w - sum_w) / 2.0).max(0.0).round(),
+            ((vp_h - corner_h - cells_h)          / 2.0).max(0.0).round(),
+        )
+    }
+
     fn compute_display_grid(&self, key: Key) -> Option<Vec<CellState>> {
         let (fi, pi) = key;
         let puzzle = self.files.get(fi)?.puzzles.get(pi)?.as_puzzle()?;
@@ -1668,5 +1988,50 @@ impl App {
                 r.grid.clone()
             })
         })
+        .or_else(|| self.solve_progress.get(&key).map(|u| u.grid.clone()))
     }
+}
+
+// ---------------------------------------------------------------------------
+// Progress-streaming solve (GraphSearch only)
+// ---------------------------------------------------------------------------
+
+fn solve_progress_stream(
+    to_solve: Vec<(Key, Puzzle)>,
+    cancel: CancelToken,
+    snapshot_ms: u64,
+) -> impl iced::futures::Stream<Item = Message> {
+    use std::time::Duration;
+    use iced::futures::SinkExt as _;
+    // iced::stream::channel defers execution into iced's tokio executor (avoiding
+    // any question of whether tokio::spawn is valid on the winit event-loop thread).
+    iced::stream::channel(128, move |mut sender| async move {
+        let config = ProgressConfig {
+            snapshot_interval: Some(Duration::from_millis(snapshot_ms)),
+            // Fire once immediately after initial propagation so the GUI gets the
+            // post-propagation partial grid even before any branch interval elapses.
+            emit_start_snapshot: true,
+            ..Default::default()
+        };
+        let mut all_results: Vec<(Key, SolveResult)> = Vec::with_capacity(to_solve.len());
+        for (key, puzzle) in to_solve {
+            let mut s2 = sender.clone();
+            let ctx = SolveContext { cancel: cancel.clone() };
+            let cfg = config.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                let mut cb = move |u: ProgressUpdate| {
+                    let _ = s2.try_send(Message::SolveProgress(key, u));
+                };
+                GraphSearchSolver.solve_with_progress(&puzzle, &ctx, &cfg, Some(&mut cb))
+            })
+            .await
+            .unwrap_or_else(|_| SolveResult {
+                state: SolutionState::Aborted,
+                grid: vec![],
+                steps: vec![],
+            });
+            all_results.push((key, result));
+        }
+        let _ = sender.send(Message::SolveDone(SolverKind::Cuttlefish, all_results)).await;
+    })
 }

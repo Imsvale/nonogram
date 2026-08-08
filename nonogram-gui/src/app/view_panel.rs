@@ -2,7 +2,7 @@ use iced::{
     alignment::Vertical,
     widget::{
         button, checkbox, column, container, horizontal_rule,
-        pick_list, row, scrollable, text, Space,
+        pick_list, row, scrollable, text, text_input, Space,
     },
     Color, Element, Length, Padding, Theme,
 };
@@ -41,6 +41,20 @@ impl App {
             if self.busy { b.on_press(Message::AbortClicked) } else { b }
         };
 
+        let focus_icon = if self.focus_mode {
+            Bootstrap::FullscreenExit
+        } else {
+            Bootstrap::Fullscreen
+        };
+        let focus_btn = {
+            let b = button(bi(focus_icon).size(14)).padding([4, 8]);
+            if self.focused.is_some() || self.focus_mode {
+                b.on_press(Message::FocusModeToggled)
+            } else {
+                b
+            }
+        };
+
         let theme_icon = match self.theme {
             Theme::Light => Bootstrap::MoonFill,
             _            => Bootstrap::SunFill,
@@ -62,14 +76,25 @@ impl App {
         row![
             button("Import File").on_press(Message::ImportClicked),
             button("Convert File").on_press(Message::ConvertClicked),
+            button("Import URL").on_press(Message::UrlImportToggled),
             refresh_btn,
             Space::with_width(Length::Fill),
+            focus_btn,
             button(bi(theme_icon).size(14))
                 .on_press(Message::ThemeToggled)
                 .padding([4, 8]),
             settings_btn,
             text("Solver:").size(14),
             pick_list(SolverKind::ALL, Some(self.solver), Message::SolverChanged),
+            {
+                let label = if self.show_solve_progress { "Live ON" } else { "Live" };
+                let b = button(text(label).size(12)).padding([3, 6]);
+                if self.solver == SolverKind::Cuttlefish {
+                    b.on_press(Message::SolveProgressToggled)
+                } else {
+                    b
+                }
+            },
             Space::with_width(Length::Fixed(12.0)),
             solve_sel,
             solve_all,
@@ -299,15 +324,45 @@ impl App {
             self.render_file_rows(fi, &self.files[fi], 0.0, &mut items);
         }
 
-        container(
-            column![
-                list_toolbar,
-                horizontal_rule(1),
-                scrollable(
-                    column(items).spacing(1)
-                ).height(Length::Fill),
-            ]
-        )
+        let url_row: Option<Element<Message>> = if self.show_url_import {
+            let fetch_btn = {
+                let b = button(text("Fetch").size(12)).padding([3, 8]);
+                if !self.url_input.trim().is_empty() && !self.busy {
+                    b.on_press(Message::UrlFetchClicked)
+                } else {
+                    b
+                }
+            };
+            Some(
+                container(
+                    row![
+                        text_input("https://puzzle-nonograms.com/?pl=…", &self.url_input)
+                            .on_input(Message::UrlInputChanged)
+                            .on_submit(Message::UrlFetchClicked)
+                            .size(12)
+                            .width(Length::Fill),
+                        fetch_btn,
+                    ]
+                    .spacing(4)
+                    .padding([4, 8])
+                    .align_y(Vertical::Center),
+                )
+                .style(style_panel)
+                .width(Length::Fill)
+                .into(),
+            )
+        } else {
+            None
+        };
+
+        let mut inner: Vec<Element<Message>> = vec![list_toolbar.into(), horizontal_rule(1).into()];
+        if let Some(ur) = url_row {
+            inner.push(ur);
+            inner.push(horizontal_rule(1).into());
+        }
+        inner.push(scrollable(column(items).spacing(1)).height(Length::Fill).into());
+
+        container(column(inner))
         .style(style_panel)
         .width(Length::Fixed(310.0))
         .height(Length::Fill)

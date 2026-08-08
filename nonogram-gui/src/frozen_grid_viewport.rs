@@ -92,6 +92,8 @@ pub struct FrozenGridViewport<'a, Message, Theme = iced::Theme, Renderer = iced:
     on_pan:     Option<Box<dyn Fn(Vector) -> Message + 'a>>,
     on_region:  Option<Box<dyn Fn(FrozenRegion) -> Message + 'a>>,
     bg:         Color,
+    sep_color:  Option<Color>,
+    pan_override: bool,
 }
 
 impl<'a> FrozenGridViewport<'a, AppMessage> {
@@ -109,7 +111,7 @@ impl<'a> FrozenGridViewport<'a, AppMessage> {
             controls, nav,
             corner_w, corner_h, sum_w, sum_h,
             puzzle_w, puzzle_h,
-            key, pan_offset, on_pan: None, on_region: None, bg,
+            key, pan_offset, on_pan: None, on_region: None, bg, sep_color: None, pan_override: false,
         }
     }
 
@@ -120,6 +122,16 @@ impl<'a> FrozenGridViewport<'a, AppMessage> {
 
     pub fn on_region(mut self, f: impl Fn(FrozenRegion) -> AppMessage + 'a) -> Self {
         self.on_region = Some(Box::new(f));
+        self
+    }
+
+    pub fn top_separator(mut self, color: Color) -> Self {
+        self.sep_color = Some(color);
+        self
+    }
+
+    pub fn space_pan(mut self, active: bool) -> Self {
+        self.pan_override = active;
         self
     }
 }
@@ -215,8 +227,9 @@ fn clips_from_layouts(
         Rectangle { x: corner_sx + cw, y: col_sums_sy,    width: mid_w, height: sum_h   }, // col_sums
         Rectangle { x: corner_sx,      y: col_sums_sy,    width: cw,    height: sum_h   }, // bottom_left
         Rectangle { x: row_sums_sx,    y: col_sums_sy,    width: sw,    height: sum_h   }, // bottom_right
-        Rectangle { x: corner_sx,      y: ctl_b.y,        width: btn_w, height: ctl_b.height.max(0.0) }, // controls
-        Rectangle { x: corner_sx,      y: nav_b.y,        width: btn_w, height: nav_b.height.max(0.0) }, // nav
+        // Controls/nav may be wider than btn_w when puzzle is very small (MIN_BTN_W floor).
+        Rectangle { x: corner_sx, y: ctl_b.y, width: ctl_b.width.max(btn_w), height: ctl_b.height.max(0.0) },
+        Rectangle { x: corner_sx, y: nav_b.y, width: nav_b.width.max(btn_w), height: nav_b.height.max(0.0) },
     ]
 }
 
@@ -299,11 +312,13 @@ where
         let cells_natural_h = child_nodes[IDX_CELLS].bounds().height;
 
         // Full button width = corner + cells + sums, independent of px.
+        // Enforce a minimum so buttons don't implode on very small puzzles.
+        const MIN_BTN_W: f32 = 240.0;
         let corner_x_local  = self.pan_offset.x.max(0.0);
         let row_sums_x_local = (self.corner_w + self.pan_offset.x + cells_natural_w)
             .min(vp.width  - self.sum_w)
             .max(corner_x_local + self.corner_w);
-        let full_btn_w = (row_sums_x_local + self.sum_w - corner_x_local).max(1.0);
+        let full_btn_w = (row_sums_x_local + self.sum_w - corner_x_local).max(MIN_BTN_W);
 
         // ── Pass 2: lay out controls/nav at full puzzle width ─────────────────
         let btn_limits = layout::Limits::new(
@@ -433,27 +448,39 @@ where
         // we guarantee the separator composites after every child sub-layer and
         // is never buried.
         {
-            let snap        = Vector::new(-bounds.x.fract(), -bounds.y.fract());
-            let corner_b    = child_layouts[IDX_CORNER].bounds();
-            let top_right_b = child_layouts[IDX_TOP_RIGHT].bounds();
-            let sep         = Color::from_rgb(0.28, 0.32, 0.44);
+            let snap     = Vector::new(-bounds.x.fract(), -bounds.y.fract());
+            let corner_b = child_layouts[IDX_CORNER].bounds();
+            let sep      = Color::from_rgb(0.28, 0.32, 0.44);
 
-            renderer.with_layer(bounds, |renderer| {
+            // The post-layer clip extends 2px above the viewport to accommodate the
+            // horizontal header separator, which must composite after the main layer's
+            // deferred child sub-layers (the root cause of the partial-cover bug).
+            let post_clip = Rectangle {
+                x: 0.0,
+                y: bounds.y - 2.0,
+                width: viewport.width,
+                height: corner_b.height + 2.0,
+            };
+
+            renderer.with_layer(post_clip, |renderer| {
                 renderer.with_translation(snap, |renderer| {
-                    // Horizontal: corner left → top_right right, exactly the grid width.
-                    renderer.fill_quad(
-                        renderer::Quad {
-                            bounds: Rectangle {
-                                x:      corner_b.x,
-                                y:      corner_b.y + corner_b.height - 2.0,
-                                width:  top_right_b.x + top_right_b.width - corner_b.x,
-                                height: 2.0,
+                    // Horizontal: full-width separator drawn on top of any deferred
+                    // child sub-layers so the header boundary is always visible.
+                    if let Some(hc) = self.sep_color {
+                        renderer.fill_quad(
+                            renderer::Quad {
+                                bounds: Rectangle {
+                                    x:      bounds.x - 16.0,
+                                    y:      bounds.y - 1.0,
+                                    width:  bounds.width + 16.0,
+                                    height: 1.0,
+                                },
+                                border: Default::default(),
+                                shadow: Default::default(),
                             },
-                            border: Default::default(),
-                            shadow: Default::default(),
-                        },
-                        Background::Color(sep),
-                    );
+                            Background::Color(hc),
+                        );
+                    }
                     // Vertical: right edge of corner/row-clue strip, header height only.
                     renderer.fill_quad(
                         renderer::Quad {
@@ -518,6 +545,20 @@ where
         let child_layouts: Vec<Layout<'_>> = layout.children().collect();
         let clips = clips_from_layouts(&child_layouts, self.sum_w);
 
+        // Space-pan override: intercept ButtonPressed before any child sees it so
+        // the cells mouse_area never fires CellClicked while Space is held.
+        if self.pan_override {
+            if let Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) = &event {
+                if let Some(pos) = cursor.position() {
+                    if bounds.contains(pos) {
+                        let state = tree.state.downcast_mut::<State>();
+                        state.drag_start = Some((pos, self.pan_offset));
+                        return event::Status::Captured;
+                    }
+                }
+            }
+        }
+
         // Front-to-back dispatch — interactive overlays first.
         let dispatch_order = [
             IDX_CORNER, IDX_TOP_RIGHT, IDX_BOTTOM_LEFT, IDX_BOTTOM_RIGHT,
@@ -562,37 +603,36 @@ where
             }
         }
 
-        // Pan gesture — only when no child captured.
-        if captured == event::Status::Ignored {
+        // Pan gesture.
+        // ButtonPressed: only start a pan when no child captured (normal mode).
+        //   Space-pan pre-empts this via early return above.
+        // ButtonReleased / CursorMoved: unconditional so a drag started by the
+        //   early intercept (or normal pan) isn't broken if a child later
+        //   captures a CursorMoved event (e.g., mouse_area hover tracking).
+        {
             let state = tree.state.downcast_mut::<State>();
             let cells_natural = child_layouts[IDX_CELLS].bounds().size();
             let vp = bounds.size();
-
-            // Compute how much vertical space the button rows consume so the
-            // pan clamp stops short of scrolling cells behind the buttons.
             let controls_h  = child_layouts[IDX_CONTROLS].bounds().height;
             let nav_h       = child_layouts[IDX_NAV].bounds().height;
             let btn_total_h = controls_h + BTN_GAP_MID + nav_h + BTN_GAP_TOP;
-
             let vp_cells = Size::new(
                 (vp.width  - self.corner_w - self.sum_w).max(0.0),
                 (vp.height - self.corner_h - self.sum_h - btn_total_h).max(0.0),
             );
 
-            match event {
+            match &event {
                 Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
-                    if cursor.is_over(bounds) =>
+                    if captured == event::Status::Ignored && cursor.is_over(bounds) =>
                 {
                     if let Some(pos) = cursor.position() {
                         state.drag_start = Some((pos, self.pan_offset));
-                        return event::Status::Captured;
+                        captured = event::Status::Captured;
                     }
                 }
-
                 Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                     state.drag_start = None;
                 }
-
                 Event::Mouse(mouse::Event::CursorMoved { position }) => {
                     if let Some((start_pos, start_offset)) = state.drag_start {
                         let delta = Vector::new(
@@ -610,10 +650,9 @@ where
                         if let Some(on_pan) = &self.on_pan {
                             shell.publish(on_pan(new_offset));
                         }
-                        return event::Status::Captured;
+                        captured = event::Status::Captured;
                     }
                 }
-
                 _ => {}
             }
         }
@@ -672,6 +711,11 @@ where
         let state = tree.state.downcast_ref::<State>();
         if state.drag_start.is_some() {
             return mouse::Interaction::Grabbing;
+        }
+        if self.pan_override {
+            if cursor.is_over(layout.bounds()) {
+                return mouse::Interaction::Grab;
+            }
         }
         let child_layouts: Vec<Layout<'_>> = layout.children().collect();
         let clips = clips_from_layouts(&child_layouts, self.sum_w);
