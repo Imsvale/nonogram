@@ -1951,30 +1951,30 @@ impl App {
     /// solution back to the puzzle file.
     fn check_and_record_manual_solve(&mut self, key: Key) {
         let (fi, pi) = key;
-        let solved = self.files.get(fi)
+        // Two separate lookups so neither borrow lives inside a closure that also
+        // captures self — RA's closure borrow checker can't handle that combination.
+        let meta = self.files.get(fi)
             .and_then(|f| f.puzzles.get(pi).and_then(|e| e.as_puzzle())
-                .zip(self.manual_grids.get(&key))
-                .map(|(puzzle, grid)| (
-                    f.path.clone(),
-                    relative_path(&f.path),
-                    puzzle.name.clone(),
-                    puzzle.solution.is_none(),
-                    is_puzzle_fully_solved(puzzle, grid),
-                )));
-        if let Some((file_path, rel, name, no_file_solution, true)) = solved {
-            if let Some(t) = self.timers.get_mut(&key) { t.running = false; }
-            let newly_tracked = self.solved_manually.insert((rel, name.clone()));
-            if newly_tracked {
-                save_solved(&self.solved_manually);
-                self.revealed_answers.insert(key);
-            }
-            if newly_tracked || no_file_solution {
-                if let Some(grid) = self.manual_grids.get(&key) {
-                    let sol: String = grid.iter()
-                        .map(|&c| if c == CellState::Filled { '1' } else { '0' })
-                        .collect();
-                    save_solution_to_file(&file_path, &name, &sol);
-                }
+                .map(|p| (f.path.clone(), relative_path(&f.path), p.name.clone(), p.solution.is_none())));
+        let Some((file_path, rel, name, no_file_solution)) = meta else { return };
+        let fully_solved = {
+            let puzzle = self.files.get(fi).and_then(|f| f.puzzles.get(pi)).and_then(|e| e.as_puzzle());
+            let grid   = self.manual_grids.get(&key);
+            matches!((puzzle, grid), (Some(p), Some(g)) if is_puzzle_fully_solved(p, g))
+        };
+        if !fully_solved { return; }
+        if let Some(t) = self.timers.get_mut(&key) { t.running = false; }
+        let newly_tracked = self.solved_manually.insert((rel, name.clone()));
+        if newly_tracked {
+            save_solved(&self.solved_manually);
+            self.revealed_answers.insert(key);
+        }
+        if newly_tracked || no_file_solution {
+            if let Some(grid) = self.manual_grids.get(&key) {
+                let sol: String = grid.iter()
+                    .map(|&c| if c == CellState::Filled { '1' } else { '0' })
+                    .collect();
+                save_solution_to_file(&file_path, &name, &sol);
             }
         }
     }
