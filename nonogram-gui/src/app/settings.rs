@@ -168,6 +168,16 @@ impl std::fmt::Display for SecondaryFocusKey {
 // Assistance settings
 // ---------------------------------------------------------------------------
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AssistFlag {
+    AutoDim,
+    AutoFillEmpty,
+    ClueSumsWithGaps,
+    AutoCrossEdges,
+    CrosshairEnabled,
+    AxisLock,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct AssistanceSettings {
     pub(crate) auto_dim: bool,

@@ -2593,6 +2593,7 @@ dependencies = [
  "nonogram-graph-search",
  "nonogram-human",
  "nonogram-human-by-ai",
+ "nonogram-propagation",
  "reqwest",
  "rfd",
  "serde",

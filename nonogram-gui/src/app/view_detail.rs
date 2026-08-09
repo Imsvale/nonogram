@@ -11,7 +11,7 @@ use nonogram_core::{CellState, ParsedPuzzle, SolutionState};
 
 use crate::frozen_grid_viewport::FrozenGridViewport;
 use super::{App, Key, Message};
-use super::settings::{FocusKey, SecondaryFocusKey};
+use super::settings::{AssistFlag, FocusKey, SecondaryFocusKey};
 use super::style::{
     bi, icon_char, style_panel, style_header_row,
     status_row, warn_banner_style,
@@ -653,25 +653,25 @@ impl App {
                         "Dim fulfilled row/col clues",
                         self.assistance.auto_dim,
                     )
-                    .on_toggle(|_| Message::AssistToggle(0))
+                    .on_toggle(|_| Message::AssistToggle(AssistFlag::AutoDim))
                     .size(14),
                     checkbox(
                         "Auto-fill empties when clues fulfilled (manual only)",
                         self.assistance.auto_fill_empty,
                     )
-                    .on_toggle(|_| Message::AssistToggle(1))
+                    .on_toggle(|_| Message::AssistToggle(AssistFlag::AutoFillEmpty))
                     .size(14),
                     checkbox(
                         "Auto-cross confirmed gaps from edges (manual only)",
                         self.assistance.auto_cross_edges,
                     )
-                    .on_toggle(|_| Message::AssistToggle(3))
+                    .on_toggle(|_| Message::AssistToggle(AssistFlag::AutoCrossEdges))
                     .size(14),
                     checkbox(
                         "Clue sums with gaps",
                         self.assistance.clue_sums_with_gaps,
                     )
-                    .on_toggle(|_| Message::AssistToggle(2))
+                    .on_toggle(|_| Message::AssistToggle(AssistFlag::ClueSumsWithGaps))
                     .size(14),
                     row![
                         text("Focus mode key:").size(13),
@@ -722,7 +722,7 @@ impl App {
                         "Highlight hovered row and column",
                         self.assistance.crosshair_enabled,
                     )
-                    .on_toggle(|_| Message::AssistToggle(4))
+                    .on_toggle(|_| Message::AssistToggle(AssistFlag::CrosshairEnabled))
                     .size(14),
                     color_row,
                 ]
@@ -744,7 +744,7 @@ impl App {
                         "Lock drag axis to horizontal/vertical",
                         self.assistance.axis_lock,
                     )
-                    .on_toggle(|_| Message::AssistToggle(5))
+                    .on_toggle(|_| Message::AssistToggle(AssistFlag::AxisLock))
                     .size(14),
                 ]
                 .spacing(8),

@@ -7,7 +7,7 @@ use iced_fonts::bootstrap::Bootstrap;
 use nonogram_core::{CellState, Puzzle, SolveResult};
 
 use super::{Key, Message};
-use super::settings::{AssistanceSettings, CellSettings};
+use super::settings::{AssistFlag, AssistanceSettings, CellSettings};
 use super::style::{bi, fwd, warn_inline_style, WARN_COLOR, COLOR_SUCCESS, COLOR_ERROR};
 
 // ---------------------------------------------------------------------------
@@ -327,7 +327,7 @@ pub(crate) fn build_grid_regions<'a>(
     next_key: Option<Key>,
     hover_runs: HoverRuns,
     crosshair: Option<(Option<usize>, Option<usize>, Color)>,
-    show_manual_btns: bool,
+    machine_nav: Option<Element<'a, Message>>,
 ) -> GridRegions<'a> {
     const C: f32 = 26.0;
     const N: f32 = 22.0;
@@ -966,7 +966,7 @@ pub(crate) fn build_grid_regions<'a>(
     let bottom_right_el: Element<'a, Message> = column(vec![
         solid!(sum_w, 2.0, border_maj),
         button(Space::new(0.0, 0.0))
-            .on_press(Message::AssistToggle(2))
+            .on_press(Message::AssistToggle(AssistFlag::ClueSumsWithGaps))
             .width(Length::Fixed(sum_w))
             .height(Length::Fixed(N))
             .padding(Padding::ZERO)
@@ -985,7 +985,7 @@ pub(crate) fn build_grid_regions<'a>(
     .into();
 
     // ── Controls ──────────────────────────────────────────────────────────────
-    let controls_el: Element<'a, Message> = if !show_manual_btns { row![].into() } else {
+    let controls_el: Element<'a, Message> = if let Some(el) = machine_nav { el } else {
         let trial_tier = trial.len();
 
         let clear_btn = button(text("Clear answer").size(12))

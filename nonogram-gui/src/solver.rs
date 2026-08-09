@@ -1,6 +1,7 @@
 use std::fmt;
 use nonogram_core::{AllSolutions, ExhaustiveSolver, Puzzle, Solver, SolveContext, SolveResult};
-use nonogram_human_by_ai::PropagationSolver;
+use nonogram_propagation::PropagationSolver;
+use nonogram_human_by_ai::PropagationSolver as SenseiSolver;
 use nonogram_graph_search::GraphSearchSolver;
 use nonogram_human::HumanSolver;
 
@@ -8,16 +9,18 @@ use nonogram_human::HumanSolver;
 pub enum SolverKind {
     Manual,      // Human player — no solver, just manual grid editing
     Cuttlefish,  // Graph search with MRV heuristic
-    DeepRed,     // Constraint propagation
+    DeepRed,     // Full per-line hard-logic deduction (DP, no technique cap)
+    Sensei,      // Named human-legible technique passes (overlap, edge-forcing, …)
     Noobie,      // Human-logic stub
 }
 
 impl SolverKind {
     pub const ALL: &'static [Self] = &[
         Self::Manual,
-        Self::Cuttlefish,
-        Self::DeepRed,
         Self::Noobie,
+        Self::Sensei,
+        Self::DeepRed,
+        Self::Cuttlefish,
     ];
 
     pub fn is_machine(self) -> bool {
@@ -27,9 +30,12 @@ impl SolverKind {
     pub fn solve(self, puzzle: &Puzzle, ctx: &SolveContext) -> SolveResult {
         match self {
             Self::Manual     => unreachable!("Manual mode has no solver"),
-            Self::Cuttlefish => GraphSearchSolver.solve(puzzle, ctx),
-            Self::DeepRed    => PropagationSolver.solve(puzzle, ctx),
             Self::Noobie     => HumanSolver.solve(puzzle, ctx),
+            Self::Sensei     => SenseiSolver.solve(puzzle, ctx),
+            Self::DeepRed    => PropagationSolver.solve(puzzle, ctx),
+            Self::Cuttlefish => GraphSearchSolver.solve(puzzle, ctx),
+            
+            
         }
     }
 
@@ -49,9 +55,10 @@ impl fmt::Display for SolverKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Manual     => write!(f, "Manual"),
-            Self::Cuttlefish => write!(f, "Cuttlefish"),
-            Self::DeepRed    => write!(f, "Deep Red"),
             Self::Noobie     => write!(f, "Noobie"),
+            Self::Sensei     => write!(f, "Sensei"),
+            Self::DeepRed    => write!(f, "Deep Red"),
+            Self::Cuttlefish => write!(f, "Cuttlefish"),
         }
     }
 }

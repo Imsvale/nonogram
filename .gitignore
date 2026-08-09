@@ -1,4 +1,7 @@
 .claude
+discussions/
 docs/
+external/
 logs/
+puzzles/
 target/
