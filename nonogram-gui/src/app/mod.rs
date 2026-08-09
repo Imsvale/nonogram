@@ -53,6 +53,37 @@ pub struct LoadedFile {
     pub collapsed: bool,
 }
 // ---------------------------------------------------------------------------
+// Drag axis-lock preview
+// ---------------------------------------------------------------------------
+
+/// Active during an axis-locked drag stroke. All grid writes are deferred to
+/// `DragEnded` so the painted line can be recomputed on every cursor move.
+pub(crate) struct DragPreview {
+    pub(crate) key:     Key,
+    pub(crate) anchor:  (usize, usize),  // cell where the drag started
+    pub(crate) current: (usize, usize),  // cell currently under the cursor
+    pub(crate) paint:   CellState,       // state to write on commit
+}
+
+/// Returns the line of cells to paint for an axis-locked drag.
+/// Compares |Δcol| vs |Δrow| from `anchor` to `current`:
+///  - Δcol ≥ Δrow → horizontal: anchor's row, cols from anchor to current
+///  - Δrow  > Δcol → vertical:   anchor's col, rows from anchor to current
+pub(crate) fn preview_cells(anchor: (usize, usize), current: (usize, usize)) -> Vec<(usize, usize)> {
+    let (ar, ac) = anchor;
+    let (cr, cc) = current;
+    let dr = cr.abs_diff(ar);
+    let dc = cc.abs_diff(ac);
+    if dc >= dr {
+        let (c0, c1) = if ac <= cc { (ac, cc) } else { (cc, ac) };
+        (c0..=c1).map(|c| (ar, c)).collect()
+    } else {
+        let (r0, r1) = if ar <= cr { (ar, cr) } else { (cr, ar) };
+        (r0..=r1).map(|r| (r, ac)).collect()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
 
@@ -81,6 +112,7 @@ pub struct App {
     // Interactive grid
     manual_grids: HashMap<Key, Vec<CellState>>,
     drag_state: Option<CellState>,
+    drag_preview: Option<DragPreview>,
     // Undo/redo stacks per puzzle (each entry is a full grid snapshot)
     undo_stack: HashMap<Key, Vec<Vec<CellState>>>,
     redo_stack: HashMap<Key, Vec<Vec<CellState>>>,
@@ -216,7 +248,7 @@ pub enum Message {
     SettingIcon(u8, Option<Bootstrap>),
     SettingClueBg(u8, f32),
     SettingSumBg(u8, f32),
-    AssistToggle(u8),  // 0=auto_dim, 1=auto_fill_empty, 2=clue_sums_with_gaps, 3=auto_cross_edges, 4=crosshair_enabled
+    AssistToggle(u8),  // 0=auto_dim, 1=auto_fill_empty, 2=clue_sums_with_gaps, 3=auto_cross_edges, 4=crosshair_enabled, 5=axis_lock
     CrosshairColor(u8, f32),  // channel: 0=R, 1=G, 2=B, 3=A
     ClueDimToggle(Key, bool, usize, usize),  // (puzzle key, is_col, line_idx, clue_idx)
 
@@ -309,6 +341,7 @@ impl App {
             theme: Theme::Dark,
             manual_grids: HashMap::new(),
             drag_state: None,
+            drag_preview: None,
             undo_stack: HashMap::new(),
             redo_stack: HashMap::new(),
             trial_stack: HashMap::new(),
@@ -1034,30 +1067,16 @@ impl App {
                     self.manual_grids.insert(key, init);
                 }
 
-                // Push undo snapshot before any modification; clear redo.
-                {
-                    let snapshot = self.manual_grids[&key].clone();
-                    let stack = self.undo_stack.entry(key).or_default();
-                    stack.push(snapshot);
-                    self.redo_stack.remove(&key);
-                }
-
-                let mg = self.manual_grids.get_mut(&key).unwrap();
-                let current = mg[row * w + col];
-                let target = if right {
-                    match current {
-                        CellState::Empty => CellState::Unknown,
-                        _                => CellState::Empty,
-                    }
-                } else {
-                    match current {
-                        CellState::Filled => CellState::Unknown,
-                        _                 => CellState::Filled,
+                let target = {
+                    let current = self.manual_grids[&key][row * w + col];
+                    if right {
+                        match current { CellState::Empty => CellState::Unknown, _ => CellState::Empty }
+                    } else {
+                        match current { CellState::Filled => CellState::Unknown, _ => CellState::Filled }
                     }
                 };
-                mg[row * w + col] = target;
-                self.drag_state = Some(target);
-                // Record origin cell for the current trial tier (first click only)
+
+                // Record origin cell for the current trial tier (first click only).
                 if let Some(stack) = self.trial_stack.get_mut(&key) {
                     if let Some((_, origin)) = stack.last_mut() {
                         if origin.is_none() {
@@ -1065,75 +1084,93 @@ impl App {
                         }
                     }
                 }
-                // Auto-fill empties when a line's clues become fulfilled.
-                if self.assistance.auto_fill_empty && target != CellState::Unknown {
-                    let no_solver = self.results.get(&(key, self.solver)).is_none()
-                        && self.all_solutions.get(&(key, self.solver)).is_none();
-                    if no_solver {
-                        let clue_data = self.files.get(fi)
-                            .and_then(|f| f.puzzles.get(pi))
-                            .and_then(|e| e.as_puzzle())
-                            .map(|p| (p.row_clues.clone(), p.col_clues.clone(), p.width, p.height));
-                        if let Some((row_clues, col_clues, w, h)) = clue_data {
-                            let mg = self.manual_grids.get_mut(&key).unwrap();
-                            let row_cells: Vec<CellState> = (0..w).map(|c| mg[row * w + c]).collect();
-                            if check_line_fulfilled(&row_clues[row], &row_cells) {
-                                for c in 0..w {
-                                    if mg[row * w + c] == CellState::Unknown {
-                                        mg[row * w + c] = CellState::Empty;
+
+                if self.assistance.axis_lock {
+                    // Preview mode: defer all grid writes to DragEnded.
+                    self.drag_preview = Some(DragPreview { key, anchor: (row, col), current: (row, col), paint: target });
+                    self.drag_state = Some(target);
+                } else {
+                    // Immediate mode: write now.
+                    {
+                        let snapshot = self.manual_grids[&key].clone();
+                        self.undo_stack.entry(key).or_default().push(snapshot);
+                        self.redo_stack.remove(&key);
+                    }
+                    {
+                        let mg = self.manual_grids.get_mut(&key).unwrap();
+                        mg[row * w + col] = target;
+                    }
+                    self.drag_state = Some(target);
+                    // Auto-fill empties when a line's clues become fulfilled.
+                    if self.assistance.auto_fill_empty && target != CellState::Unknown {
+                        let no_solver = self.results.get(&(key, self.solver)).is_none()
+                            && self.all_solutions.get(&(key, self.solver)).is_none();
+                        if no_solver {
+                            let clue_data = self.files.get(fi)
+                                .and_then(|f| f.puzzles.get(pi))
+                                .and_then(|e| e.as_puzzle())
+                                .map(|p| (p.row_clues.clone(), p.col_clues.clone(), p.width, p.height));
+                            if let Some((row_clues, col_clues, w, h)) = clue_data {
+                                let mg = self.manual_grids.get_mut(&key).unwrap();
+                                let row_cells: Vec<CellState> = (0..w).map(|c| mg[row * w + c]).collect();
+                                if check_line_fulfilled(&row_clues[row], &row_cells) {
+                                    for c in 0..w {
+                                        if mg[row * w + c] == CellState::Unknown {
+                                            mg[row * w + c] = CellState::Empty;
+                                        }
                                     }
                                 }
-                            }
-                            let col_cells: Vec<CellState> = (0..h).map(|r| mg[r * w + col]).collect();
-                            if check_line_fulfilled(&col_clues[col], &col_cells) {
-                                for r in 0..h {
-                                    if mg[r * w + col] == CellState::Unknown {
-                                        mg[r * w + col] = CellState::Empty;
+                                let col_cells: Vec<CellState> = (0..h).map(|r| mg[r * w + col]).collect();
+                                if check_line_fulfilled(&col_clues[col], &col_cells) {
+                                    for r in 0..h {
+                                        if mg[r * w + col] == CellState::Unknown {
+                                            mg[r * w + col] = CellState::Empty;
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-                // Auto-cross from edges: mark cells provably Empty based on confirmed-run positions.
-                if self.assistance.auto_cross_edges && target != CellState::Unknown {
-                    let no_solver = self.results.get(&(key, self.solver)).is_none()
-                        && self.all_solutions.get(&(key, self.solver)).is_none();
-                    if no_solver {
-                        let clue_data = self.files.get(fi)
-                            .and_then(|f| f.puzzles.get(pi))
-                            .and_then(|e| e.as_puzzle())
-                            .map(|p| (p.row_clues.clone(), p.col_clues.clone(), p.width, p.height));
-                        if let Some((row_clues, col_clues, w, h)) = clue_data {
-                            let mg = self.manual_grids.get_mut(&key).unwrap();
-                            let row_cells: Vec<CellState> = (0..w).map(|c| mg[row * w + c]).collect();
-                            for c in forced_empty_from_edges(&row_clues[row], &row_cells) {
-                                mg[row * w + c] = CellState::Empty;
-                            }
-                            let col_cells: Vec<CellState> = (0..h).map(|r| mg[r * w + col]).collect();
-                            for r in forced_empty_from_edges(&col_clues[col], &col_cells) {
-                                mg[r * w + col] = CellState::Empty;
+                    // Auto-cross from edges: mark cells provably Empty based on confirmed-run positions.
+                    if self.assistance.auto_cross_edges && target != CellState::Unknown {
+                        let no_solver = self.results.get(&(key, self.solver)).is_none()
+                            && self.all_solutions.get(&(key, self.solver)).is_none();
+                        if no_solver {
+                            let clue_data = self.files.get(fi)
+                                .and_then(|f| f.puzzles.get(pi))
+                                .and_then(|e| e.as_puzzle())
+                                .map(|p| (p.row_clues.clone(), p.col_clues.clone(), p.width, p.height));
+                            if let Some((row_clues, col_clues, w, h)) = clue_data {
+                                let mg = self.manual_grids.get_mut(&key).unwrap();
+                                let row_cells: Vec<CellState> = (0..w).map(|c| mg[row * w + c]).collect();
+                                for c in forced_empty_from_edges(&row_clues[row], &row_cells) {
+                                    mg[row * w + c] = CellState::Empty;
+                                }
+                                let col_cells: Vec<CellState> = (0..h).map(|r| mg[r * w + col]).collect();
+                                for r in forced_empty_from_edges(&col_clues[col], &col_cells) {
+                                    mg[r * w + col] = CellState::Empty;
+                                }
                             }
                         }
                     }
-                }
-                // Detect full manual solve.
-                {
-                    let solved = self.files.get(fi)
-                        .and_then(|f| f.puzzles.get(pi).and_then(|e| e.as_puzzle())
-                            .zip(self.manual_grids.get(&key))
-                            .map(|(puzzle, grid)| (f.path.clone(), relative_path(&f.path), puzzle.name.clone(), puzzle.solution.is_none(), is_puzzle_fully_solved(puzzle, grid))));
-                    if let Some((file_path, rel, name, no_file_solution, true)) = solved {
-                        if let Some(t) = self.timers.get_mut(&key) { t.running = false; }
-                        let newly_tracked = self.solved_manually.insert((rel, name.clone()));
-                        if newly_tracked {
-                            save_solved(&self.solved_manually);
-                            self.revealed_answers.insert(key);
-                        }
-                        if newly_tracked || no_file_solution {
-                            if let Some(grid) = self.manual_grids.get(&key) {
-                                let sol: String = grid.iter().map(|&c| if c == CellState::Filled { '1' } else { '0' }).collect();
-                                save_solution_to_file(&file_path, &name, &sol);
+                    // Detect full manual solve.
+                    {
+                        let solved = self.files.get(fi)
+                            .and_then(|f| f.puzzles.get(pi).and_then(|e| e.as_puzzle())
+                                .zip(self.manual_grids.get(&key))
+                                .map(|(puzzle, grid)| (f.path.clone(), relative_path(&f.path), puzzle.name.clone(), puzzle.solution.is_none(), is_puzzle_fully_solved(puzzle, grid))));
+                        if let Some((file_path, rel, name, no_file_solution, true)) = solved {
+                            if let Some(t) = self.timers.get_mut(&key) { t.running = false; }
+                            let newly_tracked = self.solved_manually.insert((rel, name.clone()));
+                            if newly_tracked {
+                                save_solved(&self.solved_manually);
+                                self.revealed_answers.insert(key);
+                            }
+                            if newly_tracked || no_file_solution {
+                                if let Some(grid) = self.manual_grids.get(&key) {
+                                    let sol: String = grid.iter().map(|&c| if c == CellState::Filled { '1' } else { '0' }).collect();
+                                    save_solution_to_file(&file_path, &name, &sol);
+                                }
                             }
                         }
                     }
@@ -1179,6 +1216,12 @@ impl App {
                 self.crosshair_col = Some(col);
 
                 if let Some(target) = self.drag_state {
+                    if self.assistance.axis_lock {
+                        // Preview mode: track cursor position; actual paint deferred to DragEnded.
+                        if let Some(ref mut p) = self.drag_preview {
+                            if p.key == key { p.current = (row, col); }
+                        }
+                    } else {
                     let (fi, pi) = key;
                     let w = self.files.get(fi)
                         .and_then(|f| f.puzzles.get(pi))
@@ -1261,11 +1304,94 @@ impl App {
                             }
                         }
                     }
+                    } // else (immediate mode)
                 }
                 Task::none()
             }
 
             Message::DragEnded => {
+                if let Some(preview) = self.drag_preview.take() {
+                    let DragPreview { key, anchor, current: cur, paint } = preview;
+                    let (fi, pi) = key;
+                    if let Some((w, h)) = self.files.get(fi)
+                        .and_then(|f| f.puzzles.get(pi))
+                        .and_then(|e| e.as_puzzle())
+                        .map(|p| (p.width, p.height))
+                    {
+                        if !self.manual_grids.contains_key(&key) {
+                            let init = self.compute_display_grid(key)
+                                .unwrap_or_else(|| vec![CellState::Unknown; w * h]);
+                            self.manual_grids.insert(key, init);
+                        }
+                        {
+                            let snapshot = self.manual_grids[&key].clone();
+                            self.undo_stack.entry(key).or_default().push(snapshot);
+                            self.redo_stack.remove(&key);
+                        }
+                        let cells = preview_cells(anchor, cur);
+                        {
+                            let mg = self.manual_grids.get_mut(&key).unwrap();
+                            for &(r, c) in &cells {
+                                if r * w + c < mg.len() { mg[r * w + c] = paint; }
+                            }
+                        }
+                        let no_solver = self.results.get(&(key, self.solver)).is_none()
+                            && self.all_solutions.get(&(key, self.solver)).is_none();
+                        if no_solver && paint != CellState::Unknown {
+                            let clue_data = self.files.get(fi)
+                                .and_then(|f| f.puzzles.get(pi))
+                                .and_then(|e| e.as_puzzle())
+                                .map(|p| (p.row_clues.clone(), p.col_clues.clone()));
+                            if let Some((row_clues, col_clues)) = clue_data {
+                                let mg = self.manual_grids.get_mut(&key).unwrap();
+                                for &(r, c) in &cells {
+                                    if self.assistance.auto_fill_empty {
+                                        let row_cells: Vec<CellState> = (0..w).map(|cc| mg[r * w + cc]).collect();
+                                        if check_line_fulfilled(&row_clues[r], &row_cells) {
+                                            for cc in 0..w {
+                                                if mg[r * w + cc] == CellState::Unknown { mg[r * w + cc] = CellState::Empty; }
+                                            }
+                                        }
+                                        let col_cells: Vec<CellState> = (0..h).map(|rr| mg[rr * w + c]).collect();
+                                        if check_line_fulfilled(&col_clues[c], &col_cells) {
+                                            for rr in 0..h {
+                                                if mg[rr * w + c] == CellState::Unknown { mg[rr * w + c] = CellState::Empty; }
+                                            }
+                                        }
+                                    }
+                                    if self.assistance.auto_cross_edges {
+                                        let row_cells: Vec<CellState> = (0..w).map(|cc| mg[r * w + cc]).collect();
+                                        for cc in forced_empty_from_edges(&row_clues[r], &row_cells) {
+                                            mg[r * w + cc] = CellState::Empty;
+                                        }
+                                        let col_cells: Vec<CellState> = (0..h).map(|rr| mg[rr * w + c]).collect();
+                                        for rr in forced_empty_from_edges(&col_clues[c], &col_cells) {
+                                            mg[rr * w + c] = CellState::Empty;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        let solved = self.files.get(fi)
+                            .and_then(|f| f.puzzles.get(pi).and_then(|e| e.as_puzzle())
+                                .zip(self.manual_grids.get(&key))
+                                .map(|(puzzle, grid)| (f.path.clone(), relative_path(&f.path), puzzle.name.clone(), puzzle.solution.is_none(), is_puzzle_fully_solved(puzzle, grid))));
+                        if let Some((file_path, rel, name, no_file_solution, true)) = solved {
+                            if let Some(t) = self.timers.get_mut(&key) { t.running = false; }
+                            let newly_tracked = self.solved_manually.insert((rel, name.clone()));
+                            if newly_tracked {
+                                save_solved(&self.solved_manually);
+                                self.revealed_answers.insert(key);
+                            }
+                            if newly_tracked || no_file_solution {
+                                if let Some(grid) = self.manual_grids.get(&key) {
+                                    let sol: String = grid.iter().map(|&c| if c == CellState::Filled { '1' } else { '0' }).collect();
+                                    save_solution_to_file(&file_path, &name, &sol);
+                                }
+                            }
+                        }
+                    }
+                }
                 self.drag_state = None;
                 Task::none()
             }
@@ -1358,6 +1484,7 @@ impl App {
                     2 => self.assistance.clue_sums_with_gaps  = !self.assistance.clue_sums_with_gaps,
                     3 => self.assistance.auto_cross_edges     = !self.assistance.auto_cross_edges,
                     4 => self.assistance.crosshair_enabled    = !self.assistance.crosshair_enabled,
+                    5 => self.assistance.axis_lock            = !self.assistance.axis_lock,
                     _ => {}
                 }
                 save_settings(&self.cell_settings, &self.assistance);

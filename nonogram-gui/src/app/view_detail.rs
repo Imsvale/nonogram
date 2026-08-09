@@ -84,7 +84,7 @@ impl App {
                     if xr.is_none() && xc.is_none() { None }
                     else { Some((xr, xc, self.assistance.crosshair_color)) }
                 } else { None };
-                let regions = build_grid_regions(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), None, None, hover_runs, crosshair, true);
+                let regions = build_grid_regions(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), None, None, hover_runs, crosshair, None);
                 let frozen = {
                     let f = FrozenGridViewport::from_regions(regions, key, pan_off, self.theme.extended_palette().background.base.color)
                         .on_pan(|v| Message::PanOffsetChanged(v))
@@ -150,7 +150,19 @@ impl App {
         let display_grid: Option<Vec<CellState>> = if self.solver.is_machine() {
             grid_data
         } else {
-            self.manual_grids.get(&key).cloned()
+            let mut grid = self.manual_grids.get(&key).cloned();
+            // Overlay axis-lock preview so the user sees the live painted line.
+            if let Some(ref p) = self.drag_preview {
+                if p.key == key {
+                    if let Some(ref mut g) = grid {
+                        let w = puzzle.width;
+                        for (r, c) in super::preview_cells(p.anchor, p.current) {
+                            if r * w + c < g.len() { g[r * w + c] = p.paint; }
+                        }
+                    }
+                }
+            }
+            grid
         };
 
         let status_el: Element<Message> = if let Some(a) = all {
@@ -305,14 +317,20 @@ impl App {
             }
         }
 
-        if self.solver.is_machine() {
+        // Build machine navigation element — goes into the controls slot below the
+        // puzzle, replacing the manual Clear/Undo/Redo/Trial buttons in solver mode.
+        let machine_nav: Option<Element<Message>> = if self.solver.is_machine() {
+            let has_copy = result.map(|r| !r.grid.is_empty()).unwrap_or(false);
+            let mut nav_rows: Vec<Element<Message>> = Vec::new();
+            let mut copy_placed = false;
+
             if let Some(a) = all {
                 let n = a.solutions.len();
                 if n > 0 {
                     let idx      = self.solution_index.min(n.saturating_sub(1));
                     let can_prev = idx > 0;
                     let can_next = idx + 1 < n;
-                    let sol_nav = row![
+                    nav_rows.push(row![
                         {
                             let b = button(bi(Bootstrap::ChevronLeft).size(13)).padding([2, 5]);
                             if can_prev { b.on_press(Message::SolutionPrev) } else { b }
@@ -328,88 +346,70 @@ impl App {
                             .color(Color::from_rgb(0.45, 0.45, 0.45)),
                     ]
                     .spacing(4)
-                    .padding([5, 12])
-                    .align_y(Vertical::Center);
-                    items.push(horizontal_rule(1).into());
-                    items.push(sol_nav.into());
+                    .align_y(Vertical::Center)
+                    .into());
                 }
             }
-        }
 
-        if self.solver.is_machine() {
             if let Some(res) = active {
                 if !res.steps.is_empty() {
                     let total    = res.steps.len();
                     let cursor   = self.step_cursor.min(total);
                     let can_back = cursor > 0;
                     let can_fwd  = cursor < total;
-
                     let step_desc: String = if cursor > 0 {
                         res.steps[cursor - 1].description.clone()
                     } else {
                         String::from("Initial state")
                     };
-
                     let play_icon = if self.replaying { Bootstrap::PauseFill } else { Bootstrap::PlayFill };
 
-                    let first_btn = {
-                        let b = button(bi(Bootstrap::SkipStartFill).size(13)).padding([2, 5]);
-                        if can_back { b.on_press(Message::StepFirst) } else { b }
-                    };
-                    let back_btn = {
-                        let b = button(bi(Bootstrap::ChevronLeft).size(13)).padding([2, 5]);
-                        if can_back { b.on_press(Message::StepBack) } else { b }
-                    };
-                    let fwd_btn = {
-                        let b = button(bi(Bootstrap::ChevronRight).size(13)).padding([2, 5]);
-                        if can_fwd { b.on_press(Message::StepForward) } else { b }
-                    };
-                    let last_btn = {
-                        let b = button(bi(Bootstrap::SkipEndFill).size(13)).padding([2, 5]);
-                        if can_fwd { b.on_press(Message::StepLast) } else { b }
-                    };
-                    let play_btn = {
-                        let b = button(bi(play_icon).size(13)).padding([2, 5]);
-                        if can_fwd || self.replaying { b.on_press(Message::ReplayToggle) } else { b }
-                    };
+                    let first_btn = { let b = button(bi(Bootstrap::SkipStartFill).size(13)).padding([2, 5]); if can_back { b.on_press(Message::StepFirst) } else { b } };
+                    let back_btn  = { let b = button(bi(Bootstrap::ChevronLeft).size(13)).padding([2, 5]);  if can_back { b.on_press(Message::StepBack) } else { b } };
+                    let fwd_btn   = { let b = button(bi(Bootstrap::ChevronRight).size(13)).padding([2, 5]); if can_fwd  { b.on_press(Message::StepForward) } else { b } };
+                    let last_btn  = { let b = button(bi(Bootstrap::SkipEndFill).size(13)).padding([2, 5]);  if can_fwd  { b.on_press(Message::StepLast) } else { b } };
+                    let play_btn  = { let b = button(bi(play_icon).size(13)).padding([2, 5]); if can_fwd || self.replaying { b.on_press(Message::ReplayToggle) } else { b } };
 
-                    let step_nav = row![
-                        first_btn, back_btn,
-                        text(format!("Step {cursor} / {total}")).size(12),
-                        fwd_btn, last_btn,
-                        Space::with_width(Length::Fixed(8.0)),
-                        play_btn,
-                        Space::with_width(Length::Fixed(12.0)),
-                        text(step_desc).size(12).color(Color::from_rgb(0.35, 0.35, 0.35)),
+                    let mut step_items: Vec<Element<Message>> = vec![
+                        first_btn.into(), back_btn.into(),
+                        text(format!("Step {cursor} / {total}")).size(12).into(),
+                        fwd_btn.into(), last_btn.into(),
+                        Space::with_width(Length::Fixed(8.0)).into(),
+                        play_btn.into(),
+                        Space::with_width(Length::Fixed(12.0)).into(),
+                        text(step_desc).size(12).color(Color::from_rgb(0.35, 0.35, 0.35)).into(),
+                    ];
+                    if has_copy {
+                        step_items.push(Space::with_width(Length::Fill).into());
+                        step_items.push(
+                            button(row![bi(Bootstrap::ClipboardCheck).size(13), text("Copy to Manual").size(13)].spacing(4).align_y(Vertical::Center))
+                                .on_press(Message::CopyToManual(key))
+                                .padding([2, 5])
+                                .into()
+                        );
+                        copy_placed = true;
+                    }
+                    nav_rows.push(row(step_items).spacing(4).align_y(Vertical::Center).into());
+                }
+            }
+
+            if has_copy && !copy_placed {
+                nav_rows.push(
+                    row![
+                        Space::with_width(Length::Fill),
+                        button(row![bi(Bootstrap::ClipboardCheck).size(13), text("Copy to Manual").size(13)].spacing(4).align_y(Vertical::Center))
+                            .on_press(Message::CopyToManual(key))
+                            .padding([2, 5])
                     ]
-                    .spacing(4)
-                    .padding([6, 12])
-                    .align_y(Vertical::Center);
-
-                    items.push(horizontal_rule(1).into());
-                    items.push(step_nav.into());
-                }
+                    .align_y(Vertical::Center)
+                    .into()
+                );
             }
-        }
 
-        if self.solver.is_machine() {
-            if let Some(res) = result {
-                if !res.grid.is_empty() {
-                    let copy_btn = button(
-                        row![bi(Bootstrap::ClipboardCheck).size(13), text("Copy to Manual").size(13)]
-                            .spacing(4).align_y(Vertical::Center),
-                    )
-                    .on_press(Message::CopyToManual(key))
-                    .padding([4, 10]);
-                    items.push(horizontal_rule(1).into());
-                    items.push(
-                        container(row![copy_btn].padding([6, 12]))
-                            .width(Length::Fill)
-                            .into(),
-                    );
-                }
-            }
-        }
+            if nav_rows.is_empty() { None } else { Some(column(nav_rows).spacing(2).into()) }
+        } else {
+            None
+        };
 
         let trial_info: &[(Vec<CellState>, Option<(usize, usize)>)] =
             self.trial_stack.get(&key).map(|v| v.as_slice()).unwrap_or(&[]);
@@ -433,7 +433,7 @@ impl App {
             if xr.is_none() && xc.is_none() { None }
             else { Some((xr, xc, self.assistance.crosshair_color)) }
         } else { None };
-        let regions = build_grid_regions(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), prev_key, next_key, hover_runs, crosshair, !self.solver.is_machine());
+        let regions = build_grid_regions(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), prev_key, next_key, hover_runs, crosshair, machine_nav);
         let frozen = {
             let f = FrozenGridViewport::from_regions(regions, key, pan_off, self.theme.extended_palette().background.base.color)
                 .on_pan(|v| Message::PanOffsetChanged(v))
@@ -725,6 +725,27 @@ impl App {
                     .on_toggle(|_| Message::AssistToggle(4))
                     .size(14),
                     color_row,
+                ]
+                .spacing(8),
+            )
+            .style(style_panel)
+            .padding(12)
+            .width(Length::Fill);
+            sections.push(section.into());
+            sections.push(horizontal_rule(1).into());
+        }
+
+        {
+            use iced::widget::checkbox;
+            let section = container(
+                column![
+                    text("Painting").size(13),
+                    checkbox(
+                        "Lock drag axis to horizontal/vertical",
+                        self.assistance.axis_lock,
+                    )
+                    .on_toggle(|_| Message::AssistToggle(5))
+                    .size(14),
                 ]
                 .spacing(8),
             )
