@@ -41,7 +41,7 @@ progress hooks).
 ```rust
 let solver: Box<dyn Solver> = match cli.solver {
     SolverChoice::Propagation => Box::new(PropagationSolver),   // nonogram_propagation — category 3
-    SolverChoice::HumanByAi   => Box::new(HumanByAiSolver),     // nonogram_human_by_ai::PropagationSolver, aliased — category 2
+    SolverChoice::HumanByAi   => Box::new(HumanByAiSolver),     // nonogram_human_by_ai — category 2
     SolverChoice::GraphSearch => Box::new(GraphSearchSolver),
     SolverChoice::Human       => Box::new(HumanSolver),
 };
@@ -55,12 +55,12 @@ never weaker, since category 3 proves a superset of what category 2's named
 passes prove). The user's own framing: the flag value stays the same, the
 solver behind it upgrades — "entirely transparent." Category 2 (today's
 named-technique solver, now living in `nonogram-human-by-ai`) is still
-reachable, via the new `--solver human-by-ai` value. Both crates export a
-struct literally named `PropagationSolver` (neither name was this move's to
-change — see the discussion doc's identity-model correction), so `main.rs`
-imports `nonogram_human_by_ai::PropagationSolver` under a local alias
-(`HumanByAiSolver`) to disambiguate; that alias exists only at the `use` site
-and is not a claim about either crate's real public name.
+reachable, via the new `--solver human-by-ai` value. Both crates briefly
+exported a struct literally named `PropagationSolver` right after the split
+(an artifact of the move, not a deliberate choice) — `nonogram-human-by-ai`'s
+was since renamed to `HumanByAiSolver`, matching the
+`GraphSearchSolver`/`HumanSolver`/`PropagationSolver` naming convention, so
+no import aliasing is needed here anymore.
 
 ## Rendering
 

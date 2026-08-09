@@ -575,9 +575,9 @@ fn solve_internal(state: &mut SolverState, ctx: &SolveContext, steps: &mut Vec<S
 // Public API
 // ---------------------------------------------------------------------------
 
-pub struct PropagationSolver;
+pub struct HumanByAiSolver;
 
-impl Solver for PropagationSolver {
+impl Solver for HumanByAiSolver {
     fn solve(&self, puzzle: &Puzzle, ctx: &SolveContext) -> SolveResult {
         let row_total: u32 = puzzle.row_clues.iter().flat_map(|r| r.iter()).sum();
         let col_total: u32 = puzzle.col_clues.iter().flat_map(|c| c.iter()).sum();

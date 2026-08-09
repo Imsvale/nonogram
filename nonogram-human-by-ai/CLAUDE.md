@@ -2,7 +2,9 @@
 
 Technique-driven constraint propagation solver — "everything the user would have deduced by hand, implemented by Claude." No backtracking, no search. If the current set of techniques cannot fully determine the grid, the solver returns `SolutionState::Partial` with the partial result.
 
-This content used to live at `nonogram-propagation`. Moved here per `discussions/SolverTaxonomy.md`: "propagation" is the generic CSP term and doesn't imply "restricted to named, human-legible techniques" — that restriction is this crate's actual identity, so the generic name was freed for the new crate extracting the *unrestricted* propagation machinery out of `nonogram-graph-search`. Per that document's identity model, Claude-Propagation's identity stayed bound to the `nonogram-propagation` path rather than following this content here — so this crate's owner is a fresh, unassigned identity, not a renamed Claude-Propagation (see the document for the full reasoning). `PropagationSolver` keeps its name for the same reason: not this move's call to make.
+This content used to live at `nonogram-propagation`. Moved here per `discussions/SolverTaxonomy.md`: "propagation" is the generic CSP term and doesn't imply "restricted to named, human-legible techniques" — that restriction is this crate's actual identity, so the generic name was freed for the new crate extracting the *unrestricted* propagation machinery out of `nonogram-graph-search`. Per that document's identity model, Claude-Propagation's identity stayed bound to the `nonogram-propagation` path rather than following this content here — so this crate's owner is a fresh, unassigned identity, not a renamed Claude-Propagation (see the document for the full reasoning).
+
+The solver struct was renamed `PropagationSolver` → `HumanByAiSolver` after the fact, once it became clear both crates having a struct with the identical name was purely an artifact of the split (not a deliberate choice), matching the existing `GraphSearchSolver`/`HumanSolver`/`PropagationSolver` (category 3) convention.
 
 ## Approach
 
@@ -40,8 +42,8 @@ Borrows `&'a Puzzle` plus owns `cells: Vec<CellState>`, `row_meta`, `col_meta`. 
 ## Public API
 
 ```rust
-pub struct PropagationSolver;
-impl Solver for PropagationSolver { ... }
+pub struct HumanByAiSolver;
+impl Solver for HumanByAiSolver { ... }
 ```
 
 ## Termination Invariant

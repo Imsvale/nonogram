@@ -14,7 +14,7 @@ use clap::{Parser, ValueEnum};
 use nonogram_core::{AllSolutions, CellState, ExhaustiveSolver, ParsedPuzzle, Puzzle, SolutionState, Solver, SolveContext, SolveResult, parse_file};
 use nonogram_graph_search::{GraphSearchSolver, ProgressConfig, ProgressUpdate};
 use nonogram_human::HumanSolver;
-use nonogram_human_by_ai::PropagationSolver as HumanByAiSolver;
+use nonogram_human_by_ai::HumanByAiSolver;
 use nonogram_propagation::PropagationSolver;
 
 #[derive(Clone, ValueEnum)]
