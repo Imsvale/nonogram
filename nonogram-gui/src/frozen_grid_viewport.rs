@@ -313,7 +313,7 @@ where
 
         // Full button width = corner + cells + sums, independent of px.
         // Enforce a minimum so buttons don't implode on very small puzzles.
-        const MIN_BTN_W: f32 = 240.0;
+        const MIN_BTN_W: f32 = 350.0;
         let corner_x_local  = self.pan_offset.x.max(0.0);
         let row_sums_x_local = (self.corner_w + self.pan_offset.x + cells_natural_w)
             .min(vp.width  - self.sum_w)

@@ -164,6 +164,9 @@ pub struct App {
     // Live solve progress snapshots (only populated during GraphSearch+progress solves)
     solve_progress: HashMap<Key, ProgressUpdate>,
     show_solve_progress: bool,
+    // Batch-solve progress counters (reset each SolveSelected)
+    solving_total: usize,
+    solving_done: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -194,8 +197,8 @@ pub enum Message {
     // Solving
     SolverChanged(SolverKind),
     SolveSelected,
-    SolveAll,
-    SolveDone(SolverKind, Vec<(Key, SolveResult)>),
+    SolveOneDone(SolverKind, Key, SolveResult),
+    SolveDone(String),
     SolveProgress(Key, ProgressUpdate),
     SolveProgressToggled,
     CopyToManual(Key),
@@ -376,6 +379,8 @@ impl App {
             toolbar_visible: true,
             solve_progress: HashMap::new(),
             show_solve_progress: false,
+            solving_total: 0,
+            solving_done: 0,
         };
 
         let task = Task::perform(scan_puzzle_dirs(), Message::FilePathsDiscovered);
@@ -744,80 +749,32 @@ impl App {
                     .collect();
                 if to_solve.is_empty() { return Task::none(); }
                 let solver = self.solver;
+                let with_progress = solver == SolverKind::Cuttlefish && self.show_solve_progress;
+                self.solving_total = to_solve.len();
+                self.solving_done = 0;
                 self.cancel.reset();
                 self.busy = true;
                 self.status = format!("Solving {} puzzle(s)…", to_solve.len());
-                if solver == SolverKind::Cuttlefish && self.show_solve_progress {
-                    Task::run(solve_progress_stream(to_solve, self.cancel.clone(), 350), |msg| msg)
-                } else {
-                    let ctx = SolveContext { cancel: self.cancel.clone() };
-                    Task::perform(
-                        async move {
-                            tokio::task::spawn_blocking(move || {
-                                to_solve.into_iter()
-                                    .map(|(key, puzzle)| (key, solver.solve(&puzzle, &ctx)))
-                                    .collect::<Vec<_>>()
-                            })
-                            .await
-                            .unwrap_or_default()
-                        },
-                        move |results| Message::SolveDone(solver, results),
-                    )
-                }
+                Task::run(solve_batch_stream(to_solve, solver, self.cancel.clone(), with_progress, 350), |msg| msg)
             }
 
-            Message::SolveAll => {
-                if !self.solver.is_machine() { return Task::none(); }
-                let to_solve: Vec<(Key, Puzzle)> = self.files.iter().enumerate()
-                    .flat_map(|(fi, f)| {
-                        f.puzzles.iter().enumerate()
-                            .filter_map(move |(pi, e)| e.as_puzzle().map(|p| ((fi, pi), p.clone())))
-                    })
-                    .collect();
-                if to_solve.is_empty() { return Task::none(); }
-                let solver = self.solver;
-                self.cancel.reset();
-                self.busy = true;
-                self.status = format!("Solving {} puzzle(s)…", to_solve.len());
-                if solver == SolverKind::Cuttlefish && self.show_solve_progress {
-                    Task::run(solve_progress_stream(to_solve, self.cancel.clone(), 350), |msg| msg)
-                } else {
-                    let ctx = SolveContext { cancel: self.cancel.clone() };
-                    Task::perform(
-                        async move {
-                            tokio::task::spawn_blocking(move || {
-                                to_solve.into_iter()
-                                    .map(|(key, puzzle)| (key, solver.solve(&puzzle, &ctx)))
-                                    .collect::<Vec<_>>()
-                            })
-                            .await
-                            .unwrap_or_default()
-                        },
-                        move |results| Message::SolveDone(solver, results),
-                    )
+            Message::SolveOneDone(solver_kind, key, result) => {
+                if result.state == SolutionState::Complete {
+                    if let Some(t) = self.timers.get_mut(&key) { t.running = false; }
                 }
+                if Some(key) == self.focused && solver_kind == self.solver {
+                    self.step_cursor = result.steps.len();
+                }
+                self.results.insert((key, solver_kind), result);
+                self.solving_done += 1;
+                self.status = format!("Solving… {}/{} done", self.solving_done, self.solving_total);
+                Task::none()
             }
 
-            Message::SolveDone(solver_kind, results) => {
-                let n = results.len();
-                let solved  = results.iter().filter(|(_, r)| r.state == SolutionState::Complete).count();
-                let aborted = results.iter().filter(|(_, r)| r.state == SolutionState::Aborted).count();
-                for (key, result) in results {
-                    if result.state == SolutionState::Complete {
-                        if let Some(t) = self.timers.get_mut(&key) { t.running = false; }
-                    }
-                    if Some(key) == self.focused && solver_kind == self.solver {
-                        self.step_cursor = result.steps.len();
-                    }
-                    self.results.insert((key, solver_kind), result);
-                }
+            Message::SolveDone(status) => {
                 self.solve_progress.clear();
                 self.busy = false;
-                self.status = if aborted > 0 {
-                    format!("Done: {solved}/{n} solved, {aborted} aborted")
-                } else {
-                    format!("Done: {solved}/{n} fully solved")
-                };
+                self.status = status;
                 Task::none()
             }
 
@@ -2000,36 +1957,86 @@ impl App {
 }
 
 // ---------------------------------------------------------------------------
-// Progress-streaming solve (GraphSearch only)
+// Returns a human-readable reason if the puzzle is trivially unsolvable,
+// without invoking any solver.  pub(crate) so view modules can gate on it.
+pub(crate) fn trivial_invalid_reason(puzzle: &Puzzle) -> Option<String> {
+    let row_sum: u32 = puzzle.row_clues.iter().flat_map(|c| c.iter().copied()).sum();
+    let col_sum: u32 = puzzle.col_clues.iter().flat_map(|c| c.iter().copied()).sum();
+    if row_sum != col_sum {
+        return Some(format!(
+            "clue sums don't match (rows sum to {row_sum}, cols sum to {col_sum})"
+        ));
+    }
+    let w = puzzle.col_clues.len() as u32;
+    let h = puzzle.row_clues.len() as u32;
+    for (i, clues) in puzzle.row_clues.iter().enumerate() {
+        let min: u32 = clues.iter().sum::<u32>() + clues.len().saturating_sub(1) as u32;
+        if min > w {
+            return Some(format!(
+                "row {} requires at least {min} cells but the grid is only {w} wide",
+                i + 1
+            ));
+        }
+    }
+    for (i, clues) in puzzle.col_clues.iter().enumerate() {
+        let min: u32 = clues.iter().sum::<u32>() + clues.len().saturating_sub(1) as u32;
+        if min > h {
+            return Some(format!(
+                "col {} requires at least {min} cells but the grid is only {h} tall",
+                i + 1
+            ));
+        }
+    }
+    None
+}
+
+// Streaming batch solve — emits SolveOneDone per puzzle, SolveDone at end.
 // ---------------------------------------------------------------------------
 
-fn solve_progress_stream(
+fn solve_batch_stream(
     to_solve: Vec<(Key, Puzzle)>,
+    solver: SolverKind,
     cancel: CancelToken,
+    with_progress: bool,
     snapshot_ms: u64,
 ) -> impl iced::futures::Stream<Item = Message> {
     use std::time::Duration;
     use iced::futures::SinkExt as _;
-    // iced::stream::channel defers execution into iced's tokio executor (avoiding
-    // any question of whether tokio::spawn is valid on the winit event-loop thread).
     iced::stream::channel(128, move |mut sender| async move {
-        let config = ProgressConfig {
+        let n = to_solve.len();
+        let mut n_solved = 0usize;
+        let mut n_aborted = 0usize;
+        let mut n_invalid = 0usize;
+        let cfg = with_progress.then(|| ProgressConfig {
             snapshot_interval: Some(Duration::from_millis(snapshot_ms)),
-            // Fire once immediately after initial propagation so the GUI gets the
-            // post-propagation partial grid even before any branch interval elapses.
             emit_start_snapshot: true,
             ..Default::default()
-        };
-        let mut all_results: Vec<(Key, SolveResult)> = Vec::with_capacity(to_solve.len());
+        });
         for (key, puzzle) in to_solve {
-            let mut s2 = sender.clone();
-            let ctx = SolveContext { cancel: cancel.clone() };
-            let cfg = config.clone();
-            let result = tokio::task::spawn_blocking(move || {
-                let mut cb = move |u: ProgressUpdate| {
-                    let _ = s2.try_send(Message::SolveProgress(key, u));
+            if let Some(reason) = trivial_invalid_reason(&puzzle) {
+                n_invalid += 1;
+                let result = SolveResult {
+                    state: SolutionState::Invalid(reason),
+                    grid: vec![],
+                    steps: vec![],
                 };
-                GraphSearchSolver.solve_with_progress(&puzzle, &ctx, &cfg, Some(&mut cb))
+                let _ = sender.send(Message::SolveOneDone(solver, key, result)).await;
+                continue;
+            }
+            let s2 = sender.clone();
+            let ctx = SolveContext { cancel: cancel.clone() };
+            let cfg2 = cfg.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                match cfg2 {
+                    Some(cfg) => {
+                        let mut s3 = s2;
+                        let mut cb = move |u: ProgressUpdate| {
+                            let _ = s3.try_send(Message::SolveProgress(key, u));
+                        };
+                        GraphSearchSolver.solve_with_progress(&puzzle, &ctx, &cfg, Some(&mut cb))
+                    }
+                    None => solver.solve(&puzzle, &ctx),
+                }
             })
             .await
             .unwrap_or_else(|_| SolveResult {
@@ -2037,8 +2044,14 @@ fn solve_progress_stream(
                 grid: vec![],
                 steps: vec![],
             });
-            all_results.push((key, result));
+            if result.state == SolutionState::Aborted { n_aborted += 1; } else { n_solved += 1; }
+            let _ = sender.send(Message::SolveOneDone(solver, key, result)).await;
         }
-        let _ = sender.send(Message::SolveDone(SolverKind::Cuttlefish, all_results)).await;
+        let n_attempted = n - n_invalid;
+        let mut parts: Vec<String> = vec![format!("{n_solved}/{n_attempted} solved")];
+        if n_invalid > 0 { parts.push(format!("{n_invalid} invalid")); }
+        if n_aborted > 0 { parts.push(format!("{n_aborted} aborted")); }
+        let status = format!("Done: {}", parts.join(", "));
+        let _ = sender.send(Message::SolveDone(status)).await;
     })
 }

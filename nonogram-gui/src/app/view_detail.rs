@@ -1,8 +1,8 @@
 use iced::{
-    alignment::Vertical,
+    alignment::{Horizontal, Vertical},
     widget::{
         button, column, container, horizontal_rule, mouse_area, row,
-        scrollable, slider, stack, text, Space,
+        scrollable, slider, stack, text, tooltip, Space,
     },
     Color, Element, Length, Padding, Theme,
 };
@@ -278,23 +278,21 @@ impl App {
             items.push(header.into());
         }
 
-        if let Some(res) = result {
-            if let SolutionState::Invalid(reason) = &res.state {
-                let banner = container(
-                    row![
-                        bi(Bootstrap::ExclamationCircleFill).size(13).color(WARN_COLOR),
-                        text(format!("Invalid — {reason}")).size(13),
-                    ]
-                    .spacing(8)
-                    .align_y(Vertical::Center),
-                )
-                .style(|_| warn_banner_style())
-                .padding([8, 16])
-                .width(Length::Fill);
+        if let Some(reason) = super::trivial_invalid_reason(puzzle) {
+            let banner = container(
+                row![
+                    bi(Bootstrap::ExclamationCircleFill).size(13).color(WARN_COLOR),
+                    text(reason).size(13),
+                ]
+                .spacing(8)
+                .align_y(Vertical::Center),
+            )
+            .style(|_| warn_banner_style())
+            .padding([8, 16])
+            .width(Length::Fill);
 
-                items.push(horizontal_rule(1).into());
-                items.push(container(banner).padding([8, 16]).width(Length::Fill).into());
-            }
+            items.push(horizontal_rule(1).into());
+            items.push(container(banner).padding([8, 16]).width(Length::Fill).into());
         }
 
         // Build machine navigation element — goes into the controls slot below the
@@ -304,13 +302,23 @@ impl App {
             let mut nav_rows: Vec<Element<Message>> = Vec::new();
             let mut copy_placed = false;
 
+            let copy_btn = || -> Element<Message> {
+                tooltip(
+                    button(bi(Bootstrap::ClipboardCheck).size(13))
+                        .on_press(Message::CopyToManual(key))
+                        .padding([2, 5]),
+                    "Copy to manual solver",
+                    tooltip::Position::Top,
+                ).into()
+            };
+
             if let Some(a) = all {
                 let n = a.solutions.len();
                 if n > 0 {
                     let idx      = self.solution_index.min(n.saturating_sub(1));
                     let can_prev = idx > 0;
                     let can_next = idx + 1 < n;
-                    nav_rows.push(row![
+                    let sol_btns = row![
                         {
                             let b = button(bi(Bootstrap::ChevronLeft).size(13)).padding([2, 5]);
                             if can_prev { b.on_press(Message::SolutionPrev) } else { b }
@@ -320,12 +328,15 @@ impl App {
                             let b = button(bi(Bootstrap::ChevronRight).size(13)).padding([2, 5]);
                             if can_next { b.on_press(Message::SolutionNext) } else { b }
                         },
-                        Space::with_width(Length::Fixed(12.0)),
+                    ]
+                    .spacing(4)
+                    .align_y(Vertical::Center);
+                    nav_rows.push(row![
                         text(format!("nodes expanded: {}", a.nodes_expanded))
                             .size(11)
                             .color(Color::from_rgb(0.45, 0.45, 0.45)),
+                        container(sol_btns).center_x(Length::Fill),
                     ]
-                    .spacing(4)
                     .align_y(Vertical::Center)
                     .into());
                 }
@@ -350,43 +361,40 @@ impl App {
                     let last_btn  = { let b = button(bi(Bootstrap::SkipEndFill).size(13)).padding([2, 5]);  if can_fwd  { b.on_press(Message::StepLast) } else { b } };
                     let play_btn  = { let b = button(bi(play_icon).size(13)).padding([2, 5]); if can_fwd || self.replaying { b.on_press(Message::ReplayToggle) } else { b } };
 
-                    let mut step_items: Vec<Element<Message>> = vec![
-                        first_btn.into(), back_btn.into(),
-                        text(format!("Step {cursor} / {total}")).size(12).into(),
-                        fwd_btn.into(), last_btn.into(),
-                        Space::with_width(Length::Fixed(8.0)).into(),
-                        play_btn.into(),
-                        Space::with_width(Length::Fixed(12.0)).into(),
+                    let step_btns = row![
+                        first_btn, back_btn,
+                        text(format!("Step {cursor} / {total}")).size(12),
+                        fwd_btn, last_btn,
+                        Space::with_width(Length::Fixed(8.0)),
+                        play_btn,
+                    ]
+                    .spacing(4)
+                    .align_y(Vertical::Center);
+
+                    let mut step_row_items: Vec<Element<Message>> = vec![
                         text(step_desc).size(12).color(Color::from_rgb(0.35, 0.35, 0.35)).into(),
+                        container(step_btns).center_x(Length::Fill).into(),
                     ];
                     if has_copy {
-                        step_items.push(Space::with_width(Length::Fill).into());
-                        step_items.push(
-                            button(row![bi(Bootstrap::ClipboardCheck).size(13), text("Copy to Manual").size(13)].spacing(4).align_y(Vertical::Center))
-                                .on_press(Message::CopyToManual(key))
-                                .padding([2, 5])
-                                .into()
-                        );
+                        step_row_items.push(copy_btn());
                         copy_placed = true;
                     }
-                    nav_rows.push(row(step_items).spacing(4).align_y(Vertical::Center).into());
+                    nav_rows.push(row(step_row_items).align_y(Vertical::Center).into());
                 }
             }
 
             if has_copy && !copy_placed {
                 nav_rows.push(
                     row![
-                        Space::with_width(Length::Fill),
-                        button(row![bi(Bootstrap::ClipboardCheck).size(13), text("Copy to Manual").size(13)].spacing(4).align_y(Vertical::Center))
-                            .on_press(Message::CopyToManual(key))
-                            .padding([2, 5])
+                        container(Space::new(0, 0)).width(Length::Fill),
+                        copy_btn(),
                     ]
                     .align_y(Vertical::Center)
                     .into()
                 );
             }
 
-            if nav_rows.is_empty() { None } else { Some(column(nav_rows).spacing(2).into()) }
+            if nav_rows.is_empty() { None } else { Some(column(nav_rows).spacing(2).width(Length::Fill).into()) }
         } else {
             None
         };

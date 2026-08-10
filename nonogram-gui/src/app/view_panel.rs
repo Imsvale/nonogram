@@ -2,7 +2,7 @@ use iced::{
     alignment::Vertical,
     widget::{
         button, checkbox, column, container, horizontal_rule, mouse_area,
-        pick_list, row, scrollable, text, text_input, Space,
+        pick_list, row, scrollable, text, text_input, tooltip, Space,
     },
     Color, Element, Length, Padding, Theme,
 };
@@ -19,26 +19,57 @@ use super::persistence::relative_path;
 
 impl App {
     pub(crate) fn view_toolbar(&self) -> Element<'_, Message> {
-        let solve_sel = {
-            let b = button("Solve Selected");
-            if !self.selected.is_empty() && !self.busy {
-                b.on_press(Message::SolveSelected)
-            } else {
-                b
+        const BTN_PAD: [u16; 2] = [5, 8];
+
+        let all_selected_invalid = !self.selected.is_empty() && self.selected.iter().all(|(fi, pi)| {
+            match self.files.get(*fi).and_then(|f| f.puzzles.get(*pi)) {
+                Some(ParsedPuzzle::Valid(p)) => super::trivial_invalid_reason(p).is_some(),
+                _ => true,
             }
-        };
-        let solve_all = {
-            let b = button("Solve All");
-            let has = self.files.iter().any(|f| f.puzzles.iter().any(|e| e.is_valid()));
-            if has && !self.busy { b.on_press(Message::SolveAll) } else { b }
-        };
-        let abort = {
-            let b = button(
-                row![bi(Bootstrap::XCircleFill).size(13), text("Abort").size(13)]
+        });
+
+        let solve_abort: Element<Message> = if self.busy {
+            button(
+                row![bi(Bootstrap::XCircleFill).size(14), text("Abort").size(14)]
                     .spacing(4)
                     .align_y(Vertical::Center),
-            );
-            if self.busy { b.on_press(Message::AbortClicked) } else { b }
+            )
+            .on_press(Message::AbortClicked)
+            .padding(BTN_PAD)
+            .into()
+        } else {
+            let b = button(text("Solve").size(14)).padding(BTN_PAD);
+            let can_solve = self.solver.is_machine() && !self.selected.is_empty() && !all_selected_invalid;
+            let b = if can_solve { b.on_press(Message::SolveSelected) } else { b };
+            if all_selected_invalid && self.solver.is_machine() && !self.selected.is_empty() {
+                tooltip(b, "Puzzle is invalid – cannot be solved", tooltip::Position::Bottom).into()
+            } else {
+                b.into()
+            }
+        };
+
+        let all_done = self.focused
+            .and_then(|k| self.all_solutions.get(&(k, self.solver)))
+            .map(|a| !a.aborted)
+            .unwrap_or(false);
+        let more_btn: Element<Message> = if self.solver.supports_exhaustive() {
+            if all_done {
+                tooltip(
+                    button(text("Done").size(14)).padding(BTN_PAD),
+                    "All solutions found",
+                    tooltip::Position::Bottom,
+                ).into()
+            } else {
+                let b = button(text("More").size(14)).padding(BTN_PAD);
+                let b = if !self.selected.is_empty() && !self.busy {
+                    b.on_press(Message::FindAllSelected)
+                } else {
+                    b
+                };
+                tooltip(b, "Search for more solutions", tooltip::Position::Bottom).into()
+            }
+        } else {
+            button(text("More").size(14)).padding(BTN_PAD).into()
         };
 
         let import_btn = mouse_area(
@@ -47,64 +78,34 @@ impl App {
         )
         .on_enter(Message::ImportBtnHovered);
 
-        let focus_icon = if self.focus_mode {
-            Bootstrap::FullscreenExit
-        } else {
-            Bootstrap::Fullscreen
-        };
+        let focus_icon = if self.focus_mode { Bootstrap::FullscreenExit } else { Bootstrap::Fullscreen };
         let focus_btn = {
-            let b = button(bi(focus_icon).size(14)).padding([4, 8]);
-            if self.focused.is_some() || self.focus_mode {
-                b.on_press(Message::FocusModeToggled)
-            } else {
-                b
-            }
+            let b = button(bi(focus_icon).size(14)).padding(BTN_PAD);
+            if self.focused.is_some() || self.focus_mode { b.on_press(Message::FocusModeToggled) } else { b }
         };
 
-        let theme_icon = match self.theme {
-            Theme::Light => Bootstrap::MoonFill,
-            _            => Bootstrap::SunFill,
-        };
+        let theme_icon = match self.theme { Theme::Light => Bootstrap::MoonFill, _ => Bootstrap::SunFill };
 
         let settings_btn = button(bi(Bootstrap::GearFill).size(14))
-            .on_press(if self.show_settings {
-                Message::SettingsClosed
-            } else {
-                Message::SettingsOpened
-            })
-            .padding([4, 8]);
+            .on_press(if self.show_settings { Message::SettingsClosed } else { Message::SettingsOpened })
+            .padding(BTN_PAD);
 
         row![
             import_btn,
             Space::with_width(Length::Fill),
-            focus_btn,
-            button(bi(theme_icon).size(14))
-                .on_press(Message::ThemeToggled)
-                .padding([4, 8]),
-            settings_btn,
             text("Solver:").size(14),
             pick_list(SolverKind::ALL, Some(self.solver), Message::SolverChanged),
             {
                 let label = if self.show_solve_progress { "Live ON" } else { "Live" };
                 let b = button(text(label).size(12)).padding([3, 6]);
-                if self.solver == SolverKind::Cuttlefish {
-                    b.on_press(Message::SolveProgressToggled)
-                } else {
-                    b
-                }
+                if self.solver == SolverKind::Cuttlefish { b.on_press(Message::SolveProgressToggled) } else { b }
             },
             Space::with_width(Length::Fixed(12.0)),
-            solve_sel,
-            solve_all,
-            {
-                let b = button("Find All");
-                if self.solver.supports_exhaustive() && !self.selected.is_empty() && !self.busy {
-                    b.on_press(Message::FindAllSelected)
-                } else {
-                    b
-                }
-            },
-            abort,
+            solve_abort,
+            more_btn,
+            focus_btn,
+            button(bi(theme_icon).size(14)).on_press(Message::ThemeToggled).padding(BTN_PAD),
+            settings_btn,
         ]
         .spacing(8)
         .padding(8)
@@ -149,7 +150,10 @@ impl App {
                         let is_sel = self.selected.contains(&key);
                         let manual_solved = self.solved_manually
                             .contains(&(relative_path(&file.path), puzzle.name.clone()));
-                        let badge: Option<Element<Message>> = if manual_solved {
+                        let is_invalid = super::trivial_invalid_reason(puzzle).is_some();
+                        let badge: Option<Element<Message>> = if is_invalid {
+                            Some(bi(Bootstrap::ExclamationCircleFill).size(11).color(WARN_COLOR).into())
+                        } else if manual_solved {
                             Some(bi(Bootstrap::CheckCircle).size(11)
                                 .color(Color::from_rgb(0.0, 0.62, 0.24)).into())
                         } else {
@@ -177,7 +181,8 @@ impl App {
                                 if is_focused {
                                     button::Style { background: Some(p.primary.strong.color.into()), text_color: p.primary.strong.text, border: iced::Border::default(), shadow: iced::Shadow::default() }
                                 } else {
-                                    button::Style { background: match status { button::Status::Hovered => Some(p.primary.weak.color.into()), _ => None }, text_color: p.background.base.text, border: iced::Border::default(), shadow: iced::Shadow::default() }
+                                    let text_color = if is_invalid { WARN_COLOR } else { p.background.base.text };
+                                    button::Style { background: match status { button::Status::Hovered => Some(p.primary.weak.color.into()), _ => None }, text_color, border: iced::Border::default(), shadow: iced::Shadow::default() }
                                 }
                             })
                             .padding([2, 6]);
