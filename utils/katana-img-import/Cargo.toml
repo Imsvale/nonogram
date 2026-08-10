@@ -3,9 +3,6 @@ name = "katana-img-import"
 version = "0.1.0"
 edition = "2024"
 
-[package.metadata.dist]
-dist = false
-
 [[bin]]
 name = "katana-img-import"
 path = "src/main.rs"
