@@ -3,6 +3,10 @@ name = "nonogram-gui"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "nonogram"
+path = "src/main.rs"
+
 [dependencies]
 nonogram-core         = { path = "../nonogram-core" }
 nonogram-propagation  = { path = "../nonogram-propagation" }
