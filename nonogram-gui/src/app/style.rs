@@ -1,4 +1,4 @@
-use iced::{alignment::Vertical, Color, Element, Font, Theme};
+use iced::{alignment::Vertical, Color, Element, Font, Padding, Theme};
 use iced::widget::{button, container};
 use iced_fonts::bootstrap::{self, Bootstrap};
 
@@ -83,5 +83,60 @@ pub(crate) fn status_row<'a>(icon: Bootstrap, color: Color, msg: impl Into<Strin
     row![bi(icon).size(13).color(color), text(msg.into()).size(13)]
         .spacing(4)
         .align_y(Vertical::Center)
+        .into()
+}
+
+// Styled primary-colour button used to open a popup menu (Import / Export / etc.).
+// Pass the icon, label, whether the menu is currently open, the icon+text size,
+// and the button padding.  Caller wraps in mouse_area and sets .on_press().
+pub(crate) fn primary_menu_btn(
+    icon: Bootstrap,
+    label: &'static str,
+    active: bool,
+    text_size: f32,
+    padding: impl Into<Padding>,
+) -> iced::widget::Button<'static, super::Message> {
+    use iced::widget::{button, row, text};
+    button(
+        row![bi(icon).size(text_size), text(label).size(text_size)]
+            .spacing(4)
+            .align_y(Vertical::Center),
+    )
+    .padding(padding)
+    .style(move |theme: &Theme, status| {
+        let mut s = button::primary(theme, status);
+        if active {
+            s.border = iced::Border {
+                radius: 4.0.into(),
+                color: theme.extended_palette().primary.strong.color,
+                width: 2.0,
+            };
+        }
+        s
+    })
+}
+
+// Floating dropdown popup container shared by Import and Export menus.
+pub(crate) fn popup_menu<'a>(items: Vec<Element<'a, super::Message>>) -> Element<'a, super::Message> {
+    use iced::widget::{column, container};
+    container(column(items).spacing(2).padding([4, 4]))
+        .width(160)
+        .style(|theme: &Theme| {
+            let p = theme.extended_palette();
+            container::Style {
+                background: Some(p.background.base.color.into()),
+                border: iced::Border {
+                    radius: 4.0.into(),
+                    color: p.background.strong.color,
+                    width: 1.0,
+                },
+                shadow: iced::Shadow {
+                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.25),
+                    offset: iced::Vector::new(0.0, 2.0),
+                    blur_radius: 6.0,
+                },
+                ..Default::default()
+            }
+        })
         .into()
 }

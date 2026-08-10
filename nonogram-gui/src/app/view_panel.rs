@@ -1,7 +1,7 @@
 use iced::{
     alignment::Vertical,
     widget::{
-        button, checkbox, column, container, horizontal_rule,
+        button, checkbox, column, container, horizontal_rule, mouse_area,
         pick_list, row, scrollable, text, text_input, Space,
     },
     Color, Element, Length, Padding, Theme,
@@ -12,7 +12,7 @@ use nonogram_core::{CellState, ParsedPuzzle, SolutionState};
 use crate::solver::SolverKind;
 use super::{App, LoadedFile, Message};
 use super::style::{
-    bi, style_panel, style_header_row, style_chevron_btn, style_list_row_btn,
+    bi, primary_menu_btn, style_panel, style_header_row, style_chevron_btn, style_list_row_btn,
     status_row, WARN_COLOR, COLOR_SUCCESS, COLOR_ERROR, COLOR_AMBIGUOUS,
 };
 use super::persistence::relative_path;
@@ -41,6 +41,12 @@ impl App {
             if self.busy { b.on_press(Message::AbortClicked) } else { b }
         };
 
+        let import_btn = mouse_area(
+            primary_menu_btn(Bootstrap::Upload, "Import", self.show_import_menu, 16.0, [5, 10])
+                .on_press(Message::ImportMenuToggled),
+        )
+        .on_enter(Message::ImportBtnHovered);
+
         let focus_icon = if self.focus_mode {
             Bootstrap::FullscreenExit
         } else {
@@ -68,16 +74,8 @@ impl App {
             })
             .padding([4, 8]);
 
-        let refresh_btn = {
-            let b = button(bi(Bootstrap::ArrowClockwise).size(14)).padding([4, 8]);
-            if !self.busy { b.on_press(Message::RefreshClicked) } else { b }
-        };
-
         row![
-            button("Import File").on_press(Message::ImportClicked),
-            button("Convert File").on_press(Message::ConvertClicked),
-            button("Import URL").on_press(Message::UrlImportToggled),
-            refresh_btn,
+            import_btn,
             Space::with_width(Length::Fill),
             focus_btn,
             button(bi(theme_icon).size(14))
@@ -245,6 +243,11 @@ impl App {
                 .into()
         };
 
+        let reload_btn = {
+            let b = button(bi(Bootstrap::ArrowClockwise).size(11)).padding([3, 4]);
+            if !self.busy { b.on_press(Message::RefreshClicked) } else { b }
+        };
+
         let list_toolbar = container(
             row![
                 checkbox("", all_selected)
@@ -252,6 +255,7 @@ impl App {
                 bi(Bootstrap::CheckAll).size(14),
                 Space::with_width(Length::Fill),
                 collapse_toggle,
+                reload_btn,
             ]
             .padding([4, 8])
             .align_y(Vertical::Center),

@@ -4,8 +4,8 @@ use std::path::Path;
 use iced::{
     alignment::{Horizontal, Vertical},
     keyboard, mouse,
-    widget::{column, container, horizontal_rule, row, stack, text, vertical_rule},
-    Color, Element, Event, Length, Point, Size, Subscription, Task, Theme, Vector,
+    widget::{button, column, container, horizontal_rule, row, Space, stack, text, vertical_rule},
+    Color, Element, Event, Length, Padding, Point, Size, Subscription, Task, Theme, Vector,
     window,
 };
 use iced_fonts::bootstrap::Bootstrap;
@@ -15,7 +15,6 @@ use nonogram_core::{
     SolveContext, SolveResult, SolutionState,
 };
 
-use crate::convert::convert_letter_content;
 use crate::solver::SolverKind;
 use nonogram_graph_search::{GraphSearchSolver, ProgressConfig, ProgressUpdate};
 
@@ -35,7 +34,7 @@ use persistence::{
     save_solution_to_file, relative_path, save_window_state,
 };
 use scan::scan_puzzle_dirs;
-use export::{ExportFormat, puzzle_to_file_string, export_puzprv3, puzzle_to_puzzlink_url, parse_puzzlink_url};
+use export::{ExportFormat, puzzle_to_file_string, export_puzprv3, puzzle_to_puzzlink_url, parse_puzzlink_url, parse_pzprv3};
 use grid_view::{grid_at_step, is_puzzle_fully_solved, check_line_fulfilled, forced_empty_from_edges};
 
 // ---------------------------------------------------------------------------
@@ -140,6 +139,8 @@ pub struct App {
     show_settings: bool,
     show_export_menu: bool,
     export_popup_x: f32,  // cursor x within the detail panel when export menu opened
+    show_import_menu: bool,
+    import_popup_x: f32,  // cursor x when import button was hovered
     last_cursor: Point,
     // Answer reveal spoiler state
     revealed_answers: HashSet<Key>,
@@ -172,12 +173,11 @@ pub struct App {
 #[derive(Debug, Clone)]
 pub enum Message {
     // File operations
-    ImportClicked,
-    ConvertClicked,
+    ImportMenuToggled,
+    ImportBtnHovered,
+    ImportFileClicked,
     FileChosen(Option<String>),
-    ConvertChosen(Option<String>),
     FileLoaded(String, String, Vec<ParsedPuzzle>),
-    ConvertLoaded(String, Vec<ParsedPuzzle>),
     // Incremental scan: discovery → per-file parse
     FilePathsDiscovered(Vec<(String, String, Option<String>)>),
     LoadFileFound(String, String, Option<String>, Vec<ParsedPuzzle>),
@@ -360,6 +360,8 @@ impl App {
             show_settings: false,
             show_export_menu: false,
             export_popup_x: 0.0,
+            show_import_menu: false,
+            import_popup_x: 0.0,
             last_cursor: Point::ORIGIN,
             revealed_answers: HashSet::new(),
             solved_manually: load_solved(),
@@ -428,29 +430,31 @@ impl App {
     pub fn update(&mut self, msg: Message) -> Task<Message> {
         match msg {
             // ── File loading ──────────────────────────────────────────────
-            Message::ImportClicked => Task::perform(
-                async {
-                    rfd::AsyncFileDialog::new()
-                        .set_title("Import puzzle file")
-                        .add_filter("Nonogram puzzles", &["txt"])
-                        .pick_file()
-                        .await
-                        .map(|h| h.path().to_string_lossy().into_owned())
-                },
-                Message::FileChosen,
-            ),
+            Message::ImportMenuToggled => {
+                self.show_import_menu = !self.show_import_menu;
+                Task::none()
+            }
 
-            Message::ConvertClicked => Task::perform(
-                async {
-                    rfd::AsyncFileDialog::new()
-                        .set_title("Convert letter-encoded puzzle file")
-                        .add_filter("Text files", &["txt"])
-                        .pick_file()
-                        .await
-                        .map(|h| h.path().to_string_lossy().into_owned())
-                },
-                Message::ConvertChosen,
-            ),
+            Message::ImportBtnHovered => {
+                if !self.show_import_menu {
+                    self.import_popup_x = self.last_cursor.x.max(0.0);
+                }
+                Task::none()
+            }
+
+            Message::ImportFileClicked => {
+                self.show_import_menu = false;
+                Task::perform(
+                    async {
+                        rfd::AsyncFileDialog::new()
+                            .set_title("Import puzzle file")
+                            .pick_file()
+                            .await
+                            .map(|h| h.path().to_string_lossy().into_owned())
+                    },
+                    Message::FileChosen,
+                )
+            }
 
             Message::FileChosen(Some(path)) => {
                 let p2 = path.clone();
@@ -463,7 +467,13 @@ impl App {
                 self.busy = true;
                 Task::perform(
                     async move {
-                        parse_file(&p2).map(|p| (p2, n2, p)).map_err(|e| e.to_string())
+                        let content = std::fs::read_to_string(&p2).map_err(|e| e.to_string())?;
+                        let puzzles = if content.trim_start().starts_with("pzprv3") {
+                            parse_pzprv3(&content)?
+                        } else {
+                            parse_file(&p2).map_err(|e| e.to_string())?
+                        };
+                        Ok((p2, n2, puzzles))
                     },
                     |r| match r {
                         Ok((path, name, puzzles)) => Message::FileLoaded(path, name, puzzles),
@@ -472,30 +482,6 @@ impl App {
                 )
             }
             Message::FileChosen(None) => Task::none(),
-
-            Message::ConvertChosen(Some(path)) => {
-                let p2 = path.clone();
-                let name = Path::new(&path)
-                    .file_stem()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| path.clone());
-                self.status = format!("Converting {name}…");
-                self.busy = true;
-                Task::perform(
-                    async move {
-                        let content = std::fs::read_to_string(&p2)
-                            .map_err(|e| e.to_string())?;
-                        let puzzles = convert_letter_content(&content, &name)
-                            .into_iter().map(ParsedPuzzle::Valid).collect();
-                        Ok::<_, String>((name, puzzles))
-                    },
-                    |r| match r {
-                        Ok((name, puzzles)) => Message::ConvertLoaded(name, puzzles),
-                        Err(e) => Message::Error(e),
-                    },
-                )
-            }
-            Message::ConvertChosen(None) => Task::none(),
 
             Message::FileLoaded(path, name, puzzles) => {
                 let n_valid = puzzles.iter().filter(|e| e.is_valid()).count();
@@ -509,22 +495,6 @@ impl App {
                 if !self.files.iter().any(|f| f.path == path) {
                     self.files.push(LoadedFile { path, name, folder: None, auto_loaded: false, puzzles, collapsed: true });
                 }
-                Task::none()
-            }
-
-            Message::ConvertLoaded(name, puzzles) => {
-                let n_valid = puzzles.iter().filter(|e| e.is_valid()).count();
-                self.status = format!("Converted {n_valid} puzzle(s) as \"{name}\"");
-                self.busy = false;
-                let display = format!("{name} (converted)");
-                self.files.push(LoadedFile {
-                    path: format!("__converted__{name}"),
-                    name: display,
-                    folder: None,
-                    auto_loaded: false,
-                    puzzles,
-                    collapsed: true,
-                });
                 Task::none()
             }
 
@@ -1630,6 +1600,7 @@ impl App {
             // ── URL import ────────────────────────────────────────────────
             Message::UrlImportToggled => {
                 self.show_url_import = !self.show_url_import;
+                self.show_import_menu = false;
                 Task::none()
             }
 
@@ -1711,7 +1682,7 @@ impl App {
     // ── Top-level view ───────────────────────────────────────────────────
 
     pub fn view(&self) -> Element<'_, Message> {
-        if self.focus_mode {
+        let base: Element<Message> = if self.focus_mode {
             let puzzle = row![self.view_right_panel()].height(Length::Fill);
             if self.toolbar_visible {
                 let overlay = container(column![self.view_toolbar(), horizontal_rule(1)])
@@ -1738,6 +1709,34 @@ impl App {
                 self.view_status_bar(),
             ]
             .into()
+        };
+
+        if self.show_import_menu {
+            let items: Vec<Element<Message>> = vec![
+                button(row![style::bi(Bootstrap::Folder).size(12), text("File").size(13)]
+                    .spacing(6).align_y(Vertical::Center))
+                    .on_press(Message::ImportFileClicked)
+                    .width(Length::Fill)
+                    .padding([5, 10])
+                    .into(),
+                button(row![style::bi(Bootstrap::Globe).size(12), text("URL").size(13)]
+                    .spacing(6).align_y(Vertical::Center))
+                    .on_press(Message::UrlImportToggled)
+                    .width(Length::Fill)
+                    .padding([5, 10])
+                    .into(),
+            ];
+            let popup_layer: Element<Message> = column![
+                Space::with_height(Length::Fixed(45.0)),
+                container(style::popup_menu(items))
+                    .padding(Padding { left: self.import_popup_x, ..Padding::ZERO }),
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+            stack![base, popup_layer].into()
+        } else {
+            base
         }
     }
 

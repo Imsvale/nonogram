@@ -13,7 +13,7 @@ use crate::frozen_grid_viewport::FrozenGridViewport;
 use super::{App, Key, Message};
 use super::settings::{AssistFlag, FocusKey, SecondaryFocusKey};
 use super::style::{
-    bi, icon_char, style_panel, style_header_row,
+    bi, icon_char, popup_menu, primary_menu_btn, style_panel, style_header_row,
     status_row, warn_banner_style,
     WARN_COLOR, COLOR_SUCCESS, COLOR_ERROR, COLOR_AMBIGUOUS,
 };
@@ -196,31 +196,11 @@ impl App {
             text("Not yet solved").size(13).color(Color::from_rgb(0.45, 0.45, 0.45)).into()
         };
 
-        let export_active = self.show_export_menu;
         let export_btn = mouse_area(
-            button(
-                row![bi(Bootstrap::Download).size(13), text("Export").size(13)]
-                    .spacing(4).align_y(Vertical::Center),
-            )
-            .on_press(Message::ExportMenuToggled)
-            .padding([2, 8])
-            .style(move |theme: &Theme, status| {
-                let mut s = button::Style::default().with_background(
-                    theme.extended_palette().primary.base.color,
-                );
-                s.text_color = theme.extended_palette().primary.base.text;
-                if export_active {
-                    s.border = iced::Border {
-                        radius: 4.0.into(),
-                        color: theme.extended_palette().primary.strong.color,
-                        width: 2.0,
-                    };
-                } else if matches!(status, button::Status::Hovered) {
-                    s.background = Some(theme.extended_palette().primary.strong.color.into());
-                }
-                s
-            })
-        ).on_enter(Message::ExportBtnHovered);
+            primary_menu_btn(Bootstrap::Download, "Export", self.show_export_menu, 13.0, [2, 8])
+                .on_press(Message::ExportMenuToggled),
+        )
+        .on_enter(Message::ExportBtnHovered);
 
         let answer_revealed = manually_solved || self.revealed_answers.contains(&key);
         let computer_complete = result.map(|r| matches!(&r.state, SolutionState::Complete)).unwrap_or(false);
@@ -482,28 +462,10 @@ impl App {
                     .padding([5, 10])
                     .into()
             );
-            let popup = container(column(popup_items).spacing(2).padding([4, 4]))
-                .width(160)
-                .style(|theme: &Theme| {
-                    let p = theme.extended_palette();
-                    container::Style {
-                        background: Some(p.background.base.color.into()),
-                        border: iced::Border {
-                            radius: 4.0.into(),
-                            color: p.background.strong.color,
-                            width: 1.0,
-                        },
-                        shadow: iced::Shadow {
-                            color: Color::from_rgba(0.0, 0.0, 0.0, 0.25),
-                            offset: iced::Vector::new(0.0, 2.0),
-                            blur_radius: 6.0,
-                        },
-                        ..Default::default()
-                    }
-                });
             let popup_layer: Element<Message> = column![
                 Space::with_height(Length::Fixed(44.0)),
-                container(popup).padding(Padding { left: self.export_popup_x, ..Padding::ZERO }),
+                container(popup_menu(popup_items))
+                    .padding(Padding { left: self.export_popup_x, ..Padding::ZERO }),
             ]
             .width(Length::Fill)
             .height(Length::Fill)

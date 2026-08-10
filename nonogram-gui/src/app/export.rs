@@ -1,5 +1,68 @@
 use nonogram_core::{CellState, ParsedPuzzle, Puzzle};
 
+pub(crate) fn parse_pzprv3(content: &str) -> Result<Vec<ParsedPuzzle>, String> {
+    let mut lines = content.lines();
+    let l0 = lines.next().unwrap_or("").trim();
+    if l0 != "pzprv3" { return Err(format!("Expected 'pzprv3', got '{l0}'")); }
+    let l1 = lines.next().unwrap_or("").trim();
+    if l1 != "nonogram" { return Err(format!("Expected 'nonogram', got '{l1}'")); }
+
+    let h: usize = lines.next().ok_or("Missing height")?.trim()
+        .parse().map_err(|_| "Invalid height")?;
+    let w: usize = lines.next().ok_or("Missing width")?.trim()
+        .parse().map_err(|_| "Invalid width")?;
+    if w == 0 || h == 0 { return Err("Zero-dimension puzzle".into()); }
+
+    let max_cd = (h + 1) / 2;
+    let max_rd = (w + 1) / 2;
+    let total_rows = max_cd + h;
+    let total_cols = max_rd + w;
+
+    let mut grid: Vec<Vec<&str>> = Vec::with_capacity(total_rows);
+    for i in 0..total_rows {
+        let line = lines.next().ok_or_else(|| format!("Missing row {i}"))?;
+        let tokens: Vec<&str> = line.split_whitespace().collect();
+        if tokens.len() != total_cols {
+            return Err(format!("Row {i}: expected {total_cols} tokens, got {}", tokens.len()));
+        }
+        grid.push(tokens);
+    }
+
+    let parse_tok = |tok: &str| -> Result<u32, String> {
+        let s = tok.strip_prefix('c').unwrap_or(tok);
+        s.parse().map_err(|_| format!("Invalid clue token '{tok}'"))
+    };
+
+    let mut col_clues: Vec<Vec<u32>> = Vec::with_capacity(w);
+    for c in 0..w {
+        let clue: Result<Vec<u32>, _> = (0..max_cd)
+            .filter(|&r| grid[r][max_rd + c] != ".")
+            .map(|r| parse_tok(grid[r][max_rd + c]))
+            .collect();
+        col_clues.push(clue?);
+    }
+
+    let mut row_clues: Vec<Vec<u32>> = Vec::with_capacity(h);
+    for r in 0..h {
+        let clue: Result<Vec<u32>, _> = (0..max_rd)
+            .filter(|&c| grid[max_cd + r][c] != ".")
+            .map(|c| parse_tok(grid[max_cd + r][c]))
+            .collect();
+        row_clues.push(clue?);
+    }
+
+    let name = format!("{w}×{h}");
+    Ok(vec![ParsedPuzzle::Valid(Puzzle {
+        name,
+        width: w,
+        height: h,
+        col_clues,
+        row_clues,
+        answer: None,
+        solution: None,
+    })])
+}
+
 pub(crate) fn puzzle_to_puzzlink_url(puzzle: &Puzzle) -> String {
     let w = puzzle.width;
     let h = puzzle.height;
@@ -21,13 +84,11 @@ pub(crate) fn puzzle_to_puzzlink_url(puzzle: &Puzzle) -> String {
         for &v in clues.iter().rev() {
             encode_value(v, out);
         }
-        let zeros = g.saturating_sub(clues.len());
-        if zeros <= 20 {
-            out.push(char::from(b'f' + zeros as u8));
-        } else {
-            out.push('z');
-            out.push(char::from(b'f' + (zeros - 20) as u8));
-        }
+        // Each 'z' encodes 20 zeros; a final non-'z' suffix char (g=1..y=19)
+        // encodes the remainder.  E.g. zeros=48 → 'z','z','n' ("zzn").
+        let mut zeros = g.saturating_sub(clues.len());
+        while zeros >= 20 { out.push('z'); zeros -= 20; }
+        if zeros > 0 { out.push(char::from(b'f' + zeros as u8)); }
     }
 
     let mut data = String::new();
@@ -142,32 +203,27 @@ fn decode_pz_group(
     let mut values: Vec<u32> = Vec::new();
 
     let zeros = loop {
-        // When all g slots are filled, the next char must be 'f' (0-zeros suffix).
+        // All g slots filled → 0 trailing zeros. Some encoders emit an explicit
+        // 'f' marker here; consume it if present, but don't require it.
         if values.len() == g {
-            match chars.next() {
-                Some('f') => break 0,
-                Some(c)   => return Err(format!("expected 'f' suffix, got '{c}'")),
-                None      => return Err("unexpected end of data".into()),
-            }
+            if chars.peek().copied() == Some('f') { chars.next(); }
+            break 0;
         }
         match chars.next() {
             None => return Err("unexpected end of data in group".into()),
-            // Suffix character ≥ 'g': single-char or two-char 'z?' form.
-            // 'f' never appears here when values.len() < g because that would
-            // imply 0 zeros = g − values.len() > 0, a contradiction.
-            Some(c) if c >= 'g' => {
-                break if c == 'z' {
-                    // Peek: if next char ≥ 'g', it's a 2-char suffix (zeros 21+).
+            // Suffix char ≥ 'g': each 'z' adds 20; a non-'z' char terminates.
+            // E.g. "zzn" → 20+20+8 = 48 zeros.
+            Some(mut c) if c >= 'g' => {
+                let mut count = 0usize;
+                loop {
+                    count += (c as u8 - b'f') as usize;
+                    if c != 'z' { break; }
                     match chars.peek().copied() {
-                        Some(c2) if c2 >= 'g' => {
-                            chars.next();
-                            20 + (c2 as u8 - b'f') as usize
-                        }
-                        _ => 20,
+                        Some(c2) if c2 >= 'g' => { chars.next(); c = c2; }
+                        _ => break,
                     }
-                } else {
-                    (c as u8 - b'f') as usize
-                };
+                }
+                break count;
             }
             Some(c @ '0'..='9') => values.push(c as u32 - '0' as u32),
             Some(c @ 'a'..='f') => values.push(10 + c as u32 - 'a' as u32),
