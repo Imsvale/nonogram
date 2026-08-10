@@ -10,3 +10,8 @@ members = [
     "nonogram-gui", "utils/katana-img-import",
 ]
 resolver = "2"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
