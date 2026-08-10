@@ -90,6 +90,10 @@ enum InputFormat {
     Plain,
     /// A JSON object (or array of objects) with "rows" and "columns" arrays of clue arrays.
     Json,
+    /// pzprjs "Puz-Pre v3" grid layout, one puzzle per file (or per blank-line-separated
+    /// block); '/' may replace newlines within a block.
+    #[value(name = "pzprv3")]
+    PuzPreV3,
 }
 
 // ---------------------------------------------------------------------------
@@ -744,6 +748,103 @@ fn convert_json(content: &str, name_prefix: &str, col_major: bool) {
 }
 
 // ---------------------------------------------------------------------------
+// Puz-Pre v3 format (pzprjs grid layout)
+// ---------------------------------------------------------------------------
+//
+// Layout: `(max_col_depth + height)` rows x `(max_row_width + width)` cols,
+// space-separated tokens. `max_col_depth = (height + 1) / 2`, `max_row_width =
+// (width + 1) / 2` — the same bound puzz.link URL encoding uses for clue slots.
+// Top-left corner is dots. The top block holds column clues (bottom-aligned
+// per column, "." padding above); the left block holds row clues
+// (right-aligned per row, "." padding to the left). The bottom-right block is
+// the grid itself ("." / "#"), which this converter ignores — it only
+// recovers clues. Clue tokens for fulfilled lines are prefixed with 'c'
+// (stripped on read). This mirrors `export_puzprv3` in nonogram-gui.
+
+fn parse_puzprv3_token(tok: &str) -> Result<u32, String> {
+    let digits = tok.strip_prefix('c').unwrap_or(tok);
+    digits.parse::<u32>().map_err(|_| format!("invalid clue token '{tok}'"))
+}
+
+fn parse_puzprv3_block(block: &str) -> Result<(Vec<Vec<u32>>, Vec<Vec<u32>>), String> {
+    let mut lines = block.lines().map(str::trim).filter(|l| !l.is_empty());
+
+    let header = lines.next().ok_or("empty block")?;
+    if !header.starts_with("pzprv3") {
+        return Err(format!("expected 'pzprv3' header, got '{header}'"));
+    }
+    let pid = lines.next().ok_or("missing puzzle type line")?;
+    if pid != "nonogram" {
+        return Err(format!("unsupported puzzle type '{pid}' (only 'nonogram' is supported)"));
+    }
+    let h: usize = lines.next().ok_or("missing height")?.parse().map_err(|_| "invalid height".to_string())?;
+    let w: usize = lines.next().ok_or("missing width")?.parse().map_err(|_| "invalid width".to_string())?;
+    if w == 0 || h == 0 {
+        return Err("zero-dimension puzzle".into());
+    }
+
+    let max_cd = (h + 1) / 2;
+    let max_rd = (w + 1) / 2;
+    let total_rows = max_cd + h;
+    let total_cols = max_rd + w;
+
+    let grid: Vec<Vec<&str>> = lines.map(|l| l.split_whitespace().collect()).collect();
+    if grid.len() != total_rows {
+        return Err(format!("expected {total_rows} grid rows, found {}", grid.len()));
+    }
+    for (i, row) in grid.iter().enumerate() {
+        if row.len() != total_cols {
+            return Err(format!("row {i} has {} tokens, expected {total_cols}", row.len()));
+        }
+    }
+
+    let mut col_clues: Vec<Vec<u32>> = Vec::with_capacity(w);
+    for c in 0..w {
+        let mut clue = Vec::new();
+        for r in 0..max_cd {
+            let tok = grid[r][max_rd + c];
+            if tok != "." {
+                clue.push(parse_puzprv3_token(tok)?);
+            }
+        }
+        col_clues.push(clue);
+    }
+
+    let mut row_clues: Vec<Vec<u32>> = Vec::with_capacity(h);
+    for r in 0..h {
+        let mut clue = Vec::new();
+        for c in 0..max_rd {
+            let tok = grid[max_cd + r][c];
+            if tok != "." {
+                clue.push(parse_puzprv3_token(tok)?);
+            }
+        }
+        row_clues.push(clue);
+    }
+
+    Ok((row_clues, col_clues))
+}
+
+fn convert_puzprv3(content: &str, name_prefix: &str, col_major: bool) {
+    let mut puzzle_num = 1usize;
+
+    for block in split_puzzles(content, &Sep::BlankLine) {
+        let normalized = block.replace('/', "\n");
+        match parse_puzprv3_block(&normalized) {
+            Ok((row_clues, col_clues)) => {
+                let (row_clues, col_clues) =
+                    if col_major { (col_clues, row_clues) } else { (row_clues, col_clues) };
+                emit(name_prefix, puzzle_num, &col_clues, &row_clues);
+                puzzle_num += 1;
+            }
+            Err(e) => {
+                eprintln!("Warning: puzzle {puzzle_num}: {e} — skipping.");
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -788,5 +889,6 @@ fn main() {
         InputFormat::Semicolon => convert_semicolon(&content, &cli.name, col_major),
         InputFormat::Plain => convert_plain(&content, &cli.name, col_major),
         InputFormat::Json => convert_json(&content, &cli.name, col_major),
+        InputFormat::PuzPreV3 => convert_puzprv3(&content, &cli.name, col_major),
     }
 }

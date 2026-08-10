@@ -31,6 +31,31 @@ numbers or numeric strings (e.g. `"10"` or `10`).
 This matches the `Game.task` shape used by puzzle-nonograms.com and read by
 `nonogram-gui`'s URL importer.
 
+### `pzprv3`
+pzprjs's "Puz-Pre v3" grid layout — the same format `nonogram-gui`'s
+`export_puzprv3` writes. A block is:
+
+```
+pzprv3
+nonogram
+<height>
+<width>
+<(max_col_depth + height) rows of (max_row_width + width) space-separated tokens>
+```
+
+`max_col_depth = (height + 1) / 2`, `max_row_width = (width + 1) / 2` (the
+same bound puzz.link URL encoding uses). The top-left corner is `.`. The top
+block holds column clues, bottom-aligned per column with `.` padding above;
+the left block holds row clues, right-aligned per row with `.` padding to the
+left; the bottom-right block is the solved/unsolved grid (`.` / `#`), which
+this converter ignores — it only recovers clues. Clue tokens for fulfilled
+lines are prefixed with `c` (stripped on read).
+
+One puzzle per file is the usual case, matching what `nonogram-gui` exports.
+Multiple puzzles in one file are supported: blocks are separated by a blank
+line, and within a block `/` may substitute for newlines (matching pzprjs's
+own URL-embedding convention) so a whole puzzle can occupy a single line.
+
 ## Usage
 
 ```
