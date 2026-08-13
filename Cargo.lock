@@ -2574,6 +2574,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nonogram-difficulty"
+version = "0.1.0"
+dependencies = [
+ "nonogram-core",
+ "nonogram-propagation",
+]
+
+[[package]]
 name = "nonogram-graph-search"
 version = "0.1.0"
 dependencies = [

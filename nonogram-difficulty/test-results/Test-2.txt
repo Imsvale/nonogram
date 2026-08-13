@@ -1,0 +1,3336 @@
+=== puzzles/cult.txt ===
+Kaldo's 50×50 (50x50)
+  rating:             10.0  (raw=21.37)
+  size_tax:           1.693
+  revisit_density:    7.030
+  yield_friction:     0.750
+  narrowness:         0.874
+  requires_branching: false
+
+-- 1 puzzle(s): min=10.0 mean=10.00 max=10.0 at_ceiling=1/1  (raw mean=21.37 raw max=21.37)
+-- histogram: (0-1]:0 (1-2]:0 (2-3]:0 (3-4]:0 (4-5]:0 (5-6]:0 (6-7]:0 (7-8]:0 (8-9]:0 (9-10]:1 
+
+=== puzzles/Kaldo.txt ===
+Kaldogram #1 (35x40)
+  rating:             10.0  (raw=9.60)
+  size_tax:           1.568
+  revisit_density:    2.040
+  yield_friction:     0.532
+  narrowness:         0.607
+  requires_branching: true
+
+Kaldogram #2 (25x50)
+  rating:             9.1  (raw=8.09)
+  size_tax:           1.543
+  revisit_density:    0.000
+  yield_friction:     0.901
+  narrowness:         0.982
+  requires_branching: true
+
+Kaldogram #3 (100x100)
+  rating:             10.0  (raw=9.61)
+  size_tax:           1.993
+  revisit_density:    2.295
+  yield_friction:     0.415
+  narrowness:         0.456
+  requires_branching: false
+
+-- 3 puzzle(s): min=9.1 mean=9.70 max=10.0 at_ceiling=2/3  (raw mean=9.10 raw max=9.61)
+-- histogram: (0-1]:0 (1-2]:0 (2-3]:0 (3-4]:0 (4-5]:0 (5-6]:0 (6-7]:0 (7-8]:0 (8-9]:0 (9-10]:3 
+
+=== puzzles/Katana/10x10.txt ===
+Katana 10x10 #1 (10x10)
+  rating:             3.8  (raw=2.75)
+  size_tax:           0.997
+  revisit_density:    0.000
+  yield_friction:     0.150
+  narrowness:         0.386
+  requires_branching: false
+
+Katana 10x10 #2 (10x10)
+  rating:             2.8  (raw=1.82)
+  size_tax:           0.997
+  revisit_density:    0.000
+  yield_friction:     0.047
+  narrowness:         0.211
+  requires_branching: false
+
+Katana 10x10 #3 (10x10)
+  rating:             4.8  (raw=3.76)
+  size_tax:           0.997
+  revisit_density:    0.050
+  yield_friction:     0.143
+  narrowness:         0.699
+  requires_branching: false
+
+Katana 10x10 #4 (10x10)
+  rating:             4.3  (raw=3.27)
+  size_tax:           0.997
+  revisit_density:    0.000
+  yield_friction:     0.204
+  narrowness:         0.487
+  requires_branching: false
+
+Katana 10x10 #5 (10x10)
+  rating:             4.6  (raw=3.63)
+  size_tax:           0.997
+  revisit_density:    0.100
+  yield_friction:     0.146
+  narrowness:         0.615
+  requires_branching: false
+
+Katana 10x10 #6 (10x10)
+  rating:             5.2  (raw=4.21)
+  size_tax:           0.997
+  revisit_density:    0.450
+  yield_friction:     0.286
+  narrowness:         0.389
+  requires_branching: false
+
+Katana 10x10 #7 (10x10)
+  rating:             5.0  (raw=4.02)
+  size_tax:           0.997
+  revisit_density:    0.500
+  yield_friction:     0.234
+  narrowness:         0.363
+  requires_branching: false
+
+Katana 10x10 #8 (10x10)
+  rating:             5.4  (raw=4.38)
+  size_tax:           0.997
+  revisit_density:    0.200
+  yield_friction:     0.275
+  narrowness:         0.627
+  requires_branching: false
+
+Katana 10x10 #9 (10x10)
+  rating:             5.2  (raw=4.24)
+  size_tax:           0.997
+  revisit_density:    0.350
+  yield_friction:     0.242
+  narrowness:         0.525
+  requires_branching: false
+
+Katana 10x10 #10 (10x10)
+  rating:             5.9  (raw=4.90)
+  size_tax:           0.997
+  revisit_density:    0.550
+  yield_friction:     0.349
+  narrowness:         0.470
+  requires_branching: false
+
+Katana 10x10 #11 (10x10)
+  rating:             4.3  (raw=3.26)
+  size_tax:           0.997
+  revisit_density:    0.050
+  yield_friction:     0.154
+  narrowness:         0.515
+  requires_branching: false
+
+Katana 10x10 #12 (10x10)
+  rating:             5.6  (raw=4.61)
+  size_tax:           0.997
+  revisit_density:    0.600
+  yield_friction:     0.279
+  narrowness:         0.432
+  requires_branching: false
+
+Katana 10x10 #13 (10x10)
+  rating:             4.8  (raw=3.82)
+  size_tax:           0.997
+  revisit_density:    0.250
+  yield_friction:     0.237
+  narrowness:         0.461
+  requires_branching: false
+
+Katana 10x10 #14 (10x10)
+  rating:             6.3  (raw=5.28)
+  size_tax:           0.997
+  revisit_density:    0.550
+  yield_friction:     0.304
+  narrowness:         0.657
+  requires_branching: false
+
+Katana 10x10 #15 (10x10)
+  rating:             7.1  (raw=6.15)
+  size_tax:           0.997
+  revisit_density:    0.900
+  yield_friction:     0.367
+  narrowness:         0.628
+  requires_branching: false
+
+Katana 10x10 #16 (10x10)
+  rating:             6.3  (raw=5.28)
+  size_tax:           0.997
+  revisit_density:    0.700
+  yield_friction:     0.278
+  narrowness:         0.590
+  requires_branching: false
+
+Katana 10x10 #17 (10x10)
+  rating:             4.6  (raw=3.58)
+  size_tax:           0.997
+  revisit_density:    0.250
+  yield_friction:     0.194
+  narrowness:         0.438
+  requires_branching: false
+
+Katana 10x10 #18 (10x10)
+  rating:             6.1  (raw=5.08)
+  size_tax:           0.997
+  revisit_density:    0.550
+  yield_friction:     0.275
+  narrowness:         0.629
+  requires_branching: false
+
+Katana 10x10 #19 (10x10)
+  rating:             6.4  (raw=5.36)
+  size_tax:           0.997
+  revisit_density:    0.500
+  yield_friction:     0.331
+  narrowness:         0.681
+  requires_branching: false
+
+-- 19 puzzle(s): min=2.8 mean=5.18 max=7.1 at_ceiling=0/19  (raw mean=4.18 raw max=6.15)
+-- histogram: (0-1]:0 (1-2]:0 (2-3]:1 (3-4]:1 (4-5]:7 (5-6]:5 (6-7]:4 (7-8]:1 (8-9]:0 (9-10]:0 
+
+=== puzzles/Katana/15-20.txt ===
+Katana 15x20 #1 (15x20)
+  rating:             5.9  (raw=4.93)
+  size_tax:           1.234
+  revisit_density:    0.629
+  yield_friction:     0.301
+  narrowness:         0.412
+  requires_branching: false
+
+Katana 20x15 #2 (20x15)
+  rating:             6.2  (raw=5.17)
+  size_tax:           1.234
+  revisit_density:    0.657
+  yield_friction:     0.264
+  narrowness:         0.521
+  requires_branching: false
+
+Katana 20x15 #3 (20x15)
+  rating:             6.7  (raw=5.74)
+  size_tax:           1.234
+  revisit_density:    0.714
+  yield_friction:     0.290
+  narrowness:         0.638
+  requires_branching: false
+
+Katana 15x20 #4 (15x20)
+  rating:             10.0  (raw=9.59)
+  size_tax:           1.234
+  revisit_density:    2.114
+  yield_friction:     0.484
+  narrowness:         0.730
+  requires_branching: false
+
+Katana 15x20 #5 (15x20)
+  rating:             8.9  (raw=7.90)
+  size_tax:           1.234
+  revisit_density:    1.514
+  yield_friction:     0.442
+  narrowness:         0.622
+  requires_branching: false
+
+Katana 20x15 #6 (20x15)
+  rating:             9.7  (raw=8.75)
+  size_tax:           1.234
+  revisit_density:    1.771
+  yield_friction:     0.481
+  narrowness:         0.681
+  requires_branching: false
+
+Katana 20x15 #7 (20x15)
+  rating:             10.0  (raw=10.12)
+  size_tax:           1.234
+  revisit_density:    2.229
+  yield_friction:     0.548
+  narrowness:         0.744
+  requires_branching: false
+
+Katana 20x15 #8 (20x15)
+  rating:             10.0  (raw=9.46)
+  size_tax:           1.234
+  revisit_density:    1.886
+  yield_friction:     0.487
+  narrowness:         0.835
+  requires_branching: false
+
+Katana 20x15 #9 (20x15)
+  rating:             9.0  (raw=8.01)
+  size_tax:           1.234
+  revisit_density:    1.543
+  yield_friction:     0.398
+  narrowness:         0.698
+  requires_branching: false
+
+Katana 20x15 #10 (20x15)
+  rating:             7.4  (raw=6.44)
+  size_tax:           1.234
+  revisit_density:    0.886
+  yield_friction:     0.294
+  narrowness:         0.753
+  requires_branching: false
+
+Katana 20x15 #11 (20x15)
+  rating:             8.1  (raw=7.14)
+  size_tax:           1.234
+  revisit_density:    1.286
+  yield_friction:     0.376
+  narrowness:         0.610
+  requires_branching: false
+
+Katana 20x15 #12 (20x15)
+  rating:             10.0  (raw=12.07)
+  size_tax:           1.234
+  revisit_density:    2.914
+  yield_friction:     0.583
+  narrowness:         0.893
+  requires_branching: false
+
+-- 12 puzzle(s): min=5.9 mean=8.49 max=10.0 at_ceiling=4/12  (raw mean=7.94 raw max=12.07)
+-- histogram: (0-1]:0 (1-2]:0 (2-3]:0 (3-4]:0 (4-5]:0 (5-6]:1 (6-7]:2 (7-8]:1 (8-9]:3 (9-10]:5 
+
+=== puzzles/Katana/15x15.txt ===
+Katana 15x15 #1 (15x15)
+  rating:             6.2  (raw=5.20)
+  size_tax:           1.172
+  revisit_density:    0.533
+  yield_friction:     0.262
+  narrowness:         0.638
+  requires_branching: false
+
+Katana 15x15 #2 (15x15)
+  rating:             3.7  (raw=2.69)
+  size_tax:           1.172
+  revisit_density:    0.067
+  yield_friction:     0.143
+  narrowness:         0.270
+  requires_branching: false
+
+Katana 15x15 #3 (15x15)
+  rating:             4.0  (raw=3.00)
+  size_tax:           1.172
+  revisit_density:    0.067
+  yield_friction:     0.149
+  narrowness:         0.365
+  requires_branching: false
+
+Katana 15x15 #4 (15x15)
+  rating:             4.1  (raw=3.06)
+  size_tax:           1.172
+  revisit_density:    0.000
+  yield_friction:     0.151
+  narrowness:         0.429
+  requires_branching: false
+
+Katana 15x15 #5 (15x15)
+  rating:             4.8  (raw=3.81)
+  size_tax:           1.172
+  revisit_density:    0.267
+  yield_friction:     0.156
+  narrowness:         0.494
+  requires_branching: false
+
+Katana 15x15 #6 (15x15)
+  rating:             5.9  (raw=4.89)
+  size_tax:           1.172
+  revisit_density:    0.267
+  yield_friction:     0.278
+  narrowness:         0.692
+  requires_branching: false
+
+Katana 15x15 #7 (15x15)
+  rating:             4.6  (raw=3.64)
+  size_tax:           1.172
+  revisit_density:    0.200
+  yield_friction:     0.210
+  narrowness:         0.408
+  requires_branching: false
+
+Katana 15x15 #8 (15x15)
+  rating:             5.3  (raw=4.27)
+  size_tax:           1.172
+  revisit_density:    0.433
+  yield_friction:     0.251
+  narrowness:         0.409
+  requires_branching: false
+
+Katana 15x15 #9 (15x15)
+  rating:             6.5  (raw=5.47)
+  size_tax:           1.172
+  revisit_density:    0.633
+  yield_friction:     0.294
+  narrowness:         0.618
+  requires_branching: false
+
+Katana 15x15 #10 (15x15)
+  rating:             7.6  (raw=6.59)
+  size_tax:           1.172
+  revisit_density:    0.933
+  yield_friction:     0.407
+  narrowness:         0.642
+  requires_branching: false
+
+Katana 15x15 #11 (15x15)
+  rating:             6.4  (raw=5.43)
+  size_tax:           1.172
+  revisit_density:    0.600
+  yield_friction:     0.299
+  narrowness:         0.620
+  requires_branching: false
+
+Katana 15x15 #12 (15x15)
+  rating:             7.8  (raw=6.77)
+  size_tax:           1.172
+  revisit_density:    1.033
+  yield_friction:     0.394
+  narrowness:         0.652
+  requires_branching: false
+
+Katana 15x15 #13 (15x15)
+  rating:             6.6  (raw=5.57)
+  size_tax:           1.172
+  revisit_density:    0.633
+  yield_friction:     0.268
+  narrowness:         0.686
+  requires_branching: false
+
+Katana 15x15 #14 (15x15)
+  rating:             6.4  (raw=5.39)
+  size_tax:           1.172
+  revisit_density:    0.767
+  yield_friction:     0.274
+  narrowness:         0.529
+  requires_branching: false
+
+Katana 15x15 #15 (15x15)
+  rating:             5.3  (raw=4.30)
+  size_tax:           1.172
+  revisit_density:    0.367
+  yield_friction:     0.204
+  narrowness:         0.527
+  requires_branching: false
+
+Katana 15x15 #16 (15x15)
+  rating:             5.1  (raw=4.12)
+  size_tax:           1.172
+  revisit_density:    0.267
+  yield_friction:     0.222
+  narrowness:         0.509
+  requires_branching: false
+
+Katana 15x15 #17 (15x15)
+  rating:             7.0  (raw=6.01)
+  size_tax:           1.172
+  revisit_density:    0.933
+  yield_friction:     0.378
+  narrowness:         0.487
+  requires_branching: false
+
+Katana 15x15 #18 (15x15)
+  rating:             7.2  (raw=6.21)
+  size_tax:           1.172
+  revisit_density:    0.833
+  yield_friction:     0.353
+  narrowness:         0.653
+  requires_branching: false
+
+Katana 15x15 #19 (15x15)
+  rating:             8.5  (raw=7.55)
+  size_tax:           1.172
+  revisit_density:    1.367
+  yield_friction:     0.397
+  narrowness:         0.684
+  requires_branching: false
+
+Katana 15x15 #20 (15x15)
+  rating:             7.6  (raw=6.55)
+  size_tax:           1.172
+  revisit_density:    1.033
+  yield_friction:     0.349
+  narrowness:         0.639
+  requires_branching: false
+
+Katana 15x15 #21 (15x15)
+  rating:             9.5  (raw=8.51)
+  size_tax:           1.172
+  revisit_density:    1.600
+  yield_friction:     0.463
+  narrowness:         0.763
+  requires_branching: false
+
+Katana 15x15 #22 (15x15)
+  rating:             10.0  (raw=10.21)
+  size_tax:           1.172
+  revisit_density:    2.233
+  yield_friction:     0.544
+  narrowness:         0.797
+  requires_branching: false
+
+Katana 15x15 #23 (15x15)
+  rating:             10.0  (raw=9.79)
+  size_tax:           1.172
+  revisit_density:    1.967
+  yield_friction:     0.518
+  narrowness:         0.872
+  requires_branching: false
+
+-- 23 puzzle(s): min=3.7 mean=6.53 max=10.0 at_ceiling=2/23  (raw mean=5.61 raw max=10.21)
+-- histogram: (0-1]:0 (1-2]:0 (2-3]:0 (3-4]:2 (4-5]:3 (5-6]:4 (6-7]:6 (7-8]:4 (8-9]:1 (9-10]:3 
+
+=== puzzles/Katana/20x20.txt ===
+Katana 20x20 #1 (20x20)
+  rating:             5.8  (raw=4.84)
+  size_tax:           1.297
+  revisit_density:    0.600
+  yield_friction:     0.270
+  narrowness:         0.421
+  requires_branching: false
+
+Katana 20x20 #2 (20x20)
+  rating:             5.4  (raw=4.38)
+  size_tax:           1.297
+  revisit_density:    0.275
+  yield_friction:     0.201
+  narrowness:         0.577
+  requires_branching: false
+
+Katana 20x20 #3 (20x20)
+  rating:             6.1  (raw=5.12)
+  size_tax:           1.297
+  revisit_density:    0.650
+  yield_friction:     0.267
+  narrowness:         0.485
+  requires_branching: false
+
+Katana 20x20 #4 (20x20)
+  rating:             7.5  (raw=6.51)
+  size_tax:           1.297
+  revisit_density:    0.975
+  yield_friction:     0.357
+  narrowness:         0.611
+  requires_branching: false
+
+Katana 20x20 #5 (20x20)
+  rating:             6.7  (raw=5.72)
+  size_tax:           1.297
+  revisit_density:    0.850
+  yield_friction:     0.289
+  narrowness:         0.523
+  requires_branching: false
+
+Katana 20x20 #6 (20x20)
+  rating:             9.4  (raw=8.39)
+  size_tax:           1.297
+  revisit_density:    1.475
+  yield_friction:     0.466
+  narrowness:         0.760
+  requires_branching: false
+
+Katana 20x20 #7 (20x20)
+  rating:             7.6  (raw=6.64)
+  size_tax:           1.297
+  revisit_density:    1.050
+  yield_friction:     0.366
+  narrowness:         0.593
+  requires_branching: false
+
+Katana 20x20 #8 (20x20)
+  rating:             8.2  (raw=7.23)
+  size_tax:           1.297
+  revisit_density:    1.275
+  yield_friction:     0.378
+  narrowness:         0.625
+  requires_branching: false
+
+Katana 20x20 #9 (20x20)
+  rating:             8.5  (raw=7.49)
+  size_tax:           1.297
+  revisit_density:    1.375
+  yield_friction:     0.427
+  narrowness:         0.579
+  requires_branching: false
+
+Katana 20x20 #10 (20x20)
+  rating:             8.7  (raw=7.74)
+  size_tax:           1.297
+  revisit_density:    1.475
+  yield_friction:     0.367
+  narrowness:         0.675
+  requires_branching: false
+
+Katana 20x20 #11 (20x20)
+  rating:             9.4  (raw=8.42)
+  size_tax:           1.297
+  revisit_density:    1.725
+  yield_friction:     0.442
+  narrowness:         0.634
+  requires_branching: false
+
+Katana 20x20 #12 (20x20)
+  rating:             10.0  (raw=9.48)
+  size_tax:           1.297
+  revisit_density:    2.050
+  yield_friction:     0.473
+  narrowness:         0.731
+  requires_branching: false
+
+Katana 20x20 #13 (20x20)
+  rating:             10.0  (raw=9.90)
+  size_tax:           1.297
+  revisit_density:    2.125
+  yield_friction:     0.526
+  narrowness:         0.749
+  requires_branching: false
+
+Katana 20x20 #14 (20x20)
+  rating:             9.8  (raw=8.82)
+  size_tax:           1.297
+  revisit_density:    1.775
+  yield_friction:     0.466
+  narrowness:         0.703
+  requires_branching: false
+
+Katana 20x20 #15 (20x20)
+  rating:             10.0  (raw=9.03)
+  size_tax:           1.297
+  revisit_density:    1.725
+  yield_friction:     0.486
+  narrowness:         0.779
+  requires_branching: false
+
+Katana 20x20 #16 (20x20)
+  rating:             10.0  (raw=10.40)
+  size_tax:           1.297
+  revisit_density:    2.350
+  yield_friction:     0.530
+  narrowness:         0.761
+  requires_branching: false
+
+Katana 20x20 #17 (20x20)
+  rating:             10.0  (raw=11.05)
+  size_tax:           1.297
+  revisit_density:    2.650
+  yield_friction:     0.537
+  narrowness:         0.769
+  requires_branching: false
+
+Katana 20x20 #18 (20x20)
+  rating:             10.0  (raw=10.82)
+  size_tax:           1.297
+  revisit_density:    2.425
+  yield_friction:     0.570
+  narrowness:         0.798
+  requires_branching: false
+
+Katana 20x20 #19 (20x20)
+  rating:             10.0  (raw=11.71)
+  size_tax:           1.297
+  revisit_density:    2.850
+  yield_friction:     0.572
+  narrowness:         0.808
+  requires_branching: false
+
+-- 19 puzzle(s): min=5.4 mean=8.58 max=10.0 at_ceiling=7/19  (raw mean=8.09 raw max=11.71)
+-- histogram: (0-1]:0 (1-2]:0 (2-3]:0 (3-4]:0 (4-5]:0 (5-6]:2 (6-7]:2 (7-8]:2 (8-9]:3 (9-10]:10 
+
+=== puzzles/Katana/25-30.txt ===
+Katana 15x30 #1 (15x30)
+  rating:             5.5  (raw=4.49)
+  size_tax:           1.322
+  revisit_density:    0.400
+  yield_friction:     0.249
+  narrowness:         0.459
+  requires_branching: false
+
+Katana 25x15 #2 (25x15)
+  rating:             8.2  (raw=7.22)
+  size_tax:           1.283
+  revisit_density:    1.350
+  yield_friction:     0.414
+  narrowness:         0.529
+  requires_branching: false
+
+Katana 25x30 #3 (25x30)
+  rating:             8.6  (raw=7.58)
+  size_tax:           1.433
+  revisit_density:    1.327
+  yield_friction:     0.372
+  narrowness:         0.669
+  requires_branching: false
+
+Katana 27x16 #4 (27x16)
+  rating:             7.5  (raw=6.51)
+  size_tax:           1.313
+  revisit_density:    0.907
+  yield_friction:     0.312
+  narrowness:         0.711
+  requires_branching: false
+
+Katana 16x30 #5 (16x30)
+  rating:             9.9  (raw=8.92)
+  size_tax:           1.336
+  revisit_density:    2.109
+  yield_friction:     0.472
+  narrowness:         0.491
+  requires_branching: false
+
+Katana 15x30 #6 (15x30)
+  rating:             9.6  (raw=8.55)
+  size_tax:           1.322
+  revisit_density:    1.622
+  yield_friction:     0.432
+  narrowness:         0.753
+  requires_branching: false
+
+Katana 30x15 #7 (30x15)
+  rating:             9.2  (raw=8.17)
+  size_tax:           1.322
+  revisit_density:    1.467
+  yield_friction:     0.499
+  narrowness:         0.640
+  requires_branching: false
+
+Katana 25x20 #8 (25x20)
+  rating:             8.6  (raw=7.58)
+  size_tax:           1.345
+  revisit_density:    1.289
+  yield_friction:     0.435
+  narrowness:         0.640
+  requires_branching: false
+
+Katana 15x30 #9 (15x30)
+  rating:             8.2  (raw=7.16)
+  size_tax:           1.322
+  revisit_density:    0.956
+  yield_friction:     0.412
+  narrowness:         0.761
+  requires_branching: false
+
+Katana 25x20 #10 (25x20)
+  rating:             10.0  (raw=10.54)
+  size_tax:           1.345
+  revisit_density:    2.489
+  yield_friction:     0.535
+  narrowness:         0.692
+  requires_branching: false
+
+Katana 25x20 #11 (25x20)
+  rating:             10.0  (raw=10.25)
+  size_tax:           1.345
+  revisit_density:    2.267
+  yield_friction:     0.530
+  narrowness:         0.749
+  requires_branching: false
+
+Katana 25x30 #12 (25x30)
+  rating:             10.0  (raw=10.23)
+  size_tax:           1.433
+  revisit_density:    2.236
+  yield_friction:     0.547
+  narrowness:         0.712
+  requires_branching: false
+
+Katana 25x20 #13 (25x20)
+  rating:             10.0  (raw=9.44)
+  size_tax:           1.345
+  revisit_density:    2.089
+  yield_friction:     0.488
+  narrowness:         0.657
+  requires_branching: false
+
+Katana 25x20 #14 (25x20)
+  rating:             10.0  (raw=12.46)
+  size_tax:           1.345
+  revisit_density:    3.089
+  yield_friction:     0.589
+  narrowness:         0.861
+  requires_branching: false
+
+Katana 25x34 #15 (25x34)
+  rating:             10.0  (raw=12.76)
+  size_tax:           1.460
+  revisit_density:    3.254
+  yield_friction:     0.578
+  narrowness:         0.825
+  requires_branching: false
+
+Katana 20x30 #16 (20x30)
+  rating:             10.0  (raw=11.77)
+  size_tax:           1.384
+  revisit_density:    2.920
+  yield_friction:     0.567
+  narrowness:         0.759
+  requires_branching: false
+
+Katana 25x19 #17 (25x19)
+  rating:             8.4  (raw=7.36)
+  size_tax:           1.334
+  revisit_density:    1.136
+  yield_friction:     0.339
+  narrowness:         0.799
+  requires_branching: false
+
+-- 17 puzzle(s): min=5.5 mean=9.04 max=10.0 at_ceiling=7/17  (raw mean=8.88 raw max=12.76)
+-- histogram: (0-1]:0 (1-2]:0 (2-3]:0 (3-4]:0 (4-5]:0 (5-6]:1 (6-7]:0 (7-8]:1 (8-9]:5 (9-10]:10 
+
+=== puzzles/Katana/25x25.txt ===
+Katana 25x25 #1 (25x25)
+  rating:             8.2  (raw=7.19)
+  size_tax:           1.393
+  revisit_density:    1.160
+  yield_friction:     0.404
+  narrowness:         0.619
+  requires_branching: false
+
+Katana 25x25 #2 (25x25)
+  rating:             9.9  (raw=8.93)
+  size_tax:           1.393
+  revisit_density:    1.960
+  yield_friction:     0.478
+  narrowness:         0.567
+  requires_branching: false
+
+Katana 25x25 #3 (25x25)
+  rating:             9.4  (raw=8.40)
+  size_tax:           1.393
+  revisit_density:    1.680
+  yield_friction:     0.450
+  narrowness:         0.617
+  requires_branching: false
+
+Katana 25x25 #4 (25x25)
+  rating:             9.2  (raw=8.22)
+  size_tax:           1.393
+  revisit_density:    1.560
+  yield_friction:     0.451
+  narrowness:         0.633
+  requires_branching: false
+
+Katana 25x25 #5 (25x25)
+  rating:             8.4  (raw=7.42)
+  size_tax:           1.393
+  revisit_density:    1.300
+  yield_friction:     0.378
+  narrowness:         0.638
+  requires_branching: false
+
+Katana 25x25 #6 (25x25)
+  rating:             8.8  (raw=7.80)
+  size_tax:           1.393
+  revisit_density:    1.380
+  yield_friction:     0.426
+  narrowness:         0.649
+  requires_branching: false
+
+Katana 25x25 #7 (25x25)
+  rating:             10.0  (raw=10.87)
+  size_tax:           1.393
+  revisit_density:    2.660
+  yield_friction:     0.574
+  narrowness:         0.622
+  requires_branching: false
+
+Katana 25x25 #8 (25x25)
+  rating:             10.0  (raw=9.70)
+  size_tax:           1.393
+  revisit_density:    2.040
+  yield_friction:     0.512
+  narrowness:         0.726
+  requires_branching: false
+
+Katana 25x25 #9 (25x25)
+  rating:             10.0  (raw=9.74)
+  size_tax:           1.393
+  revisit_density:    2.080
+  yield_friction:     0.519
+  narrowness:         0.703
+  requires_branching: false
+
+Katana 25x25 #10 (25x25)
+  rating:             10.0  (raw=12.02)
+  size_tax:           1.393
+  revisit_density:    2.800
+  yield_friction:     0.633
+  narrowness:         0.832
+  requires_branching: false
+
+Katana 25x25 #11 (25x25)
+  rating:             10.0  (raw=12.17)
+  size_tax:           1.393
+  revisit_density:    3.080
+  yield_friction:     0.600
+  narrowness:         0.738
+  requires_branching: false
+
+Katana 25x25 #12 (25x25)
+  rating:             10.0  (raw=10.82)
+  size_tax:           1.393
+  revisit_density:    2.600
+  yield_friction:     0.539
+  narrowness:         0.691
+  requires_branching: false
+
+Katana 25x25 #13 (25x25)
+  rating:             10.0  (raw=14.43)
+  size_tax:           1.393
+  revisit_density:    3.880
+  yield_friction:     0.676
+  narrowness:         0.856
+  requires_branching: false
+
+-- 13 puzzle(s): min=8.2 mean=9.53 max=10.0 at_ceiling=7/13  (raw mean=9.82 raw max=14.43)
+-- histogram: (0-1]:0 (1-2]:0 (2-3]:0 (3-4]:0 (4-5]:0 (5-6]:0 (6-7]:0 (7-8]:0 (8-9]:3 (9-10]:10 
+
+=== puzzles/Katana/30-50.txt ===
+Katana 30x55 #1 (30x55)
+  rating:             9.4  (raw=8.42)
+  size_tax:           1.603
+  revisit_density:    1.576
+  yield_friction:     0.461
+  narrowness:         0.606
+  requires_branching: false
+
+Katana 35x30 #2 (35x30)
+  rating:             10.0  (raw=10.98)
+  size_tax:           1.505
+  revisit_density:    2.662
+  yield_friction:     0.557
+  narrowness:         0.640
+  requires_branching: false
+
+Katana 20x35 #3 (20x35)
+  rating:             6.9  (raw=5.87)
+  size_tax:           1.418
+  revisit_density:    0.673
+  yield_friction:     0.274
+  narrowness:         0.671
+  requires_branching: false
+
+Katana 37x31 #4 (37x31)
+  rating:             7.1  (raw=6.12)
+  size_tax:           1.525
+  revisit_density:    0.971
+  yield_friction:     0.288
+  narrowness:         0.501
+  requires_branching: false
+
+Katana 45x45 #5 (45x45)
+  rating:             6.9  (raw=5.88)
+  size_tax:           1.648
+  revisit_density:    0.856
+  yield_friction:     0.324
+  narrowness:         0.408
+  requires_branching: false
+
+Katana 35x38 #6 (35x38)
+  rating:             10.0  (raw=10.01)
+  size_tax:           1.557
+  revisit_density:    2.301
+  yield_friction:     0.501
+  narrowness:         0.617
+  requires_branching: false
+
+Katana 35x30 #7 (35x30)
+  rating:             10.0  (raw=12.79)
+  size_tax:           1.505
+  revisit_density:    3.354
+  yield_friction:     0.600
+  narrowness:         0.727
+  requires_branching: false
+
+Katana 30x35 #8 (30x35)
+  rating:             10.0  (raw=11.98)
+  size_tax:           1.505
+  revisit_density:    3.123
+  yield_friction:     0.583
+  narrowness:         0.632
+  requires_branching: false
+
+Katana 35x30 #9 (35x30)
+  rating:             10.0  (raw=15.09)
+  size_tax:           1.505
+  revisit_density:    4.215
+  yield_friction:     0.668
+  narrowness:         0.826
+  requires_branching: false
+
+Katana 40x34 #10 (40x34)
+  rating:             10.0  (raw=11.14)
+  size_tax:           1.561
+  revisit_density:    2.568
+  yield_friction:     0.557
+  narrowness:         0.738
+  requires_branching: false
+
+Katana 35x30 #11 (35x30)
+  rating:             10.0  (raw=10.35)
+  size_tax:           1.505
+  revisit_density:    2.385
+  yield_friction:     0.516
+  narrowness:         0.672
+  requires_branching: false
+
+Katana 35x30 #12 (35x30)
+  rating:             10.0  (raw=13.21)
+  size_tax:           1.505
+  revisit_density:    3.446
+  yield_friction:     0.606
+  narrowness:         0.797
+  requires_branching: false
+
+Katana 30x35 #13 (30x35)
+  rating:             10.0  (raw=14.41)
+  size_tax:           1.505
+  revisit_density:    3.985
+  yield_friction:     0.651
+  narrowness:         0.777
+  requires_branching: false
+
+Katana 40x40 #14 (40x40)
+  rating:             10.0  (raw=15.89)
+  size_tax:           1.597
+  revisit_density:    4.600
+  yield_friction:     0.672
+  narrowness:         0.804
+  requires_branching: false
+
+Katana 35x35 #15 (35x35)
+  rating:             10.0  (raw=19.56)
+  size_tax:           1.539
+  revisit_density:    6.229
+  yield_friction:     0.733
+  narrowness:         0.878
+  requires_branching: false
+
+Katana 30x35 #16 (30x35)
+  rating:             10.0  (raw=10.08)
+  size_tax:           1.505
+  revisit_density:    2.169
+  yield_friction:     0.509
+  narrowness:         0.732
+  requires_branching: false
+
+Katana 45x40 #17 (45x40)
+  rating:             10.0  (raw=13.77)
+  size_tax:           1.622
+  revisit_density:    3.741
+  yield_friction:     0.629
+  narrowness:         0.716
+  requires_branching: false
+
+Katana 35x35 #18 (35x35)
+  rating:             10.0  (raw=15.81)
+  size_tax:           1.539
+  revisit_density:    4.529
+  yield_friction:     0.680
+  narrowness:         0.832
+  requires_branching: false
+
+Katana 35x40 #19 (35x40)
+  rating:             10.0  (raw=15.65)
+  size_tax:           1.568
+  revisit_density:    4.413
+  yield_friction:     0.649
+  narrowness:         0.888
+  requires_branching: false
+
+Katana 30x40 #20 (30x40)
+  rating:             10.0  (raw=15.87)
+  size_tax:           1.534
+  revisit_density:    4.443
+  yield_friction:     0.693
+  narrowness:         0.892
+  requires_branching: false
+
+Katana 30x40 #21 (30x40)
+  rating:             10.0  (raw=14.68)
+  size_tax:           1.534
+  revisit_density:    4.100
+  yield_friction:     0.634
+  narrowness:         0.804
+  requires_branching: false
+
+Katana 25x35 #22 (25x35)
+  rating:             10.0  (raw=14.52)
+  size_tax:           1.466
+  revisit_density:    3.900
+  yield_friction:     0.651
+  narrowness:         0.884
+  requires_branching: false
+
+Katana 30x40 #23 (30x40)
+  rating:             10.0  (raw=15.94)
+  size_tax:           1.534
+  revisit_density:    4.600
+  yield_friction:     0.688
+  narrowness:         0.816
+  requires_branching: false
+
+Katana 30x35 #24 (30x35)
+  rating:             10.0  (raw=16.00)
+  size_tax:           1.505
+  revisit_density:    4.708
+  yield_friction:     0.666
+  narrowness:         0.806
+  requires_branching: false
+
+Katana 35x50 #25 (35x50)
+  rating:             10.0  (raw=18.52)
+  size_tax:           1.616
+  revisit_density:    5.694
+  yield_friction:     0.721
+  narrowness:         0.877
+  requires_branching: false
+
+Katana 35x30 #26 (35x30)
+  rating:             10.0  (raw=17.44)
+  size_tax:           1.505
+  revisit_density:    5.200
+  yield_friction:     0.705
+  narrowness:         0.906
+  requires_branching: false
+
+Katana 50x50 #27 (50x50)
+  rating:             10.0  (raw=13.45)
+  size_tax:           1.693
+  revisit_density:    3.670
+  yield_friction:     0.615
+  narrowness:         0.654
+  requires_branching: false
+
+Katana 50x50 #28 (50x50)
+  rating:             10.0  (raw=11.57)
+  size_tax:           1.693
+  revisit_density:    2.700
+  yield_friction:     0.573
+  narrowness:         0.729
+  requires_branching: false
+
+Katana 45x45 #29 (45x45)
+  rating:             10.0  (raw=10.84)
+  size_tax:           1.648
+  revisit_density:    1.789
+  yield_friction:     0.739
+  narrowness:         0.888
+  requires_branching: true
+
+Katana 40x30 #30 (40x30)
+  rating:             7.9  (raw=6.94)
+  size_tax:           1.534
+  revisit_density:    0.229
+  yield_friction:     0.780
+  narrowness:         0.609
+  requires_branching: true
+
+Katana 32x50 #31 (32x50)
+  rating:             10.0  (raw=9.62)
+  size_tax:           1.597
+  revisit_density:    1.451
+  yield_friction:     0.690
+  narrowness:         0.786
+  requires_branching: true
+
+Katana 50x40 #32 (50x40)
+  rating:             9.0  (raw=7.97)
+  size_tax:           1.645
+  revisit_density:    0.000
+  yield_friction:     0.882
+  narrowness:         0.933
+  requires_branching: true
+
+Katana 50x50 #33 (50x50)
+  rating:             10.0  (raw=11.77)
+  size_tax:           1.693
+  revisit_density:    2.530
+  yield_friction:     0.634
+  narrowness:         0.825
+  requires_branching: true
+
+-- 33 puzzle(s): min=6.9 mean=9.61 max=10.0 at_ceiling=27/33  (raw mean=12.49 raw max=19.56)
+-- histogram: (0-1]:0 (1-2]:0 (2-3]:0 (3-4]:0 (4-5]:0 (5-6]:0 (6-7]:2 (7-8]:2 (8-9]:1 (9-10]:28 
+
+=== puzzles/Katana/30x30.txt ===
+Katana 30x30 #1 (30x30)
+  rating:             9.7  (raw=8.68)
+  size_tax:           1.472
+  revisit_density:    1.550
+  yield_friction:     0.417
+  narrowness:         0.815
+  requires_branching: false
+
+Katana 30x30 #2 (30x30)
+  rating:             9.2  (raw=8.21)
+  size_tax:           1.472
+  revisit_density:    1.550
+  yield_friction:     0.428
+  narrowness:         0.641
+  requires_branching: false
+
+Katana 30x30 #3 (30x30)
+  rating:             9.3  (raw=8.34)
+  size_tax:           1.472
+  revisit_density:    1.700
+  yield_friction:     0.438
+  narrowness:         0.574
+  requires_branching: false
+
+Katana 30x30 #4 (30x30)
+  rating:             10.0  (raw=12.32)
+  size_tax:           1.472
+  revisit_density:    3.167
+  yield_friction:     0.600
+  narrowness:         0.707
+  requires_branching: false
+
+Katana 30x30 #5 (30x30)
+  rating:             10.0  (raw=12.02)
+  size_tax:           1.472
+  revisit_density:    3.100
+  yield_friction:     0.581
+  narrowness:         0.674
+  requires_branching: false
+
+Katana 30x30 #6 (30x30)
+  rating:             10.0  (raw=13.70)
+  size_tax:           1.472
+  revisit_density:    3.600
+  yield_friction:     0.632
+  narrowness:         0.833
+  requires_branching: false
+
+Katana 30x30 #7 (30x30)
+  rating:             10.0  (raw=12.91)
+  size_tax:           1.472
+  revisit_density:    3.367
+  yield_friction:     0.617
+  narrowness:         0.745
+  requires_branching: false
+
+Katana 30x30 #8 (30x30)
+  rating:             10.0  (raw=11.88)
+  size_tax:           1.472
+  revisit_density:    2.917
+  yield_friction:     0.582
+  narrowness:         0.749
+  requires_branching: false
+
+Katana 30x30 #9 (30x30)
+  rating:             10.0  (raw=13.95)
+  size_tax:           1.472
+  revisit_density:    3.717
+  yield_friction:     0.641
+  narrowness:         0.828
+  requires_branching: false
+
+Katana 30x30 #10 (30x30)
+  rating:             10.0  (raw=16.08)
+  size_tax:           1.472
+  revisit_density:    4.700
+  yield_friction:     0.685
+  narrowness:         0.824
+  requires_branching: false
+
+-- 10 puzzle(s): min=9.2 mean=9.82 max=10.0 at_ceiling=7/10  (raw mean=11.81 raw max=16.08)
+-- histogram: (0-1]:0 (1-2]:0 (2-3]:0 (3-4]:0 (4-5]:0 (5-6]:0 (6-7]:0 (7-8]:0 (8-9]:0 (9-10]:10 
+
+=== puzzles/Katana/5x5.txt ===
+Katana 5x5 #1 (5x5)
+  rating:             2.4  (raw=1.36)
+  size_tax:           0.697
+  revisit_density:    0.000
+  yield_friction:     0.000
+  narrowness:         0.222
+  requires_branching: false
+
+Katana 5x5 #2 (5x5)
+  rating:             3.7  (raw=2.70)
+  size_tax:           0.697
+  revisit_density:    0.000
+  yield_friction:     0.000
+  narrowness:         0.667
+  requires_branching: false
+
+Katana 5x5 #3 (5x5)
+  rating:             3.4  (raw=2.36)
+  size_tax:           0.697
+  revisit_density:    0.000
+  yield_friction:     0.000
+  narrowness:         0.556
+  requires_branching: false
+
+Katana 5x5 #4 (5x5)
+  rating:             3.1  (raw=2.07)
+  size_tax:           0.697
+  revisit_density:    0.000
+  yield_friction:     0.178
+  narrowness:         0.222
+  requires_branching: false
+
+Katana 5x5 #5 (5x5)
+  rating:             3.0  (raw=2.03)
+  size_tax:           0.697
+  revisit_density:    0.000
+  yield_friction:     0.000
+  narrowness:         0.444
+  requires_branching: false
+
+Katana 5x5 #6 (5x5)
+  rating:             3.6  (raw=2.55)
+  size_tax:           0.697
+  revisit_density:    0.000
+  yield_friction:     0.089
+  narrowness:         0.500
+  requires_branching: false
+
+Katana 5x5 #7 (5x5)
+  rating:             4.5  (raw=3.47)
+  size_tax:           0.697
+  revisit_density:    0.400
+  yield_friction:     0.286
+  narrowness:         0.278
+  requires_branching: false
+
+Katana 5x5 #8 (5x5)
+  rating:             3.7  (raw=2.70)
+  size_tax:           0.697
+  revisit_density:    0.000
+  yield_friction:     0.147
+  narrowness:         0.472
+  requires_branching: false
+
+Katana 5x5 #9 (5x5)
+  rating:             3.4  (raw=2.41)
+  size_tax:           0.697
+  revisit_density:    0.000
+  yield_friction:     0.178
+  narrowness:         0.333
+  requires_branching: false
+
+Katana 5x5 #10 (5x5)
+  rating:             2.4  (raw=1.39)
+  size_tax:           0.697
+  revisit_density:    0.000
+  yield_friction:     0.089
+  narrowness:         0.111
+  requires_branching: false
+
+Katana 5x5 #11 (5x5)
+  rating:             3.0  (raw=2.03)
+  size_tax:           0.697
+  revisit_density:    0.000
+  yield_friction:     0.000
+  narrowness:         0.444
+  requires_branching: false
+
+Katana 5x5 #12 (5x5)
+  rating:             3.0  (raw=2.03)
+  size_tax:           0.697
+  revisit_density:    0.000
+  yield_friction:     0.000
+  narrowness:         0.444
+  requires_branching: false
+
+Katana 5x5 #13 (5x5)
+  rating:             2.4  (raw=1.41)
+  size_tax:           0.697
+  revisit_density:    0.000
+  yield_friction:     0.178
+  narrowness:         0.000
+  requires_branching: false
+
+Katana 5x5 #14 (5x5)
+  rating:             4.2  (raw=3.15)
+  size_tax:           0.697
+  revisit_density:    0.000
+  yield_friction:     0.114
+  narrowness:         0.667
+  requires_branching: false
+
+Katana 5x5 #15 (5x5)
+  rating:             3.4  (raw=2.43)
+  size_tax:           0.697
+  revisit_density:    0.000
+  yield_friction:     0.100
+  narrowness:         0.444
+  requires_branching: false
+
+Katana 5x5 #16 (5x5)
+  rating:             2.0  (raw=1.03)
+  size_tax:           0.697
+  revisit_density:    0.000
+  yield_friction:     0.000
+  narrowness:         0.111
+  requires_branching: false
+
+Katana 5x5 #17 (5x5)
+  rating:             4.5  (raw=3.53)
+  size_tax:           0.697
+  revisit_density:    0.100
+  yield_friction:     0.324
+  narrowness:         0.444
+  requires_branching: false
+
+Katana 5x5 #18 (5x5)
+  rating:             3.1  (raw=2.05)
+  size_tax:           0.697
+  revisit_density:    0.000
+  yield_friction:     0.089
+  narrowness:         0.333
+  requires_branching: false
+
+Katana 5x5 #19 (5x5)
+  rating:             3.8  (raw=2.83)
+  size_tax:           0.697
+  revisit_density:    0.000
+  yield_friction:     0.200
+  narrowness:         0.444
+  requires_branching: false
+
+Katana 5x5 #20 (5x5)
+  rating:             3.0  (raw=2.00)
+  size_tax:           0.697
+  revisit_density:    0.000
+  yield_friction:     0.160
+  narrowness:         0.222
+  requires_branching: true
+
+-- 20 puzzle(s): min=2.0 mean=3.28 max=4.5 at_ceiling=0/20  (raw mean=2.28 raw max=3.53)
+-- histogram: (0-1]:0 (1-2]:1 (2-3]:7 (3-4]:9 (4-5]:3 (5-6]:0 (6-7]:0 (7-8]:0 (8-9]:0 (9-10]:0 
+
+=== puzzles/Katana/Fantasy_RPG__10-20_.txt ===
+Katana 15x15 #1 (15x15)
+  rating:             9.6  (raw=8.59)
+  size_tax:           1.172
+  revisit_density:    1.767
+  yield_friction:     0.516
+  narrowness:         0.607
+  requires_branching: false
+
+Katana 15x15 #2 (15x15)
+  rating:             7.2  (raw=6.23)
+  size_tax:           1.172
+  revisit_density:    0.000
+  yield_friction:     0.593
+  narrowness:         0.897
+  requires_branching: true
+
+Katana 15x15 #3 (15x15)
+  rating:             8.2  (raw=7.16)
+  size_tax:           1.172
+  revisit_density:    0.000
+  yield_friction:     0.863
+  narrowness:         0.845
+  requires_branching: true
+
+Katana 15x15 #4 (15x15)
+  rating:             6.0  (raw=4.98)
+  size_tax:           1.172
+  revisit_density:    0.667
+  yield_friction:     0.252
+  narrowness:         0.488
+  requires_branching: false
+
+Katana 15x15 #5 (15x15)
+  rating:             6.6  (raw=5.58)
+  size_tax:           1.172
+  revisit_density:    0.867
+  yield_friction:     0.340
+  narrowness:         0.440
+  requires_branching: false
+
+Katana 15x15 #6 (15x15)
+  rating:             4.3  (raw=3.32)
+  size_tax:           1.172
+  revisit_density:    0.000
+  yield_friction:     0.109
+  narrowness:         0.571
+  requires_branching: false
+
+Katana 15x15 #7 (15x15)
+  rating:             6.5  (raw=5.48)
+  size_tax:           1.172
+  revisit_density:    0.633
+  yield_friction:     0.295
+  narrowness:         0.620
+  requires_branching: false
+
+Katana 15x15 #8 (15x15)
+  rating:             9.0  (raw=8.02)
+  size_tax:           1.172
+  revisit_density:    1.533
+  yield_friction:     0.428
+  narrowness:         0.689
+  requires_branching: false
+
+Katana 15x15 #9 (15x15)
+  rating:             6.1  (raw=5.10)
+  size_tax:           1.172
+  revisit_density:    0.567
+  yield_friction:     0.280
+  narrowness:         0.557
+  requires_branching: false
+
+Katana 15x15 #10 (15x15)
+  rating:             6.2  (raw=5.23)
+  size_tax:           1.172
+  revisit_density:    0.700
+  yield_friction:     0.297
+  narrowness:         0.491
+  requires_branching: false
+
+Katana 15x15 #11 (15x15)
+  rating:             8.3  (raw=7.26)
+  size_tax:           1.172
+  revisit_density:    0.000
+  yield_friction:     0.857
+  narrowness:         0.888
+  requires_branching: true
+
+Katana 15x15 #12 (15x15)
+  rating:             5.7  (raw=4.73)
+  size_tax:           1.172
+  revisit_density:    0.000
+  yield_friction:     0.208
+  narrowness:         0.910
+  requires_branching: true
+
+Katana 15x15 #13 (15x15)
+  rating:             5.0  (raw=3.97)
+  size_tax:           1.172
+  revisit_density:    0.233
+  yield_friction:     0.198
+  narrowness:         0.511
+  requires_branching: false
+
+Katana 15x15 #14 (15x15)
+  rating:             4.0  (raw=3.04)
+  size_tax:           1.172
+  revisit_density:    0.000
+  yield_friction:     0.045
+  narrowness:         0.563
+  requires_branching: false
+
+Katana 15x15 #15 (15x15)
+  rating:             4.7  (raw=3.68)
+  size_tax:           1.172
+  revisit_density:    0.067
+  yield_friction:     0.175
+  narrowness:         0.558
+  requires_branching: false
+
+Katana 15x15 #16 (15x15)
+  rating:             8.5  (raw=7.55)
+  size_tax:           1.172
+  revisit_density:    0.000
+  yield_friction:     0.883
+  narrowness:         0.948
+  requires_branching: true
+
+Katana 15x15 #17 (15x15)
+  rating:             7.9  (raw=6.92)
+  size_tax:           1.172
+  revisit_density:    0.000
+  yield_friction:     0.841
+  narrowness:         0.793
+  requires_branching: true
+
+Katana 15x15 #18 (15x15)
+  rating:             8.3  (raw=7.30)
+  size_tax:           1.172
+  revisit_density:    1.067
+  yield_friction:     0.432
+  narrowness:         0.757
+  requires_branching: true
+
+Katana 15x15 #19 (15x15)
+  rating:             7.9  (raw=6.94)
+  size_tax:           1.172
+  revisit_density:    1.233
+  yield_friction:     0.398
+  narrowness:         0.569
+  requires_branching: false
+
+Katana 20x17 #20 (20x17)
+  rating:             9.0  (raw=8.03)
+  size_tax:           1.261
+  revisit_density:    1.189
+  yield_friction:     0.470
+  narrowness:         0.837
+  requires_branching: true
+
+Katana 15x15 #21 (15x15)
+  rating:             6.9  (raw=5.94)
+  size_tax:           1.172
+  revisit_density:    0.833
+  yield_friction:     0.312
+  narrowness:         0.619
+  requires_branching: false
+
+Katana 15x10 #22 (15x10)
+  rating:             8.1  (raw=7.09)
+  size_tax:           1.084
+  revisit_density:    1.000
+  yield_friction:     0.409
+  narrowness:         0.789
+  requires_branching: false
+
+Katana 15x15 #23 (15x15)
+  rating:             7.9  (raw=6.85)
+  size_tax:           1.172
+  revisit_density:    0.900
+  yield_friction:     0.450
+  narrowness:         0.694
+  requires_branching: false
+
+Katana 15x15 #24 (15x15)
+  rating:             6.5  (raw=5.46)
+  size_tax:           1.172
+  revisit_density:    0.767
+  yield_friction:     0.299
+  narrowness:         0.519
+  requires_branching: false
+
+Katana 15x15 #25 (15x15)
+  rating:             6.4  (raw=5.44)
+  size_tax:           1.172
+  revisit_density:    0.800
+  yield_friction:     0.324
+  narrowness:         0.455
+  requires_branching: false
+
+Katana 15x20 #26 (15x20)
+  rating:             9.4  (raw=8.38)
+  size_tax:           1.234
+  revisit_density:    1.686
+  yield_friction:     0.469
+  narrowness:         0.633
+  requires_branching: false
+
+Katana 15x15 #27 (15x15)
+  rating:             7.3  (raw=6.34)
+  size_tax:           1.172
+  revisit_density:    0.900
+  yield_friction:     0.313
+  narrowness:         0.704
+  requires_branching: false
+
+Katana 12x20 #28 (12x20)
+  rating:             6.0  (raw=4.97)
+  size_tax:           1.186
+  revisit_density:    0.594
+  yield_friction:     0.283
+  narrowness:         0.489
+  requires_branching: false
+
+Katana 15x15 #29 (15x15)
+  rating:             2.2  (raw=1.17)
+  size_tax:           1.172
+  revisit_density:    0.000
+  yield_friction:     0.000
+  narrowness:         n/a
+  requires_branching: true
+
+Katana 15x15 #30 (15x15)
+  rating:             8.5  (raw=7.46)
+  size_tax:           1.172
+  revisit_density:    1.233
+  yield_friction:     0.403
+  narrowness:         0.735
+  requires_branching: false
+
+Katana 15x20 #31 (15x20)
+  rating:             7.9  (raw=6.93)
+  size_tax:           1.234
+  revisit_density:    1.200
+  yield_friction:     0.360
+  narrowness:         0.618
+  requires_branching: false
+
+Katana 15x15 #32 (15x15)
+  rating:             7.7  (raw=6.74)
+  size_tax:           1.172
+  revisit_density:    1.033
+  yield_friction:     0.389
+  narrowness:         0.647
+  requires_branching: false
+
+Katana 15x15 #33 (15x15)
+  rating:             6.7  (raw=5.72)
+  size_tax:           1.172
+  revisit_density:    0.733
+  yield_friction:     0.267
+  narrowness:         0.671
+  requires_branching: false
+
+-- 33 puzzle(s): min=2.2 mean=6.98 max=9.6 at_ceiling=0/33  (raw mean=5.99 raw max=8.59)
+-- histogram: (0-1]:0 (1-2]:0 (2-3]:1 (3-4]:1 (4-5]:3 (5-6]:3 (6-7]:8 (7-8]:7 (8-9]:8 (9-10]:2 
+
+=== puzzles/Katana/Golden_Mean_Part_2__18-34__Author__belko61_.txt ===
+Katana 22x24 #1 (22x24)
+  rating:             8.0  (raw=7.03)
+  size_tax:           1.357
+  revisit_density:    1.304
+  yield_friction:     0.398
+  narrowness:         0.491
+  requires_branching: false
+
+Katana 22x25 #2 (22x25)
+  rating:             10.0  (raw=10.52)
+  size_tax:           1.365
+  revisit_density:    2.532
+  yield_friction:     0.534
+  narrowness:         0.651
+  requires_branching: false
+
+Katana 21x28 #3 (21x28)
+  rating:             10.0  (raw=9.64)
+  size_tax:           1.380
+  revisit_density:    2.102
+  yield_friction:     0.538
+  narrowness:         0.633
+  requires_branching: false
+
+Katana 33x18 #4 (33x18)
+  rating:             10.0  (raw=9.38)
+  size_tax:           1.382
+  revisit_density:    1.980
+  yield_friction:     0.475
+  narrowness:         0.713
+  requires_branching: false
+
+Katana 22x28 #5 (22x28)
+  rating:             8.4  (raw=7.44)
+  size_tax:           1.390
+  revisit_density:    1.280
+  yield_friction:     0.399
+  narrowness:         0.631
+  requires_branching: false
+
+Katana 26x24 #6 (26x24)
+  rating:             9.7  (raw=8.75)
+  size_tax:           1.393
+  revisit_density:    1.860
+  yield_friction:     0.476
+  narrowness:         0.577
+  requires_branching: false
+
+Katana 22x29 #7 (22x29)
+  rating:             10.0  (raw=11.28)
+  size_tax:           1.398
+  revisit_density:    2.765
+  yield_friction:     0.579
+  narrowness:         0.680
+  requires_branching: false
+
+Katana 23x29 #8 (23x29)
+  rating:             9.4  (raw=8.36)
+  size_tax:           1.407
+  revisit_density:    1.635
+  yield_friction:     0.462
+  narrowness:         0.613
+  requires_branching: false
+
+Katana 20x34 #9 (20x34)
+  rating:             10.0  (raw=9.11)
+  size_tax:           1.411
+  revisit_density:    1.926
+  yield_friction:     0.491
+  narrowness:         0.627
+  requires_branching: false
+
+Katana 28x25 #10 (28x25)
+  rating:             10.0  (raw=13.99)
+  size_tax:           1.418
+  revisit_density:    3.811
+  yield_friction:     0.641
+  narrowness:         0.794
+  requires_branching: false
+
+Katana 23x31 #11 (23x31)
+  rating:             10.0  (raw=10.65)
+  size_tax:           1.422
+  revisit_density:    2.630
+  yield_friction:     0.561
+  narrowness:         0.575
+  requires_branching: false
+
+Katana 23x32 #12 (23x32)
+  rating:             10.0  (raw=9.00)
+  size_tax:           1.429
+  revisit_density:    1.909
+  yield_friction:     0.473
+  narrowness:         0.621
+  requires_branching: false
+
+Katana 27x28 #13 (27x28)
+  rating:             10.0  (raw=10.51)
+  size_tax:           1.434
+  revisit_density:    2.400
+  yield_friction:     0.571
+  narrowness:         0.666
+  requires_branching: false
+
+Katana 28x28 #14 (28x28)
+  rating:             10.0  (raw=9.40)
+  size_tax:           1.442
+  revisit_density:    2.054
+  yield_friction:     0.485
+  narrowness:         0.635
+  requires_branching: false
+
+Katana 24x33 #15 (24x33)
+  rating:             8.1  (raw=7.07)
+  size_tax:           1.444
+  revisit_density:    1.368
+  yield_friction:     0.362
+  narrowness:         0.481
+  requires_branching: false
+
+Katana 25x30 #16 (25x30)
+  rating:             10.0  (raw=16.30)
+  size_tax:           1.433
+  revisit_density:    4.709
+  yield_friction:     0.694
+  narrowness:         0.890
+  requires_branching: false
+
+Katana 25x30 #17 (25x30)
+  rating:             10.0  (raw=14.78)
+  size_tax:           1.433
+  revisit_density:    4.018
+  yield_friction:     0.651
+  narrowness:         0.902
+  requires_branching: false
+
+Katana 25x32 #18 (25x32)
+  rating:             9.0  (raw=7.99)
+  size_tax:           1.447
+  revisit_density:    1.579
+  yield_friction:     0.438
+  narrowness:         0.543
+  requires_branching: false
+
+Katana 29x28 #19 (29x28)
+  rating:             10.0  (raw=14.36)
+  size_tax:           1.450
+  revisit_density:    4.000
+  yield_friction:     0.654
+  narrowness:         0.765
+  requires_branching: false
+
+Katana 24x34 #20 (24x34)
+  rating:             10.0  (raw=11.85)
+  size_tax:           1.451
+  revisit_density:    3.172
+  yield_friction:     0.606
+  narrowness:         0.543
+  requires_branching: false
+
+Katana 24x34 #21 (24x34)
+  rating:             10.0  (raw=10.20)
+  size_tax:           1.451
+  revisit_density:    2.259
+  yield_friction:     0.498
+  narrowness:         0.747
+  requires_branching: false
+
+Katana 26x33 #22 (26x33)
+  rating:             10.0  (raw=12.13)
+  size_tax:           1.462
+  revisit_density:    3.000
+  yield_friction:     0.564
+  narrowness:         0.804
+  requires_branching: false
+
+Katana 33x27 #23 (33x27)
+  rating:             10.0  (raw=11.17)
+  size_tax:           1.470
+  revisit_density:    2.700
+  yield_friction:     0.536
+  narrowness:         0.720
+  requires_branching: false
+
+Katana 32x29 #24 (32x29)
+  rating:             10.0  (raw=9.91)
+  size_tax:           1.479
+  revisit_density:    2.082
+  yield_friction:     0.495
+  narrowness:         0.763
+  requires_branching: false
+
+Katana 30x31 #25 (30x31)
+  rating:             10.0  (raw=12.29)
+  size_tax:           1.479
+  revisit_density:    3.230
+  yield_friction:     0.571
+  narrowness:         0.689
+  requires_branching: false
+
+Katana 34x28 #26 (34x28)
+  rating:             10.0  (raw=9.53)
+  size_tax:           1.484
+  revisit_density:    2.145
+  yield_friction:     0.500
+  narrowness:         0.585
+  requires_branching: false
+
+Katana 29x33 #27 (29x33)
+  rating:             9.4  (raw=8.36)
+  size_tax:           1.485
+  revisit_density:    1.694
+  yield_friction:     0.418
+  narrowness:         0.604
+  requires_branching: false
+
+Katana 29x33 #28 (29x33)
+  rating:             10.0  (raw=10.14)
+  size_tax:           1.485
+  revisit_density:    2.435
+  yield_friction:     0.528
+  narrowness:         0.556
+  requires_branching: false
+
+Katana 32x30 #29 (32x30)
+  rating:             10.0  (raw=12.32)
+  size_tax:           1.486
+  revisit_density:    3.032
+  yield_friction:     0.615
+  narrowness:         0.771
+  requires_branching: false
+
+Katana 34x29 #30 (34x29)
+  rating:             10.0  (raw=9.34)
+  size_tax:           1.492
+  revisit_density:    2.063
+  yield_friction:     0.462
+  narrowness:         0.623
+  requires_branching: false
+
+Katana 31x32 #31 (31x32)
+  rating:             10.0  (raw=11.46)
+  size_tax:           1.493
+  revisit_density:    2.937
+  yield_friction:     0.569
+  narrowness:         0.604
+  requires_branching: false
+
+Katana 33x31 #32 (33x31)
+  rating:             10.0  (raw=13.07)
+  size_tax:           1.500
+  revisit_density:    3.391
+  yield_friction:     0.600
+  narrowness:         0.796
+  requires_branching: false
+
+Katana 31x33 #33 (31x33)
+  rating:             10.0  (raw=10.01)
+  size_tax:           1.500
+  revisit_density:    2.156
+  yield_friction:     0.515
+  narrowness:         0.712
+  requires_branching: false
+
+Katana 31x33 #34 (31x33)
+  rating:             10.0  (raw=9.40)
+  size_tax:           1.500
+  revisit_density:    2.016
+  yield_friction:     0.473
+  narrowness:         0.659
+  requires_branching: false
+
+Katana 32x33 #35 (32x33)
+  rating:             10.0  (raw=11.18)
+  size_tax:           1.507
+  revisit_density:    2.738
+  yield_friction:     0.544
+  narrowness:         0.672
+  requires_branching: false
+
+Katana 33x33 #36 (33x33)
+  rating:             10.0  (raw=9.24)
+  size_tax:           1.513
+  revisit_density:    2.000
+  yield_friction:     0.488
+  narrowness:         0.593
+  requires_branching: false
+
+-- 36 puzzle(s): min=8.0 mean=9.78 max=10.0 at_ceiling=29/36  (raw mean=10.48 raw max=16.30)
+-- histogram: (0-1]:0 (1-2]:0 (2-3]:0 (3-4]:0 (4-5]:0 (5-6]:0 (6-7]:0 (7-8]:1 (8-9]:3 (9-10]:32 
+
+=== puzzles/Katana/Golden_Mean_Part_3__17-34__Author__belko61_.txt ===
+Katana 22x20 #1 (22x20)
+  rating:             7.7  (raw=6.71)
+  size_tax:           1.317
+  revisit_density:    1.071
+  yield_friction:     0.342
+  narrowness:         0.627
+  requires_branching: false
+
+Katana 21x21 #2 (21x21)
+  rating:             8.0  (raw=6.98)
+  size_tax:           1.318
+  revisit_density:    1.214
+  yield_friction:     0.365
+  narrowness:         0.593
+  requires_branching: false
+
+Katana 18x27 #3 (18x27)
+  rating:             10.0  (raw=9.02)
+  size_tax:           1.339
+  revisit_density:    1.933
+  yield_friction:     0.502
+  narrowness:         0.604
+  requires_branching: false
+
+Katana 22x24 #4 (22x24)
+  rating:             10.0  (raw=11.83)
+  size_tax:           1.357
+  revisit_density:    2.826
+  yield_friction:     0.610
+  narrowness:         0.794
+  requires_branching: false
+
+Katana 23x25 #5 (23x25)
+  rating:             7.0  (raw=6.04)
+  size_tax:           1.375
+  revisit_density:    0.938
+  yield_friction:     0.349
+  narrowness:         0.465
+  requires_branching: false
+
+Katana 34x17 #6 (34x17)
+  rating:             6.9  (raw=5.91)
+  size_tax:           1.376
+  revisit_density:    0.824
+  yield_friction:     0.297
+  narrowness:         0.566
+  requires_branching: false
+
+Katana 34x17 #7 (34x17)
+  rating:             7.0  (raw=6.02)
+  size_tax:           1.376
+  revisit_density:    0.922
+  yield_friction:     0.277
+  narrowness:         0.565
+  requires_branching: false
+
+Katana 18x33 #8 (18x33)
+  rating:             10.0  (raw=10.11)
+  size_tax:           1.382
+  revisit_density:    2.255
+  yield_friction:     0.523
+  narrowness:         0.708
+  requires_branching: false
+
+Katana 33x20 #9 (33x20)
+  rating:             10.0  (raw=9.37)
+  size_tax:           1.405
+  revisit_density:    2.000
+  yield_friction:     0.492
+  narrowness:         0.666
+  requires_branching: false
+
+Katana 23x29 #10 (23x29)
+  rating:             9.5  (raw=8.46)
+  size_tax:           1.407
+  revisit_density:    1.673
+  yield_friction:     0.476
+  narrowness:         0.600
+  requires_branching: false
+
+Katana 32x21 #11 (32x21)
+  rating:             10.0  (raw=9.92)
+  size_tax:           1.409
+  revisit_density:    2.245
+  yield_friction:     0.504
+  narrowness:         0.669
+  requires_branching: false
+
+Katana 34x20 #12 (34x20)
+  rating:             10.0  (raw=9.70)
+  size_tax:           1.411
+  revisit_density:    2.056
+  yield_friction:     0.482
+  narrowness:         0.750
+  requires_branching: false
+
+Katana 33x22 #13 (33x22)
+  rating:             10.0  (raw=12.13)
+  size_tax:           1.426
+  revisit_density:    2.927
+  yield_friction:     0.586
+  narrowness:         0.836
+  requires_branching: false
+
+Katana 26x29 #14 (26x29)
+  rating:             10.0  (raw=12.46)
+  size_tax:           1.434
+  revisit_density:    3.091
+  yield_friction:     0.652
+  narrowness:         0.747
+  requires_branching: false
+
+Katana 33x23 #15 (33x23)
+  rating:             8.4  (raw=7.38)
+  size_tax:           1.435
+  revisit_density:    1.321
+  yield_friction:     0.399
+  narrowness:         0.570
+  requires_branching: false
+
+Katana 23x33 #16 (23x33)
+  rating:             10.0  (raw=9.92)
+  size_tax:           1.435
+  revisit_density:    2.036
+  yield_friction:     0.504
+  narrowness:         0.799
+  requires_branching: false
+
+Katana 25x34 #17 (25x34)
+  rating:             7.7  (raw=6.73)
+  size_tax:           1.460
+  revisit_density:    1.237
+  yield_friction:     0.340
+  narrowness:         0.477
+  requires_branching: false
+
+Katana 32x27 #18 (32x27)
+  rating:             10.0  (raw=10.03)
+  size_tax:           1.463
+  revisit_density:    2.322
+  yield_friction:     0.483
+  narrowness:         0.662
+  requires_branching: false
+
+Katana 30x29 #19 (30x29)
+  rating:             10.0  (raw=11.78)
+  size_tax:           1.465
+  revisit_density:    2.983
+  yield_friction:     0.586
+  narrowness:         0.667
+  requires_branching: false
+
+Katana 28x32 #20 (28x32)
+  rating:             10.0  (raw=13.31)
+  size_tax:           1.471
+  revisit_density:    3.350
+  yield_friction:     0.634
+  narrowness:         0.868
+  requires_branching: false
+
+Katana 31x30 #21 (31x30)
+  rating:             10.0  (raw=14.52)
+  size_tax:           1.479
+  revisit_density:    3.951
+  yield_friction:     0.650
+  narrowness:         0.846
+  requires_branching: false
+
+Katana 34x28 #22 (34x28)
+  rating:             10.0  (raw=10.89)
+  size_tax:           1.484
+  revisit_density:    2.597
+  yield_friction:     0.545
+  narrowness:         0.679
+  requires_branching: false
+
+Katana 29x33 #23 (29x33)
+  rating:             10.0  (raw=10.89)
+  size_tax:           1.485
+  revisit_density:    2.500
+  yield_friction:     0.513
+  narrowness:         0.785
+  requires_branching: false
+
+Katana 30x32 #24 (30x32)
+  rating:             10.0  (raw=11.83)
+  size_tax:           1.486
+  revisit_density:    2.903
+  yield_friction:     0.573
+  narrowness:         0.747
+  requires_branching: false
+
+Katana 31x31 #25 (31x31)
+  rating:             10.0  (raw=10.51)
+  size_tax:           1.486
+  revisit_density:    2.452
+  yield_friction:     0.540
+  narrowness:         0.654
+  requires_branching: false
+
+Katana 33x30 #26 (33x30)
+  rating:             9.2  (raw=8.24)
+  size_tax:           1.493
+  revisit_density:    1.762
+  yield_friction:     0.428
+  narrowness:         0.505
+  requires_branching: false
+
+Katana 34x30 #27 (34x30)
+  rating:             10.0  (raw=9.17)
+  size_tax:           1.499
+  revisit_density:    1.984
+  yield_friction:     0.500
+  narrowness:         0.566
+  requires_branching: false
+
+Katana 34x30 #28 (34x30)
+  rating:             10.0  (raw=15.55)
+  size_tax:           1.499
+  revisit_density:    4.406
+  yield_friction:     0.670
+  narrowness:         0.852
+  requires_branching: false
+
+Katana 34x30 #29 (34x30)
+  rating:             8.4  (raw=7.44)
+  size_tax:           1.499
+  revisit_density:    1.422
+  yield_friction:     0.363
+  narrowness:         0.548
+  requires_branching: false
+
+Katana 34x30 #30 (34x30)
+  rating:             7.8  (raw=6.79)
+  size_tax:           1.499
+  revisit_density:    1.172
+  yield_friction:     0.344
+  narrowness:         0.524
+  requires_branching: false
+
+Katana 31x33 #31 (31x33)
+  rating:             10.0  (raw=14.57)
+  size_tax:           1.500
+  revisit_density:    4.109
+  yield_friction:     0.654
+  narrowness:         0.745
+  requires_branching: false
+
+Katana 33x31 #32 (33x31)
+  rating:             10.0  (raw=9.45)
+  size_tax:           1.500
+  revisit_density:    2.031
+  yield_friction:     0.497
+  narrowness:         0.633
+  requires_branching: false
+
+Katana 31x33 #33 (31x33)
+  rating:             8.7  (raw=7.74)
+  size_tax:           1.500
+  revisit_density:    1.297
+  yield_friction:     0.356
+  narrowness:         0.739
+  requires_branching: false
+
+Katana 31x34 #34 (31x34)
+  rating:             10.0  (raw=9.22)
+  size_tax:           1.506
+  revisit_density:    1.923
+  yield_friction:     0.490
+  narrowness:         0.634
+  requires_branching: false
+
+Katana 34x32 #35 (34x32)
+  rating:             10.0  (raw=10.15)
+  size_tax:           1.513
+  revisit_density:    2.333
+  yield_friction:     0.535
+  narrowness:         0.612
+  requires_branching: false
+
+-- 35 puzzle(s): min=6.9 mean=9.32 max=10.0 at_ceiling=23/35  (raw mean=9.74 raw max=15.55)
+-- histogram: (0-1]:0 (1-2]:0 (2-3]:0 (3-4]:0 (4-5]:0 (5-6]:0 (6-7]:3 (7-8]:4 (8-9]:3 (9-10]:25 
+
+=== puzzles/Katana/Golden_Mean__11-34__Author__belko61_.txt ===
+Katana 30x11 #1 (30x11)
+  rating:             8.6  (raw=7.61)
+  size_tax:           1.255
+  revisit_density:    1.220
+  yield_friction:     0.442
+  narrowness:         0.715
+  requires_branching: false
+
+Katana 21x17 #2 (21x17)
+  rating:             9.9  (raw=8.90)
+  size_tax:           1.272
+  revisit_density:    1.947
+  yield_friction:     0.481
+  narrowness:         0.603
+  requires_branching: false
+
+Katana 17x23 #3 (17x23)
+  rating:             10.0  (raw=9.95)
+  size_tax:           1.292
+  revisit_density:    2.275
+  yield_friction:     0.539
+  narrowness:         0.652
+  requires_branching: false
+
+Katana 25x20 #4 (25x20)
+  rating:             9.6  (raw=8.63)
+  size_tax:           1.345
+  revisit_density:    1.778
+  yield_friction:     0.459
+  narrowness:         0.633
+  requires_branching: false
+
+Katana 25x20 #5 (25x20)
+  rating:             10.0  (raw=10.55)
+  size_tax:           1.345
+  revisit_density:    2.311
+  yield_friction:     0.569
+  narrowness:         0.768
+  requires_branching: false
+
+Katana 20x25 #6 (20x25)
+  rating:             10.0  (raw=11.07)
+  size_tax:           1.345
+  revisit_density:    2.511
+  yield_friction:     0.571
+  narrowness:         0.807
+  requires_branching: false
+
+Katana 18x29 #7 (18x29)
+  rating:             8.9  (raw=7.95)
+  size_tax:           1.354
+  revisit_density:    1.574
+  yield_friction:     0.424
+  narrowness:         0.582
+  requires_branching: false
+
+Katana 16x33 #8 (16x33)
+  rating:             9.6  (raw=8.62)
+  size_tax:           1.357
+  revisit_density:    1.714
+  yield_friction:     0.493
+  narrowness:         0.622
+  requires_branching: false
+
+Katana 20x30 #9 (20x30)
+  rating:             10.0  (raw=9.77)
+  size_tax:           1.384
+  revisit_density:    2.040
+  yield_friction:     0.502
+  narrowness:         0.767
+  requires_branching: false
+
+Katana 32x19 #10 (32x19)
+  rating:             7.7  (raw=6.68)
+  size_tax:           1.387
+  revisit_density:    1.098
+  yield_friction:     0.317
+  narrowness:         0.609
+  requires_branching: false
+
+Katana 25x25 #11 (25x25)
+  rating:             10.0  (raw=11.21)
+  size_tax:           1.393
+  revisit_density:    2.760
+  yield_friction:     0.580
+  narrowness:         0.659
+  requires_branching: false
+
+Katana 27x25 #12 (27x25)
+  rating:             10.0  (raw=11.15)
+  size_tax:           1.410
+  revisit_density:    2.519
+  yield_friction:     0.558
+  narrowness:         0.822
+  requires_branching: false
+
+Katana 25x27 #13 (25x27)
+  rating:             6.3  (raw=5.34)
+  size_tax:           1.410
+  revisit_density:    0.654
+  yield_friction:     0.272
+  narrowness:         0.511
+  requires_branching: false
+
+Katana 23x30 #14 (23x30)
+  rating:             10.0  (raw=13.59)
+  size_tax:           1.415
+  revisit_density:    3.623
+  yield_friction:     0.628
+  narrowness:         0.806
+  requires_branching: false
+
+Katana 25x28 #15 (25x28)
+  rating:             10.0  (raw=11.00)
+  size_tax:           1.418
+  revisit_density:    2.585
+  yield_friction:     0.558
+  narrowness:         0.728
+  requires_branching: false
+
+Katana 27x26 #16 (27x26)
+  rating:             10.0  (raw=9.05)
+  size_tax:           1.418
+  revisit_density:    1.717
+  yield_friction:     0.519
+  narrowness:         0.708
+  requires_branching: false
+
+Katana 31x23 #17 (31x23)
+  rating:             10.0  (raw=9.41)
+  size_tax:           1.422
+  revisit_density:    1.981
+  yield_friction:     0.469
+  narrowness:         0.716
+  requires_branching: false
+
+Katana 22x34 #18 (22x34)
+  rating:             9.0  (raw=8.03)
+  size_tax:           1.432
+  revisit_density:    1.536
+  yield_friction:     0.434
+  narrowness:         0.596
+  requires_branching: false
+
+Katana 25x30 #19 (25x30)
+  rating:             10.0  (raw=10.92)
+  size_tax:           1.433
+  revisit_density:    2.436
+  yield_friction:     0.558
+  narrowness:         0.794
+  requires_branching: false
+
+Katana 30x25 #20 (30x25)
+  rating:             10.0  (raw=9.64)
+  size_tax:           1.433
+  revisit_density:    2.145
+  yield_friction:     0.510
+  narrowness:         0.624
+  requires_branching: false
+
+Katana 28x27 #21 (28x27)
+  rating:             10.0  (raw=11.26)
+  size_tax:           1.434
+  revisit_density:    2.800
+  yield_friction:     0.602
+  narrowness:         0.605
+  requires_branching: false
+
+Katana 25x31 #22 (25x31)
+  rating:             10.0  (raw=9.40)
+  size_tax:           1.440
+  revisit_density:    2.054
+  yield_friction:     0.522
+  narrowness:         0.587
+  requires_branching: false
+
+Katana 26x30 #23 (26x30)
+  rating:             10.0  (raw=14.30)
+  size_tax:           1.441
+  revisit_density:    3.893
+  yield_friction:     0.633
+  narrowness:         0.847
+  requires_branching: false
+
+Katana 27x30 #24 (27x30)
+  rating:             9.0  (raw=8.00)
+  size_tax:           1.449
+  revisit_density:    1.526
+  yield_friction:     0.449
+  narrowness:         0.566
+  requires_branching: false
+
+Katana 24x34 #25 (24x34)
+  rating:             9.0  (raw=7.98)
+  size_tax:           1.451
+  revisit_density:    1.621
+  yield_friction:     0.425
+  narrowness:         0.530
+  requires_branching: false
+
+Katana 25x33 #26 (25x33)
+  rating:             10.0  (raw=9.42)
+  size_tax:           1.453
+  revisit_density:    1.948
+  yield_friction:     0.522
+  narrowness:         0.660
+  requires_branching: false
+
+Katana 32x26 #27 (32x26)
+  rating:             10.0  (raw=11.37)
+  size_tax:           1.455
+  revisit_density:    2.776
+  yield_friction:     0.558
+  narrowness:         0.711
+  requires_branching: false
+
+Katana 26x32 #28 (26x32)
+  rating:             10.0  (raw=11.94)
+  size_tax:           1.455
+  revisit_density:    2.897
+  yield_friction:     0.613
+  narrowness:         0.748
+  requires_branching: false
+
+Katana 28x30 #29 (28x30)
+  rating:             9.1  (raw=8.14)
+  size_tax:           1.457
+  revisit_density:    1.552
+  yield_friction:     0.425
+  narrowness:         0.625
+  requires_branching: false
+
+Katana 30x28 #30 (30x28)
+  rating:             10.0  (raw=12.81)
+  size_tax:           1.457
+  revisit_density:    3.276
+  yield_friction:     0.621
+  narrowness:         0.773
+  requires_branching: false
+
+Katana 32x28 #31 (32x28)
+  rating:             9.7  (raw=8.69)
+  size_tax:           1.471
+  revisit_density:    1.750
+  yield_friction:     0.428
+  narrowness:         0.669
+  requires_branching: false
+
+Katana 30x30 #32 (30x30)
+  rating:             10.0  (raw=10.10)
+  size_tax:           1.472
+  revisit_density:    2.333
+  yield_friction:     0.538
+  narrowness:         0.602
+  requires_branching: false
+
+Katana 30x30 #33 (30x30)
+  rating:             8.6  (raw=7.63)
+  size_tax:           1.472
+  revisit_density:    1.433
+  yield_friction:     0.389
+  narrowness:         0.579
+  requires_branching: false
+
+Katana 30x30 #34 (30x30)
+  rating:             9.1  (raw=8.06)
+  size_tax:           1.472
+  revisit_density:    1.467
+  yield_friction:     0.410
+  narrowness:         0.671
+  requires_branching: false
+
+Katana 28x33 #35 (28x33)
+  rating:             10.0  (raw=10.11)
+  size_tax:           1.478
+  revisit_density:    2.377
+  yield_friction:     0.498
+  narrowness:         0.629
+  requires_branching: false
+
+-- 35 puzzle(s): min=6.3 mean=9.55 max=10.0 at_ceiling=21/35  (raw mean=9.66 raw max=14.30)
+-- histogram: (0-1]:0 (1-2]:0 (2-3]:0 (3-4]:0 (4-5]:0 (5-6]:0 (6-7]:1 (7-8]:1 (8-9]:6 (9-10]:27 
+
+=== puzzles/Katana/Miniatures_Part_1__10-22__Author__belko61_.txt ===
+Katana 12x12 #1 (12x12)
+  rating:             7.5  (raw=6.51)
+  size_tax:           1.075
+  revisit_density:    1.083
+  yield_friction:     0.382
+  narrowness:         0.580
+  requires_branching: false
+
+Katana 16x10 #2 (16x10)
+  rating:             6.6  (raw=5.57)
+  size_tax:           1.098
+  revisit_density:    0.538
+  yield_friction:     0.334
+  narrowness:         0.687
+  requires_branching: false
+
+Katana 14x14 #3 (14x14)
+  rating:             5.5  (raw=4.47)
+  size_tax:           1.142
+  revisit_density:    0.536
+  yield_friction:     0.244
+  narrowness:         0.428
+  requires_branching: false
+
+Katana 14x14 #4 (14x14)
+  rating:             7.5  (raw=6.53)
+  size_tax:           1.142
+  revisit_density:    0.929
+  yield_friction:     0.335
+  narrowness:         0.732
+  requires_branching: false
+
+Katana 20x10 #5 (20x10)
+  rating:             7.0  (raw=6.05)
+  size_tax:           1.147
+  revisit_density:    0.867
+  yield_friction:     0.331
+  narrowness:         0.615
+  requires_branching: false
+
+Katana 17x12 #6 (17x12)
+  rating:             5.9  (raw=4.85)
+  size_tax:           1.151
+  revisit_density:    0.586
+  yield_friction:     0.266
+  narrowness:         0.488
+  requires_branching: false
+
+Katana 13x16 #7 (13x16)
+  rating:             9.8  (raw=8.76)
+  size_tax:           1.155
+  revisit_density:    1.690
+  yield_friction:     0.494
+  narrowness:         0.750
+  requires_branching: false
+
+Katana 14x15 #8 (14x15)
+  rating:             3.8  (raw=2.82)
+  size_tax:           1.157
+  revisit_density:    0.000
+  yield_friction:     0.121
+  narrowness:         0.393
+  requires_branching: false
+
+Katana 11x20 #9 (11x20)
+  rating:             5.8  (raw=4.79)
+  size_tax:           1.167
+  revisit_density:    0.452
+  yield_friction:     0.284
+  narrowness:         0.527
+  requires_branching: false
+
+Katana 16x14 #10 (16x14)
+  rating:             8.2  (raw=7.24)
+  size_tax:           1.171
+  revisit_density:    1.167
+  yield_friction:     0.392
+  narrowness:         0.721
+  requires_branching: false
+
+Katana 14x16 #11 (14x16)
+  rating:             10.0  (raw=10.29)
+  size_tax:           1.171
+  revisit_density:    2.133
+  yield_friction:     0.566
+  narrowness:         0.861
+  requires_branching: false
+
+Katana 15x15 #12 (15x15)
+  rating:             9.9  (raw=8.90)
+  size_tax:           1.172
+  revisit_density:    1.833
+  yield_friction:     0.512
+  narrowness:         0.670
+  requires_branching: false
+
+Katana 15x15 #13 (15x15)
+  rating:             6.5  (raw=5.46)
+  size_tax:           1.172
+  revisit_density:    0.600
+  yield_friction:     0.334
+  narrowness:         0.584
+  requires_branching: false
+
+Katana 15x15 #14 (15x15)
+  rating:             6.7  (raw=5.66)
+  size_tax:           1.172
+  revisit_density:    0.867
+  yield_friction:     0.324
+  narrowness:         0.486
+  requires_branching: false
+
+Katana 17x14 #15 (17x14)
+  rating:             8.9  (raw=7.93)
+  size_tax:           1.184
+  revisit_density:    1.323
+  yield_friction:     0.445
+  narrowness:         0.774
+  requires_branching: false
+
+Katana 16x15 #16 (16x15)
+  rating:             8.4  (raw=7.42)
+  size_tax:           1.186
+  revisit_density:    1.290
+  yield_friction:     0.388
+  narrowness:         0.700
+  requires_branching: false
+
+Katana 19x13 #17 (19x13)
+  rating:             7.8  (raw=6.77)
+  size_tax:           1.192
+  revisit_density:    1.062
+  yield_friction:     0.393
+  narrowness:         0.628
+  requires_branching: false
+
+Katana 15x17 #18 (15x17)
+  rating:             7.8  (raw=6.76)
+  size_tax:           1.199
+  revisit_density:    1.312
+  yield_friction:     0.377
+  narrowness:         0.477
+  requires_branching: false
+
+Katana 17x15 #19 (17x15)
+  rating:             8.9  (raw=7.95)
+  size_tax:           1.199
+  revisit_density:    1.375
+  yield_friction:     0.427
+  narrowness:         0.764
+  requires_branching: false
+
+Katana 15x17 #20 (15x17)
+  rating:             6.7  (raw=5.68)
+  size_tax:           1.199
+  revisit_density:    0.844
+  yield_friction:     0.304
+  narrowness:         0.524
+  requires_branching: false
+
+Katana 17x15 #21 (17x15)
+  rating:             7.3  (raw=6.31)
+  size_tax:           1.199
+  revisit_density:    0.812
+  yield_friction:     0.376
+  narrowness:         0.661
+  requires_branching: false
+
+Katana 17x15 #22 (17x15)
+  rating:             6.8  (raw=5.77)
+  size_tax:           1.199
+  revisit_density:    0.875
+  yield_friction:     0.313
+  narrowness:         0.523
+  requires_branching: false
+
+Katana 13x20 #23 (13x20)
+  rating:             5.4  (raw=4.35)
+  size_tax:           1.203
+  revisit_density:    0.424
+  yield_friction:     0.252
+  narrowness:         0.432
+  requires_branching: false
+
+Katana 13x20 #24 (13x20)
+  rating:             6.9  (raw=5.91)
+  size_tax:           1.203
+  revisit_density:    0.939
+  yield_friction:     0.337
+  narrowness:         0.495
+  requires_branching: false
+
+Katana 22x12 #25 (22x12)
+  rating:             6.1  (raw=5.15)
+  size_tax:           1.207
+  revisit_density:    0.618
+  yield_friction:     0.259
+  narrowness:         0.557
+  requires_branching: false
+
+Katana 19x14 #26 (19x14)
+  rating:             5.6  (raw=4.57)
+  size_tax:           1.208
+  revisit_density:    0.455
+  yield_friction:     0.247
+  narrowness:         0.490
+  requires_branching: false
+
+Katana 18x15 #27 (18x15)
+  rating:             9.7  (raw=8.73)
+  size_tax:           1.212
+  revisit_density:    1.636
+  yield_friction:     0.454
+  narrowness:         0.810
+  requires_branching: false
+
+Katana 17x16 #28 (17x16)
+  rating:             6.9  (raw=5.87)
+  size_tax:           1.213
+  revisit_density:    1.000
+  yield_friction:     0.352
+  narrowness:         0.417
+  requires_branching: false
+
+Katana 20x14 #29 (20x14)
+  rating:             7.5  (raw=6.52)
+  size_tax:           1.219
+  revisit_density:    1.029
+  yield_friction:     0.357
+  narrowness:         0.604
+  requires_branching: false
+
+Katana 14x20 #30 (14x20)
+  rating:             7.4  (raw=6.36)
+  size_tax:           1.219
+  revisit_density:    0.941
+  yield_friction:     0.353
+  narrowness:         0.616
+  requires_branching: false
+
+Katana 14x20 #31 (14x20)
+  rating:             6.6  (raw=5.61)
+  size_tax:           1.219
+  revisit_density:    0.824
+  yield_friction:     0.296
+  narrowness:         0.520
+  requires_branching: false
+
+Katana 20x14 #32 (20x14)
+  rating:             7.2  (raw=6.22)
+  size_tax:           1.219
+  revisit_density:    0.824
+  yield_friction:     0.351
+  narrowness:         0.650
+  requires_branching: false
+
+Katana 11x20 #33 (11x20)
+  rating:             8.0  (raw=6.98)
+  size_tax:           1.167
+  revisit_density:    0.226
+  yield_friction:     0.691
+  narrowness:         0.867
+  requires_branching: true
+
+-- 33 puzzle(s): min=3.8 mean=7.29 max=10.0 at_ceiling=1/33  (raw mean=6.33 raw max=10.29)
+-- histogram: (0-1]:0 (1-2]:0 (2-3]:0 (3-4]:1 (4-5]:0 (5-6]:5 (6-7]:10 (7-8]:9 (8-9]:4 (9-10]:4 
+
+=== puzzles/Katana/Miniatures_Part_2__13-23__Author__belko61_.txt ===
+Katana 19x15 #1 (19x15)
+  rating:             8.5  (raw=7.47)
+  size_tax:           1.223
+  revisit_density:    1.324
+  yield_friction:     0.456
+  narrowness:         0.591
+  requires_branching: false
+
+Katana 15x19 #2 (15x19)
+  rating:             7.4  (raw=6.37)
+  size_tax:           1.223
+  revisit_density:    0.971
+  yield_friction:     0.347
+  narrowness:         0.607
+  requires_branching: false
+
+Katana 13x22 #3 (13x22)
+  rating:             10.0  (raw=9.16)
+  size_tax:           1.224
+  revisit_density:    1.971
+  yield_friction:     0.526
+  narrowness:         0.631
+  requires_branching: false
+
+Katana 13x22 #4 (13x22)
+  rating:             6.3  (raw=5.32)
+  size_tax:           1.224
+  revisit_density:    0.800
+  yield_friction:     0.266
+  narrowness:         0.477
+  requires_branching: false
+
+Katana 18x16 #5 (18x16)
+  rating:             9.7  (raw=8.68)
+  size_tax:           1.225
+  revisit_density:    1.647
+  yield_friction:     0.472
+  narrowness:         0.758
+  requires_branching: false
+
+Katana 16x18 #6 (16x18)
+  rating:             9.0  (raw=7.96)
+  size_tax:           1.225
+  revisit_density:    1.500
+  yield_friction:     0.418
+  narrowness:         0.688
+  requires_branching: false
+
+Katana 18x16 #7 (18x16)
+  rating:             10.0  (raw=9.19)
+  size_tax:           1.225
+  revisit_density:    1.882
+  yield_friction:     0.500
+  narrowness:         0.733
+  requires_branching: false
+
+Katana 16x18 #8 (16x18)
+  rating:             9.1  (raw=8.10)
+  size_tax:           1.225
+  revisit_density:    1.471
+  yield_friction:     0.453
+  narrowness:         0.706
+  requires_branching: false
+
+Katana 17x17 #9 (17x17)
+  rating:             10.0  (raw=10.69)
+  size_tax:           1.226
+  revisit_density:    2.353
+  yield_friction:     0.568
+  narrowness:         0.827
+  requires_branching: false
+
+Katana 17x17 #10 (17x17)
+  rating:             10.0  (raw=10.08)
+  size_tax:           1.226
+  revisit_density:    2.206
+  yield_friction:     0.526
+  narrowness:         0.780
+  requires_branching: false
+
+Katana 21x14 #11 (21x14)
+  rating:             6.1  (raw=5.14)
+  size_tax:           1.230
+  revisit_density:    0.629
+  yield_friction:     0.266
+  narrowness:         0.528
+  requires_branching: false
+
+Katana 23x13 #12 (23x13)
+  rating:             9.6  (raw=8.60)
+  size_tax:           1.234
+  revisit_density:    1.611
+  yield_friction:     0.467
+  narrowness:         0.760
+  requires_branching: false
+
+Katana 20x15 #13 (20x15)
+  rating:             7.6  (raw=6.58)
+  size_tax:           1.234
+  revisit_density:    1.057
+  yield_friction:     0.391
+  narrowness:         0.557
+  requires_branching: false
+
+Katana 20x15 #14 (20x15)
+  rating:             9.5  (raw=8.54)
+  size_tax:           1.234
+  revisit_density:    1.571
+  yield_friction:     0.471
+  narrowness:         0.758
+  requires_branching: false
+
+Katana 15x20 #15 (15x20)
+  rating:             7.7  (raw=6.65)
+  size_tax:           1.234
+  revisit_density:    1.114
+  yield_friction:     0.386
+  narrowness:         0.549
+  requires_branching: false
+
+Katana 15x20 #16 (15x20)
+  rating:             6.9  (raw=5.85)
+  size_tax:           1.234
+  revisit_density:    0.743
+  yield_friction:     0.362
+  narrowness:         0.563
+  requires_branching: false
+
+Katana 15x20 #17 (15x20)
+  rating:             10.0  (raw=10.40)
+  size_tax:           1.234
+  revisit_density:    2.343
+  yield_friction:     0.561
+  narrowness:         0.744
+  requires_branching: false
+
+Katana 15x20 #18 (15x20)
+  rating:             6.8  (raw=5.82)
+  size_tax:           1.234
+  revisit_density:    0.686
+  yield_friction:     0.316
+  narrowness:         0.650
+  requires_branching: false
+
+Katana 15x20 #19 (15x20)
+  rating:             8.3  (raw=7.30)
+  size_tax:           1.234
+  revisit_density:    1.257
+  yield_friction:     0.424
+  narrowness:         0.619
+  requires_branching: false
+
+Katana 15x20 #20 (15x20)
+  rating:             5.4  (raw=4.41)
+  size_tax:           1.234
+  revisit_density:    0.486
+  yield_friction:     0.261
+  narrowness:         0.386
+  requires_branching: false
+
+Katana 15x20 #21 (15x20)
+  rating:             6.2  (raw=5.18)
+  size_tax:           1.234
+  revisit_density:    0.686
+  yield_friction:     0.269
+  narrowness:         0.499
+  requires_branching: false
+
+Katana 20x15 #22 (20x15)
+  rating:             9.2  (raw=8.19)
+  size_tax:           1.234
+  revisit_density:    1.629
+  yield_friction:     0.467
+  narrowness:         0.609
+  requires_branching: false
+
+Katana 15x20 #23 (15x20)
+  rating:             6.6  (raw=5.55)
+  size_tax:           1.234
+  revisit_density:    0.629
+  yield_friction:     0.265
+  narrowness:         0.667
+  requires_branching: false
+
+Katana 15x20 #24 (15x20)
+  rating:             5.5  (raw=4.47)
+  size_tax:           1.234
+  revisit_density:    0.200
+  yield_friction:     0.251
+  narrowness:         0.611
+  requires_branching: false
+
+Katana 15x20 #25 (15x20)
+  rating:             9.9  (raw=8.91)
+  size_tax:           1.234
+  revisit_density:    1.943
+  yield_friction:     0.454
+  narrowness:         0.659
+  requires_branching: false
+
+Katana 15x20 #26 (15x20)
+  rating:             10.0  (raw=9.34)
+  size_tax:           1.234
+  revisit_density:    1.857
+  yield_friction:     0.530
+  narrowness:         0.755
+  requires_branching: false
+
+Katana 15x20 #27 (15x20)
+  rating:             5.5  (raw=4.49)
+  size_tax:           1.234
+  revisit_density:    0.486
+  yield_friction:     0.236
+  narrowness:         0.447
+  requires_branching: false
+
+Katana 15x20 #28 (15x20)
+  rating:             9.8  (raw=8.82)
+  size_tax:           1.234
+  revisit_density:    1.829
+  yield_friction:     0.503
+  narrowness:         0.638
+  requires_branching: false
+
+Katana 20x15 #29 (20x15)
+  rating:             10.0  (raw=10.57)
+  size_tax:           1.234
+  revisit_density:    2.314
+  yield_friction:     0.547
+  narrowness:         0.841
+  requires_branching: false
+
+Katana 15x20 #30 (15x20)
+  rating:             7.8  (raw=6.76)
+  size_tax:           1.234
+  revisit_density:    1.057
+  yield_friction:     0.405
+  narrowness:         0.597
+  requires_branching: false
+
+Katana 17x17 #31 (17x17)
+  rating:             9.5  (raw=8.51)
+  size_tax:           1.226
+  revisit_density:    1.324
+  yield_friction:     0.565
+  narrowness:         0.795
+  requires_branching: true
+
+Katana 20x20 #32 (20x20)
+  rating:             8.4  (raw=7.41)
+  size_tax:           1.297
+  revisit_density:    0.000
+  yield_friction:     0.817
+  narrowness:         0.949
+  requires_branching: true
+
+-- 32 puzzle(s): min=5.4 mean=8.32 max=10.0 at_ceiling=7/32  (raw mean=7.52 raw max=10.69)
+-- histogram: (0-1]:0 (1-2]:0 (2-3]:0 (3-4]:0 (4-5]:0 (5-6]:3 (6-7]:6 (7-8]:4 (8-9]:4 (9-10]:15 
+
+=== puzzles/Katana/Miniatures_Part_3__14-25__Author__belko61_.txt ===
+Katana 15x20 #1 (15x20)
+  rating:             7.8  (raw=6.79)
+  size_tax:           1.234
+  revisit_density:    0.914
+  yield_friction:     0.396
+  narrowness:         0.713
+  requires_branching: false
+
+Katana 15x20 #2 (15x20)
+  rating:             6.2  (raw=5.20)
+  size_tax:           1.234
+  revisit_density:    0.714
+  yield_friction:     0.326
+  narrowness:         0.412
+  requires_branching: false
+
+Katana 20x15 #3 (20x15)
+  rating:             8.8  (raw=7.78)
+  size_tax:           1.234
+  revisit_density:    1.543
+  yield_friction:     0.411
+  narrowness:         0.606
+  requires_branching: false
+
+Katana 19x16 #4 (19x16)
+  rating:             9.3  (raw=8.34)
+  size_tax:           1.237
+  revisit_density:    1.571
+  yield_friction:     0.470
+  narrowness:         0.693
+  requires_branching: false
+
+Katana 19x16 #5 (19x16)
+  rating:             10.0  (raw=10.24)
+  size_tax:           1.237
+  revisit_density:    2.486
+  yield_friction:     0.541
+  narrowness:         0.621
+  requires_branching: false
+
+Katana 19x16 #6 (19x16)
+  rating:             9.5  (raw=8.49)
+  size_tax:           1.237
+  revisit_density:    1.686
+  yield_friction:     0.508
+  narrowness:         0.616
+  requires_branching: false
+
+Katana 16x19 #7 (16x19)
+  rating:             8.7  (raw=7.71)
+  size_tax:           1.237
+  revisit_density:    1.457
+  yield_friction:     0.421
+  narrowness:         0.624
+  requires_branching: false
+
+Katana 19x16 #8 (19x16)
+  rating:             6.6  (raw=5.59)
+  size_tax:           1.237
+  revisit_density:    0.600
+  yield_friction:     0.313
+  narrowness:         0.634
+  requires_branching: false
+
+Katana 19x16 #9 (19x16)
+  rating:             10.0  (raw=9.94)
+  size_tax:           1.237
+  revisit_density:    2.257
+  yield_friction:     0.540
+  narrowness:         0.677
+  requires_branching: false
+
+Katana 18x17 #10 (18x17)
+  rating:             8.3  (raw=7.33)
+  size_tax:           1.239
+  revisit_density:    1.429
+  yield_friction:     0.429
+  narrowness:         0.505
+  requires_branching: false
+
+Katana 17x18 #11 (17x18)
+  rating:             6.2  (raw=5.17)
+  size_tax:           1.239
+  revisit_density:    0.800
+  yield_friction:     0.349
+  narrowness:         0.311
+  requires_branching: false
+
+Katana 22x14 #12 (22x14)
+  rating:             8.2  (raw=7.20)
+  size_tax:           1.240
+  revisit_density:    1.250
+  yield_friction:     0.390
+  narrowness:         0.635
+  requires_branching: false
+
+Katana 21x15 #13 (21x15)
+  rating:             8.7  (raw=7.72)
+  size_tax:           1.245
+  revisit_density:    1.500
+  yield_friction:     0.452
+  narrowness:         0.555
+  requires_branching: false
+
+Katana 21x15 #14 (21x15)
+  rating:             8.0  (raw=6.97)
+  size_tax:           1.245
+  revisit_density:    1.194
+  yield_friction:     0.370
+  narrowness:         0.618
+  requires_branching: false
+
+Katana 21x15 #15 (21x15)
+  rating:             8.5  (raw=7.49)
+  size_tax:           1.245
+  revisit_density:    1.222
+  yield_friction:     0.393
+  narrowness:         0.745
+  requires_branching: false
+
+Katana 21x15 #16 (21x15)
+  rating:             7.8  (raw=6.77)
+  size_tax:           1.245
+  revisit_density:    1.167
+  yield_friction:     0.402
+  narrowness:         0.528
+  requires_branching: false
+
+Katana 21x15 #17 (21x15)
+  rating:             9.3  (raw=8.34)
+  size_tax:           1.245
+  revisit_density:    1.528
+  yield_friction:     0.427
+  narrowness:         0.776
+  requires_branching: false
+
+Katana 16x20 #18 (16x20)
+  rating:             8.3  (raw=7.34)
+  size_tax:           1.248
+  revisit_density:    1.361
+  yield_friction:     0.396
+  narrowness:         0.594
+  requires_branching: false
+
+Katana 19x17 #19 (19x17)
+  rating:             7.8  (raw=6.79)
+  size_tax:           1.250
+  revisit_density:    1.194
+  yield_friction:     0.373
+  narrowness:         0.552
+  requires_branching: false
+
+Katana 17x19 #20 (17x19)
+  rating:             10.0  (raw=9.39)
+  size_tax:           1.250
+  revisit_density:    1.944
+  yield_friction:     0.494
+  narrowness:         0.759
+  requires_branching: false
+
+Katana 18x18 #21 (18x18)
+  rating:             6.9  (raw=5.87)
+  size_tax:           1.251
+  revisit_density:    1.000
+  yield_friction:     0.349
+  narrowness:         0.408
+  requires_branching: false
+
+Katana 15x22 #22 (15x22)
+  rating:             10.0  (raw=9.27)
+  size_tax:           1.255
+  revisit_density:    1.811
+  yield_friction:     0.526
+  narrowness:         0.765
+  requires_branching: false
+
+Katana 16x21 #23 (16x21)
+  rating:             9.5  (raw=8.53)
+  size_tax:           1.259
+  revisit_density:    1.703
+  yield_friction:     0.454
+  narrowness:         0.683
+  requires_branching: false
+
+Katana 17x20 #24 (17x20)
+  rating:             7.5  (raw=6.47)
+  size_tax:           1.261
+  revisit_density:    1.108
+  yield_friction:     0.376
+  narrowness:         0.497
+  requires_branching: false
+
+Katana 17x20 #25 (17x20)
+  rating:             6.7  (raw=5.70)
+  size_tax:           1.261
+  revisit_density:    0.649
+  yield_friction:     0.314
+  narrowness:         0.630
+  requires_branching: false
+
+Katana 17x20 #26 (17x20)
+  rating:             10.0  (raw=9.12)
+  size_tax:           1.261
+  revisit_density:    1.973
+  yield_friction:     0.475
+  narrowness:         0.670
+  requires_branching: false
+
+Katana 17x20 #27 (17x20)
+  rating:             10.0  (raw=9.77)
+  size_tax:           1.261
+  revisit_density:    2.216
+  yield_friction:     0.529
+  narrowness:         0.655
+  requires_branching: false
+
+Katana 19x18 #28 (19x18)
+  rating:             10.0  (raw=11.04)
+  size_tax:           1.263
+  revisit_density:    2.649
+  yield_friction:     0.543
+  narrowness:         0.768
+  requires_branching: false
+
+Katana 19x18 #29 (19x18)
+  rating:             10.0  (raw=10.46)
+  size_tax:           1.263
+  revisit_density:    2.405
+  yield_friction:     0.541
+  narrowness:         0.740
+  requires_branching: false
+
+Katana 19x18 #30 (19x18)
+  rating:             10.0  (raw=9.44)
+  size_tax:           1.263
+  revisit_density:    2.054
+  yield_friction:     0.535
+  narrowness:         0.642
+  requires_branching: false
+
+Katana 18x20 #31 (18x20)
+  rating:             10.0  (raw=11.08)
+  size_tax:           1.274
+  revisit_density:    2.605
+  yield_friction:     0.559
+  narrowness:         0.786
+  requires_branching: false
+
+Katana 19x19 #32 (19x19)
+  rating:             6.3  (raw=5.31)
+  size_tax:           1.274
+  revisit_density:    0.684
+  yield_friction:     0.289
+  narrowness:         0.505
+  requires_branching: false
+
+Katana 15x25 #33 (15x25)
+  rating:             5.8  (raw=4.82)
+  size_tax:           1.283
+  revisit_density:    0.600
+  yield_friction:     0.267
+  narrowness:         0.423
+  requires_branching: false
+
+Katana 17x18 #34 (17x18)
+  rating:             2.2  (raw=1.24)
+  size_tax:           1.239
+  revisit_density:    0.000
+  yield_friction:     0.000
+  narrowness:         n/a
+  requires_branching: true
+
+-- 34 puzzle(s): min=2.2 mean=8.32 max=10.0 at_ceiling=10/34  (raw mean=7.61 raw max=11.08)
+-- histogram: (0-1]:0 (1-2]:0 (2-3]:1 (3-4]:0 (4-5]:0 (5-6]:1 (6-7]:6 (7-8]:5 (8-9]:7 (9-10]:14 
+

@@ -8,6 +8,7 @@
 | `nonogram-propagation` | lib | Full per-line hard-logic deduction, no named techniques (category 3; extracted from `nonogram-graph-search`) | **Claude-Propagation** |
 | `nonogram-human-by-ai` | lib | Technique-driven, human-legible constraint propagation solver (category 2; content moved from `nonogram-propagation`) | **unassigned** |
 | `nonogram-graph-search` | lib | Best-first search with MRV heuristic | **Claude-graph** |
+| `nonogram-difficulty` | lib | Puzzle difficulty rating (1.0–10.0) derived from a `nonogram-propagation` solve trace | **Claude-difficulty** |
 | `nonogram-human` | lib | Author-written human-logic solver (AI-free implementation) | **User (human author)** |
 | `nonogram-cli` | bin | CLI entry point; dispatches to any solver | **Claude-CLI** |
 | `nonogram-convert` | bin | Format converter; letter-encoded → native `name\|col/row` | **Claude-Convert** |
@@ -20,6 +21,18 @@ correction: agent identity binds to the *path*, not the content that happens
 to occupy it at a given time — Claude-Propagation stayed the owner of
 `nonogram-propagation` across the swap from category-2 to category-3 content;
 Claude-graph performed the extraction labor but does not own the result.
+
+`nonogram-difficulty` is a "fifth thing, not a solver" per
+`discussions/DifficultyRating.md`: it depends on `nonogram-core` and
+`nonogram-propagation` only (never `nonogram-graph-search` or
+`nonogram-human-by-ai` — a branching-aware or technique-capped trace would
+corrupt what it's trying to measure), and contains no solving logic of its
+own, only interpretation of a propagation trace. Claude-graph scaffolded it
+initially (cheaper than a fresh Claude re-deriving the design discussion from
+scratch) before handing off; Claude-difficulty is its permanent owner. The
+formula/weights are an active, ongoing calibration effort, not a closed
+design — that discussion doc is the authority on current status, not this
+file or the crate's own `CLAUDE.md`.
 
 ## Key Conventions
 

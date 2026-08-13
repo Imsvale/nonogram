@@ -3,6 +3,7 @@ members = [
     "nonogram-core",
     "nonogram-human-by-ai",
     "nonogram-propagation",
+    "nonogram-difficulty",
     "nonogram-graph-search",
     "nonogram-human",
     "nonogram-cli",
