@@ -47,9 +47,55 @@ Holds a puzzle's dimensions and clues: `rows`, `cols`,
 reads them directly for its own MRV loop, rather than this crate exposing a
 parallel accessor API for the same data.
 
-Methods: `propagate` (cascade to fixpoint), `min_completion_count` (MRV
-signal), `is_complete`, `check` (validates a fully-assigned grid against
-clues).
+Methods: `propagate` (cascade to fixpoint), `propagate_with_telemetry`
+(same cascade, plus a per-round forceable-lines survey — see
+`discussions/DifficultyRating.md`), `min_completion_count` (MRV signal),
+`is_complete`, `check` (validates a fully-assigned grid against clues).
+
+### `propagate_with_telemetry`
+
+Added for `nonogram-difficulty`'s narrowness dimension (dimension 3 in
+`discussions/DifficultyRating.md`): for each *productive* cascade round
+(one that actually forces a new cell), records how many distinct lines were
+independently forceable against the grid state at that round's *start* —
+`(bool, Vec<ForceabilityAtRound>)`, success flag plus one
+`ForceabilityAtRound { forceable, unresolved }` per productive round. The
+trailing no-change round that confirms the fixpoint is never recorded, so
+`Vec::is_empty()` means propagation made zero forced deductions at all (not
+"one round of nothing"). A puzzle solved entirely by one uninterrupted
+cascade round still yields exactly one entry.
+
+`unresolved` (lines still not fully determined at that round's snapshot) is
+there specifically so a consumer can normalize `forceable` against what was
+actually still in play at that round, not the puzzle's fixed `rows + cols`
+— added after `nonogram-difficulty`'s Claude-graph-authored calibration
+work flagged that `forceable` alone conflates "narrow relative to the whole
+grid" with "narrow relative to what's left." A round late in a large solve
+with only 6 lines left and 5 forceable is wide open, not tight, and only
+`unresolved` lets a caller tell those apart. Free to compute: `survey_round`
+already walks past every resolved line via a `continue`, so counting what
+it *doesn't* skip costs nothing beyond a second counter.
+
+The survey (`survey_round`, private) has to check every still-unresolved
+line against a *frozen* snapshot taken before that round's own changes
+land — it cannot just count how many lines changed during the round's live
+application (`apply_round`, also private, shared with plain `propagate`).
+`apply_round` applies each line's forces as it finds them (all rows, then
+all columns), so a cell forced by row 3 can make col 7 forceable *later in
+the same round*, purely as a scan-order artifact — col 7 wasn't
+independently available when the round began, it only became solvable
+because row 3 happened to be scanned first. Crediting that to the round
+would overcount every bottleneck the survey exists to find. See the
+`telemetry_does_not_credit_a_round_with_lines_only_unlocked_mid_round` test
+for a hand-verified example (a 3×3 "plus sign") where this distinction
+changes the reported count from 6 (naive step-count) to the correct 4.
+
+`propagate` and `propagate_with_telemetry` share `apply_round` — the
+telemetry variant does not reimplement or alter how forces get applied, it
+only adds a read-only survey pass before each round's application. This
+guarantees identical final grids and success/failure results between the
+two for the same input, verified by
+`telemetry_matches_propagate_on_the_final_grid_and_success`.
 
 Operates directly on `nonogram_core::CellState` — no private internal cell
 type. That's a deliberate difference from how `nonogram-graph-search` used
@@ -71,7 +117,16 @@ already *is* the three-valued representation this logic needs.
 ## Public API
 
 ```rust
+pub struct ForceabilityAtRound { pub forceable: usize, pub unresolved: usize }
 pub struct Propagator { pub rows: usize, pub cols: usize, pub row_clues: Vec<Vec<usize>>, pub col_clues: Vec<Vec<usize>> }
+impl Propagator {
+    pub fn from_puzzle(p: &Puzzle) -> Self;
+    pub fn propagate(&self, grid: &mut Vec<CellState>, steps: &mut Vec<SolveStep>, log_steps: bool) -> bool;
+    pub fn propagate_with_telemetry(&self, grid: &mut Vec<CellState>, steps: &mut Vec<SolveStep>, log_steps: bool) -> (bool, Vec<ForceabilityAtRound>);
+    pub fn min_completion_count(&self, grid: &[CellState]) -> usize;
+    pub fn is_complete(&self, grid: &[CellState]) -> bool;
+    pub fn check(&self, grid: &[CellState]) -> bool;
+}
 pub fn count_completions(cells: &[CellState], clues: &[usize]) -> usize;
 pub fn enumerate_completions(cells: &[CellState], clues: &[usize]) -> Vec<Vec<CellState>>;
 
@@ -80,11 +135,11 @@ impl Solver for PropagationSolver { ... }
 ```
 
 `PropagationSolver` is category 3 exposed as a standalone `Solver` —
-propagation alone, returns `Partial` if it can't finish the grid. Whether
-this should be wired into `nonogram-cli`/`nonogram-gui` as a user-selectable
-solver is an open question (see `discussions/SolverTaxonomy.md`) — not
-decided as of this writing. The impl exists because it costs almost nothing
-on top of `Propagator` and keeps the option open without committing to it.
+propagation alone, returns `Partial` if it can't finish the grid. It's
+wired into `nonogram-cli` as `--solver propagation` (see
+`discussions/SolverTaxonomy.md` for when/why that flag value moved from
+category 2 to this crate) — stale note removed here, this was previously
+recorded as still-open when it had already been decided.
 
 ## Design Constraints
 

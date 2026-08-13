@@ -245,6 +245,19 @@ fn line_matches(cells: &[CellState], clues: &[usize]) -> bool {
 // Propagator: puzzle-wide deduction over a grid
 // ---------------------------------------------------------------------------
 
+/// One cascade round's forceability survey, from `propagate_with_telemetry`:
+/// how many lines were independently forceable against that round's
+/// starting snapshot, out of how many lines were still unresolved at all at
+/// that point. Consumers normalizing "how narrow was this round" should
+/// divide by `unresolved`, not a puzzle's fixed `rows + cols` — a round late
+/// in a large solve with only a handful of lines left in play isn't narrow
+/// just because `forceable` is small relative to the whole grid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ForceabilityAtRound {
+    pub forceable: usize,
+    pub unresolved: usize,
+}
+
 /// Holds a puzzle's dimensions and clues (clues in `usize` for arithmetic
 /// convenience — converted from `u32` once, here, at construction) and
 /// provides whole-grid deduction over them. Cheap to construct; typically
@@ -273,56 +286,145 @@ impl Propagator {
     /// level via the `log` crate — a terse one-liner, not a branching trace.
     pub fn propagate(&self, grid: &mut Vec<CellState>, steps: &mut Vec<SolveStep>, log_steps: bool) -> bool {
         loop {
-            let mut changed = false;
-            for r in 0..self.rows {
-                let cells = grid[r * self.cols..(r + 1) * self.cols].to_vec();
-                if cells.iter().all(|&c| c != CellState::Unknown) { continue; }
-                let Some(forced_row) = forced_cells_dp(&cells, &self.row_clues[r]) else { return false; };
-                let mut cells_changed = Vec::new();
-                for (c, forced) in forced_row.into_iter().enumerate() {
-                    if let Some(v) = forced {
-                        if grid[r * self.cols + c] != v {
-                            grid[r * self.cols + c] = v;
-                            changed = true;
-                            cells_changed.push((r, c, v));
-                        }
-                    }
-                }
-                if !cells_changed.is_empty() {
-                    if log_steps { log::debug!("row {r}: propagation forced {} cell(s)", cells_changed.len()); }
-                    steps.push(SolveStep {
-                        description: format!("row {}: propagation", r),
-                        line: Some(LineId::Row(r)),
-                        cells_changed,
-                    });
-                }
+            match self.apply_round(grid, steps, log_steps) {
+                None => return false,
+                Some(changed) => if !changed { break; },
             }
-            for c in 0..self.cols {
-                let cells: Vec<CellState> = (0..self.rows).map(|r| grid[r * self.cols + c]).collect();
-                if cells.iter().all(|&c2| c2 != CellState::Unknown) { continue; }
-                let Some(forced_col) = forced_cells_dp(&cells, &self.col_clues[c]) else { return false; };
-                let mut cells_changed = Vec::new();
-                for (r, forced) in forced_col.into_iter().enumerate() {
-                    if let Some(v) = forced {
-                        if grid[r * self.cols + c] != v {
-                            grid[r * self.cols + c] = v;
-                            changed = true;
-                            cells_changed.push((r, c, v));
-                        }
-                    }
-                }
-                if !cells_changed.is_empty() {
-                    if log_steps { log::debug!("col {c}: propagation forced {} cell(s)", cells_changed.len()); }
-                    steps.push(SolveStep {
-                        description: format!("col {}: propagation", c),
-                        line: Some(LineId::Col(c)),
-                        cells_changed,
-                    });
-                }
-            }
-            if !changed { break; }
         }
         true
+    }
+
+    /// Like [`propagate`](Self::propagate), but also records, for each
+    /// productive cascade round, how many distinct lines were independently
+    /// forceable against the grid state at the *start* of that round —
+    /// surveyed against a frozen snapshot, before any of that round's own
+    /// forces are applied. Consumed by `nonogram-difficulty` to find the
+    /// narrowest bottleneck a solve passed through: a round where only one
+    /// line was forceable means everything else was waiting on it.
+    ///
+    /// This can't just count steps taken per round, which would overcount:
+    /// `apply_round` applies each line's forces as it finds them (rows then
+    /// columns), so a cell forced by row 3 can make col 7 forceable *later
+    /// in the same round* — a scan-order artifact, not a line that was
+    /// independently available when the round began. `survey_round` checks
+    /// every still-unresolved line against a fixed snapshot instead, so a
+    /// line that only becomes forceable mid-round because an earlier line in
+    /// the same round already landed doesn't get credited to that round.
+    ///
+    /// The trailing round where nothing changes (the fixpoint check) is
+    /// never recorded — every entry in the returned `Vec` corresponds to a
+    /// round that actually forced at least one new cell, matching "a point
+    /// where progress was made and this many lines could have made it."
+    pub fn propagate_with_telemetry(
+        &self,
+        grid: &mut Vec<CellState>,
+        steps: &mut Vec<SolveStep>,
+        log_steps: bool,
+    ) -> (bool, Vec<ForceabilityAtRound>) {
+        let mut rounds = Vec::new();
+        loop {
+            let Some(survey) = self.survey_round(grid.as_slice()) else {
+                return (false, rounds);
+            };
+            match self.apply_round(grid, steps, log_steps) {
+                None => return (false, rounds),
+                Some(changed) => {
+                    if !changed { break; }
+                    rounds.push(survey);
+                }
+            }
+        }
+        (true, rounds)
+    }
+
+    /// One full row-then-column scan, applying any newly forced cells
+    /// directly to `grid` as they're found (so a force from an earlier line
+    /// in the scan is visible to later lines in the same call — this is
+    /// what lets `propagate` converge in fewer rounds than a scan that only
+    /// ever looked at a frozen snapshot). Returns `None` on a per-line
+    /// contradiction, `Some(changed)` otherwise.
+    fn apply_round(&self, grid: &mut Vec<CellState>, steps: &mut Vec<SolveStep>, log_steps: bool) -> Option<bool> {
+        let mut changed = false;
+        for r in 0..self.rows {
+            let cells = grid[r * self.cols..(r + 1) * self.cols].to_vec();
+            if cells.iter().all(|&c| c != CellState::Unknown) { continue; }
+            let forced_row = forced_cells_dp(&cells, &self.row_clues[r])?;
+            let mut cells_changed = Vec::new();
+            for (c, forced) in forced_row.into_iter().enumerate() {
+                if let Some(v) = forced {
+                    if grid[r * self.cols + c] != v {
+                        grid[r * self.cols + c] = v;
+                        changed = true;
+                        cells_changed.push((r, c, v));
+                    }
+                }
+            }
+            if !cells_changed.is_empty() {
+                if log_steps { log::debug!("row {r}: propagation forced {} cell(s)", cells_changed.len()); }
+                steps.push(SolveStep {
+                    description: format!("row {}: propagation", r),
+                    line: Some(LineId::Row(r)),
+                    cells_changed,
+                });
+            }
+        }
+        for c in 0..self.cols {
+            let cells: Vec<CellState> = (0..self.rows).map(|r| grid[r * self.cols + c]).collect();
+            if cells.iter().all(|&c2| c2 != CellState::Unknown) { continue; }
+            let forced_col = forced_cells_dp(&cells, &self.col_clues[c])?;
+            let mut cells_changed = Vec::new();
+            for (r, forced) in forced_col.into_iter().enumerate() {
+                if let Some(v) = forced {
+                    if grid[r * self.cols + c] != v {
+                        grid[r * self.cols + c] = v;
+                        changed = true;
+                        cells_changed.push((r, c, v));
+                    }
+                }
+            }
+            if !cells_changed.is_empty() {
+                if log_steps { log::debug!("col {c}: propagation forced {} cell(s)", cells_changed.len()); }
+                steps.push(SolveStep {
+                    description: format!("col {}: propagation", c),
+                    line: Some(LineId::Col(c)),
+                    cells_changed,
+                });
+            }
+        }
+        Some(changed)
+    }
+
+    /// Counts lines with at least one cell `forced_cells_dp` can pin down
+    /// against `grid` as given — i.e. without applying anything — and, as a
+    /// side effect of the same scan, how many lines were still unresolved
+    /// at all (every line that isn't skipped as already-fully-determined).
+    /// A line counts as forceable only if the forced value lands on a cell
+    /// that's still `Unknown` in `grid`; a line whose own clue is already
+    /// fully satisfied there contributes nothing new. Returns `None` on a
+    /// per-line contradiction (a line already infeasible against this exact
+    /// grid).
+    fn survey_round(&self, grid: &[CellState]) -> Option<ForceabilityAtRound> {
+        let mut forceable = 0usize;
+        let mut unresolved = 0usize;
+        for r in 0..self.rows {
+            let cells = &grid[r * self.cols..(r + 1) * self.cols];
+            if cells.iter().all(|&c| c != CellState::Unknown) { continue; }
+            unresolved += 1;
+            let forced_row = forced_cells_dp(cells, &self.row_clues[r])?;
+            if forced_row.iter().zip(cells.iter()).any(|(f, &c)| c == CellState::Unknown && f.is_some()) {
+                forceable += 1;
+            }
+        }
+        for c in 0..self.cols {
+            let cells: Vec<CellState> = (0..self.rows).map(|r| grid[r * self.cols + c]).collect();
+            if cells.iter().all(|&c2| c2 != CellState::Unknown) { continue; }
+            unresolved += 1;
+            let forced_col = forced_cells_dp(&cells, &self.col_clues[c])?;
+            if forced_col.iter().zip(cells.iter()).any(|(f, &c2)| c2 == CellState::Unknown && f.is_some()) {
+                forceable += 1;
+            }
+        }
+        Some(ForceabilityAtRound { forceable, unresolved })
     }
 
     /// Fewest valid completions among all unresolved lines — the MRV signal.
@@ -518,5 +620,81 @@ mod tests {
         let ctx = SolveContext::default();
         let result = PropagationSolver.solve(&puzzle, &ctx);
         assert!(matches!(result.state, SolutionState::Invalid(_)));
+    }
+
+    // 3x3 "plus sign": empty border rows/cols, single filled center cell.
+    // row_clues/col_clues: [[], [1], []] on both axes.
+    fn plus_sign_puzzle() -> Puzzle {
+        Puzzle {
+            name: "plus_sign".into(),
+            answer: None,
+            width: 3,
+            height: 3,
+            row_clues: vec![vec![], vec![1], vec![]],
+            col_clues: vec![vec![], vec![1], vec![]],
+            solution: None,
+        }
+    }
+
+    #[test]
+    fn telemetry_matches_propagate_on_the_final_grid_and_success() {
+        for puzzle in [plus_sign_puzzle(), permutation_puzzle(4)] {
+            let propagator = Propagator::from_puzzle(&puzzle);
+
+            let mut grid_a = vec![CellState::Unknown; propagator.rows * propagator.cols];
+            let ok_a = propagator.propagate(&mut grid_a, &mut Vec::new(), false);
+
+            let mut grid_b = vec![CellState::Unknown; propagator.rows * propagator.cols];
+            let (ok_b, _) = propagator.propagate_with_telemetry(&mut grid_b, &mut Vec::new(), false);
+
+            assert_eq!(ok_a, ok_b, "{}", puzzle.name);
+            assert_eq!(grid_a, grid_b, "{}", puzzle.name);
+        }
+    }
+
+    #[test]
+    fn telemetry_does_not_credit_a_round_with_lines_only_unlocked_mid_round() {
+        // row0/row2/col0/col2 (all clue []) are each independently forceable
+        // against the all-Unknown starting snapshot: 4 lines. row1/col1
+        // (clue [1], 3 possible positions each) are NOT independently
+        // forceable at that same snapshot — row1 only gets its single Empty
+        // cell pinned down (via col0/col2 already being Empty) live, within
+        // this same round's own column scan, once the row-scan's Empty
+        // forces have already landed on the *live* grid. Counting steps
+        // taken this round would see 6 lines change; the survey must report
+        // only the 4 that were independently forceable at the round's start.
+        let propagator = Propagator::from_puzzle(&plus_sign_puzzle());
+        let mut grid = vec![CellState::Unknown; propagator.rows * propagator.cols];
+        let (ok, rounds) =
+            propagator.propagate_with_telemetry(&mut grid, &mut Vec::new(), false);
+
+        assert!(ok);
+        assert!(propagator.is_complete(&grid));
+        assert_eq!(
+            grid,
+            vec![
+                CellState::Empty, CellState::Empty, CellState::Empty,
+                CellState::Empty, CellState::Filled, CellState::Empty,
+                CellState::Empty, CellState::Empty, CellState::Empty,
+            ]
+        );
+        // Everything resolves within one productive round (the plus sign's
+        // remaining forces all land live within that same round's column
+        // scan); the trailing no-change confirmation round isn't recorded.
+        // All 6 lines (3 rows + 3 cols) are still unresolved at round 1's
+        // start (the grid is entirely Unknown), 4 of them forceable.
+        assert_eq!(rounds, vec![ForceabilityAtRound { forceable: 4, unresolved: 6 }]);
+    }
+
+    #[test]
+    fn telemetry_records_nothing_when_nothing_is_ever_forceable() {
+        let propagator = Propagator::from_puzzle(&permutation_puzzle(4));
+        let mut grid = vec![CellState::Unknown; propagator.rows * propagator.cols];
+        let (ok, rounds) =
+            propagator.propagate_with_telemetry(&mut grid, &mut Vec::new(), false);
+
+        assert!(ok);
+        assert!(grid.iter().all(|&c| c == CellState::Unknown));
+        assert!(rounds.is_empty());
     }
 }
