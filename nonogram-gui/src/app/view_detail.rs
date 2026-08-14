@@ -1,7 +1,7 @@
 use iced::{
     alignment::{Horizontal, Vertical},
     widget::{
-        button, column, container, horizontal_rule, mouse_area, row,
+        button, checkbox, column, container, horizontal_rule, mouse_area, row,
         scrollable, slider, stack, text, tooltip, Space,
     },
     Color, Element, Length, Padding, Theme,
@@ -10,7 +10,7 @@ use iced_fonts::bootstrap::Bootstrap;
 use nonogram_core::{CellState, ParsedPuzzle, SolutionState};
 
 use crate::frozen_grid_viewport::FrozenGridViewport;
-use super::{App, Key, Message};
+use super::{App, Key, Message, RunLengthChange};
 use super::settings::{AssistFlag, FocusKey, SecondaryFocusKey};
 use super::style::{
     bi, icon_char, popup_menu, primary_menu_btn, style_panel, style_header_row,
@@ -75,9 +75,14 @@ impl App {
                 let trial_info: &[(Vec<CellState>, Option<(usize, usize)>)] =
                     self.trial_stack.get(&key).map(|v| v.as_slice()).unwrap_or(&[]);
                 let pan_off = self.pan_offset;
-                let hover_runs: HoverRuns = display_grid.as_deref()
-                    .map(|g| compute_hover_runs(self.hover_cell, key, puzzle, g))
-                    .unwrap_or_else(HoverRuns::none);
+                let _unknown_grid;
+                let hover_runs = compute_hover_runs(
+                    self.hover_cell, key, puzzle,
+                    match display_grid.as_deref() {
+                        Some(g) => g,
+                        None => { _unknown_grid = vec![CellState::Unknown; puzzle.width * puzzle.height]; &_unknown_grid }
+                    },
+                );
                 let crosshair = if self.assistance.crosshair_enabled {
                     let xr = self.crosshair_row;
                     let xc = self.crosshair_col;
@@ -412,9 +417,14 @@ impl App {
         let next_key = pos.and_then(|i| all_keys.get(i + 1).copied());
 
         let pan_off = self.pan_offset;
-        let hover_runs: HoverRuns = display_grid.as_deref()
-            .map(|g| compute_hover_runs(self.hover_cell, key, puzzle, g))
-            .unwrap_or_else(HoverRuns::none);
+        let _unknown_grid;
+        let hover_runs = compute_hover_runs(
+            self.hover_cell, key, puzzle,
+            match display_grid.as_deref() {
+                Some(g) => g,
+                None => { _unknown_grid = vec![CellState::Unknown; puzzle.width * puzzle.height]; &_unknown_grid }
+            },
+        );
         let crosshair = if self.assistance.crosshair_enabled {
             let xr = self.crosshair_row;
             let xc = self.crosshair_col;
@@ -469,6 +479,30 @@ impl App {
                     .width(Length::Fill)
                     .padding([5, 10])
                     .into()
+            );
+            let has_steps = result.map_or(false, |r| !r.steps.is_empty());
+            let log_save_btn = {
+                let b = button(bi(Bootstrap::Floppy).size(12)).padding([3, 6]);
+                if has_steps { b.on_press(Message::LogExportSave(key)) } else { b }
+            };
+            let log_copy_btn = {
+                let b = button(bi(Bootstrap::Clipboard).size(12)).padding([3, 6]);
+                if has_steps { b.on_press(Message::LogExportCopy(key)) } else { b }
+            };
+            popup_items.push(
+                container(
+                    row![
+                        text("Log").size(13),
+                        Space::with_width(Length::Fill),
+                        log_save_btn,
+                        log_copy_btn,
+                    ]
+                    .spacing(4)
+                    .align_y(iced::alignment::Vertical::Center),
+                )
+                .padding([5, 10])
+                .width(Length::Fill)
+                .into()
             );
             let popup_layer: Element<Message> = column![
                 Space::with_height(Length::Fixed(44.0)),
@@ -726,6 +760,137 @@ impl App {
             sections.push(horizontal_rule(1).into());
         }
 
+        // ── Run length indicators ──────────────────────────────────────────
+        {
+            let rl = &self.assistance.run_length;
+            let (st, et, ht, am) = (
+                rl.start_threshold, rl.end_threshold, rl.hover_threshold, rl.arm_min_cells,
+            );
+
+            let section = container(
+                column![
+                    text("Run length indicators").size(13),
+                    row![
+                        checkbox("Show at start of run", rl.show_start)
+                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::ShowStart))
+                            .size(14),
+                        Space::with_width(Length::Fill),
+                        text("Threshold:").size(13),
+                        u32_stepper(st, 1, 30,
+                            Message::RunLengthChanged(RunLengthChange::StartThreshold(st.saturating_sub(1))),
+                            Message::RunLengthChanged(RunLengthChange::StartThreshold(st.saturating_add(1))),
+                        ),
+                    ]
+                    .spacing(6)
+                    .align_y(Vertical::Center),
+                    row![
+                        checkbox("Show at end of run", rl.show_end)
+                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::ShowEnd))
+                            .size(14),
+                        Space::with_width(Length::Fill),
+                        text("Threshold:").size(13),
+                        u32_stepper(et, 1, 30,
+                            Message::RunLengthChanged(RunLengthChange::EndThreshold(et.saturating_sub(1))),
+                            Message::RunLengthChanged(RunLengthChange::EndThreshold(et.saturating_add(1))),
+                        ),
+                    ]
+                    .spacing(6)
+                    .align_y(Vertical::Center),
+                    row![
+                        checkbox("Show at hover cell", rl.show_hover)
+                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::ShowHover))
+                            .size(14),
+                        Space::with_width(Length::Fill),
+                        text("Threshold:").size(13),
+                        u32_stepper(ht, 1, 30,
+                            Message::RunLengthChanged(RunLengthChange::HoverThreshold(ht.saturating_sub(1))),
+                            Message::RunLengthChanged(RunLengthChange::HoverThreshold(ht.saturating_add(1))),
+                        ),
+                    ]
+                    .spacing(6)
+                    .align_y(Vertical::Center),
+                    text("H-label decorations (bottom left)").size(12),
+                    row![
+                        checkbox("Underline", rl.h_underline)
+                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::HUnderline))
+                            .size(14),
+                        checkbox("Overline",  rl.h_overline)
+                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::HOverline))
+                            .size(14),
+                        checkbox("← arm", rl.h_arm_before)
+                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::HArmBefore))
+                            .size(14),
+                        checkbox("→ arm", rl.h_arm_after)
+                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::HArmAfter))
+                            .size(14),
+                    ]
+                    .spacing(16),
+                    text("V-label decorations (top right)").size(12),
+                    row![
+                        checkbox("Right wall", rl.v_right_wall)
+                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::VRightWall))
+                            .size(14),
+                        checkbox("Left wall",  rl.v_left_wall)
+                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::VLeftWall))
+                            .size(14),
+                        checkbox("↑ arm", rl.v_arm_before)
+                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::VArmBefore))
+                            .size(14),
+                        checkbox("↓ arm", rl.v_arm_after)
+                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::VArmAfter))
+                            .size(14),
+                    ]
+                    .spacing(16),
+                    row![
+                        text("Arm min. cells:").size(13),
+                        u32_stepper(am, 1, 20,
+                            Message::RunLengthChanged(RunLengthChange::ArmMinCells(am.saturating_sub(1))),
+                            Message::RunLengthChanged(RunLengthChange::ArmMinCells(am.saturating_add(1))),
+                        ),
+                    ]
+                    .spacing(8)
+                    .align_y(Vertical::Center),
+                    row![
+                        text("Arm length:").size(13),
+                        slider(1.0f32..=20.0, rl.arm_length as f32,
+                            |v| Message::RunLengthChanged(RunLengthChange::ArmLength(v.round() as u32)))
+                            .width(Length::Fixed(100.0)),
+                        text(format!("{} px", rl.arm_length)).size(12),
+                    ]
+                    .spacing(8)
+                    .align_y(Vertical::Center),
+                    row![
+                        text("Arm gap:").size(13),
+                        slider(0.0f32..=15.0, rl.arm_gap as f32,
+                            |v| Message::RunLengthChanged(RunLengthChange::ArmGap(v.round() as u32)))
+                            .width(Length::Fixed(100.0)),
+                        text(format!("{} px", rl.arm_gap)).size(12),
+                    ]
+                    .spacing(8)
+                    .align_y(Vertical::Center),
+                    horizontal_rule(1),
+                    checkbox("Adjacent cell label", rl.adj_label_enabled)
+                        .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::AdjLabelEnabled))
+                        .size(14).text_size(13),
+                    checkbox("  H: prefer right (vs left)", rl.adj_label_h_prefer_after)
+                        .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::AdjLabelHPreferAfter))
+                        .size(14).text_size(13),
+                    checkbox("  V: prefer below (vs above)", rl.adj_label_v_prefer_after)
+                        .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::AdjLabelVPreferAfter))
+                        .size(14).text_size(13),
+                    checkbox("4-direction counts", rl.four_dir_labels_enabled)
+                        .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::FourDirLabels))
+                        .size(14).text_size(13),
+                ]
+                .spacing(8),
+            )
+            .style(style_panel)
+            .padding(12)
+            .width(Length::Fill);
+            sections.push(section.into());
+            sections.push(horizontal_rule(1).into());
+        }
+
         let content = column(sections).spacing(0);
 
         container(
@@ -740,6 +905,29 @@ impl App {
         .height(Length::Fill)
         .into()
     }
+}
+
+fn u32_stepper<'a>(value: u32, min: u32, max: u32, dec_msg: Message, inc_msg: Message) -> Element<'a, Message> {
+    let dec = if value > min {
+        button(text("-").size(11)).on_press(dec_msg).padding([1, 5])
+    } else {
+        button(text("-").size(11)).padding([1, 5])
+    };
+    let inc = if value < max {
+        button(text("+").size(11)).on_press(inc_msg).padding([1, 5])
+    } else {
+        button(text("+").size(11)).padding([1, 5])
+    };
+    row![
+        dec,
+        container(text(value.to_string()).size(11))
+            .width(Length::Fixed(22.0))
+            .align_x(Horizontal::Center),
+        inc,
+    ]
+    .spacing(2)
+    .align_y(Vertical::Center)
+    .into()
 }
 
 // Color preview square + R/G/B/A sliders (for crosshair highlight).

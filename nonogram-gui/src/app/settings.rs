@@ -178,6 +178,64 @@ pub(crate) enum AssistFlag {
     AxisLock,
 }
 
+// ---------------------------------------------------------------------------
+// Run length display settings
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct RunLengthSettings {
+    pub show_start:      bool,
+    pub start_threshold: u32,
+    pub show_end:        bool,
+    pub end_threshold:   u32,
+    pub show_hover:      bool,
+    pub hover_threshold: u32,
+    pub h_underline:     bool,
+    pub h_overline:      bool,
+    pub h_arm_before:    bool,
+    pub h_arm_after:     bool,
+    pub v_right_wall:    bool,
+    pub v_left_wall:     bool,
+    pub v_arm_before:    bool,
+    pub v_arm_after:     bool,
+    pub arm_min_cells:   u32,
+    pub arm_length:      u32,
+    pub arm_gap:         u32,
+    pub adj_label_enabled:       bool,
+    pub adj_label_h_prefer_after: bool,
+    pub adj_label_v_prefer_after: bool,
+    pub four_dir_labels_enabled: bool,
+}
+
+impl Default for RunLengthSettings {
+    fn default() -> Self {
+        Self {
+            show_start:      false,
+            start_threshold: 3,
+            show_end:        false,
+            end_threshold:   3,
+            show_hover:      true,
+            hover_threshold: 2,
+            h_underline:     false,
+            h_overline:      false,
+            h_arm_before:    false,
+            h_arm_after:     false,
+            v_right_wall:    false,
+            v_left_wall:     false,
+            v_arm_before:    false,
+            v_arm_after:     false,
+            arm_min_cells:   2,
+            arm_length:      5,
+            arm_gap:         1,
+            adj_label_enabled:       false,
+            adj_label_h_prefer_after: true,
+            adj_label_v_prefer_after: true,
+            four_dir_labels_enabled: false,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct AssistanceSettings {
     pub(crate) auto_dim: bool,
@@ -189,6 +247,7 @@ pub(crate) struct AssistanceSettings {
     pub(crate) crosshair_color: Color,
     pub(crate) focus_key: FocusKey,
     pub(crate) focus_key2: SecondaryFocusKey,
+    pub(crate) run_length: RunLengthSettings,
 }
 
 impl Default for AssistanceSettings {
@@ -203,6 +262,7 @@ impl Default for AssistanceSettings {
             crosshair_color: Color { r: 0.40, g: 0.72, b: 1.0, a: 0.18 },
             focus_key: FocusKey::F11,
             focus_key2: SecondaryFocusKey::F,
+            run_length: RunLengthSettings::default(),
         }
     }
 }
@@ -251,6 +311,7 @@ struct SavedSettings {
     #[serde(default = "default_xhair_a")] crosshair_a: f32,
     #[serde(default = "default_focus_key")]  focus_key:  FocusKey,
     #[serde(default = "default_focus_key2")] focus_key2: SecondaryFocusKey,
+    #[serde(default)] run_length: RunLengthSettings,
 }
 
 pub(crate) fn icon_to_idx(icon: Option<Bootstrap>) -> usize {
@@ -313,6 +374,7 @@ pub(crate) fn load_settings() -> (CellSettings, AssistanceSettings) {
         crosshair_color:      Color { r: saved.crosshair_r, g: saved.crosshair_g, b: saved.crosshair_b, a: saved.crosshair_a },
         focus_key:            saved.focus_key,
         focus_key2:           saved.focus_key2,
+        run_length:           saved.run_length,
     };
     (cell, assist)
 }
@@ -344,6 +406,7 @@ pub(crate) fn save_settings(settings: &CellSettings, assist: &AssistanceSettings
         crosshair_a:         assist.crosshair_color.a,
         focus_key:           assist.focus_key,
         focus_key2:          assist.focus_key2,
+        run_length:          assist.run_length.clone(),
     };
     if let Ok(json) = serde_json::to_string_pretty(&saved) {
         let _ = std::fs::write(&path, json);

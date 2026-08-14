@@ -1,4 +1,4 @@
-use nonogram_core::{CellState, ParsedPuzzle, Puzzle};
+use nonogram_core::{CellState, LineId, ParsedPuzzle, Puzzle, SolveStep};
 
 pub(crate) fn parse_pzprv3(content: &str) -> Result<Vec<ParsedPuzzle>, String> {
     let mut lines = content.lines();
@@ -316,5 +316,111 @@ pub(crate) fn export_puzprv3(
         out.push_str(&tokens.join(" "));
         out.push('\n');
     }
+    out
+}
+
+pub(crate) fn format_solve_log(name: &str, width: usize, height: usize, steps: &[SolveStep]) -> String {
+    let branch_indices: Vec<usize> = steps.iter().enumerate()
+        .filter(|(_, s)| s.description.contains(": branch"))
+        .map(|(i, _)| i + 1)
+        .collect();
+    let prop_count = steps.len() - branch_indices.len();
+
+    let branch_line = if branch_indices.is_empty() {
+        "0  (none)".to_string()
+    } else {
+        let list = branch_indices.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ");
+        format!("{}  (steps {})", branch_indices.len(), list)
+    };
+
+    let mut out = String::with_capacity(steps.len() * 128);
+    out.push_str("=== Solve Log ===\n");
+    out.push_str(&format!("Puzzle: \"{}\" ({}×{})\n\n", name, width, height));
+    out.push_str("Summary\n-------\n");
+    out.push_str(&format!("Total steps:       {}\n", steps.len()));
+    out.push_str(&format!("Propagation steps: {}\n", prop_count));
+    out.push_str(&format!("Branching steps:   {}\n", branch_line));
+
+    if !steps.is_empty() {
+        out.push_str("\nSteps\n-----\n");
+        let w = steps.len().to_string().len();
+        // Replay the grid from Unknown to produce before/after line snapshots.
+        let mut grid = vec![CellState::Unknown; width * height];
+
+        for (i, step) in steps.iter().enumerate() {
+            let n = i + 1;
+            let is_branch = step.description.contains(": branch");
+            let nc = step.cells_changed.len();
+            let plural = if nc == 1 { "" } else { "s" };
+
+            out.push('\n');
+            if is_branch {
+                out.push_str(&format!(
+                    "  Step {:>w$}  \u{2605} BRANCH  {}  [{} cell{}]\n",
+                    n, step.description, nc, plural,
+                ));
+            } else {
+                out.push_str(&format!(
+                    "  Step {:>w$}  {}  [{} cell{}]\n",
+                    n, step.description, nc, plural,
+                ));
+            }
+
+            if let Some(line_id) = step.line {
+                // Set of (row, col) changed by this step, for the after-line marker.
+                let changed: Vec<(usize, usize)> =
+                    step.cells_changed.iter().map(|&(r, c, _)| (r, c)).collect();
+                let was_changed = |r: usize, c: usize| changed.iter().any(|&(cr, cc)| cr == r && cc == c);
+
+                // Before: ■ = Filled, □ = everything else
+                let before_line: String = match line_id {
+                    LineId::Row(r) => (0..width)
+                        .map(|c| if grid[r * width + c] == CellState::Filled { '\u{25A0}' } else { '\u{25A1}' })
+                        .collect(),
+                    LineId::Col(c) => (0..height)
+                        .map(|r| if grid[r * width + c] == CellState::Filled { '\u{25A0}' } else { '\u{25A1}' })
+                        .collect(),
+                };
+
+                // Advance grid.
+                for &(r, c, st) in &step.cells_changed {
+                    grid[r * width + c] = st;
+                }
+
+                // After: changed→Filled = ■, changed→Empty = ☒, unchanged = same as before
+                let after_line: String = match line_id {
+                    LineId::Row(r) => (0..width)
+                        .map(|c| {
+                            if was_changed(r, c) {
+                                if grid[r * width + c] == CellState::Filled { '\u{25A0}' } else { '\u{00D7}' }
+                            } else {
+                                if grid[r * width + c] == CellState::Filled { '\u{25A0}' } else { '\u{25A1}' }
+                            }
+                        })
+                        .collect(),
+                    LineId::Col(c) => (0..height)
+                        .map(|r| {
+                            if was_changed(r, c) {
+                                if grid[r * width + c] == CellState::Filled { '\u{25A0}' } else { '\u{00D7}' }
+                            } else {
+                                if grid[r * width + c] == CellState::Filled { '\u{25A0}' } else { '\u{25A1}' }
+                            }
+                        })
+                        .collect(),
+                };
+
+                // Indent aligns with description (after "  Step N  ").
+                let prefix = " ".repeat(w + 9);
+                out.push_str(&format!("{}  {}\n", prefix, before_line));
+                out.push_str(&format!("{}→ {}\n", prefix, after_line));
+            } else {
+                // No line info: advance grid without visualization.
+                for &(r, c, st) in &step.cells_changed {
+                    grid[r * width + c] = st;
+                }
+            }
+        }
+    }
+
     out
 }

@@ -34,7 +34,7 @@ use persistence::{
     save_solution_to_file, relative_path, save_window_state,
 };
 use scan::scan_puzzle_dirs;
-use export::{ExportFormat, puzzle_to_file_string, export_puzprv3, puzzle_to_puzzlink_url, parse_puzzlink_url, parse_pzprv3};
+use export::{ExportFormat, format_solve_log, puzzle_to_file_string, export_puzprv3, puzzle_to_puzzlink_url, parse_puzzlink_url, parse_pzprv3};
 use grid_view::{grid_at_step, is_puzzle_fully_solved, check_line_fulfilled, forced_empty_from_edges};
 
 // ---------------------------------------------------------------------------
@@ -174,6 +174,24 @@ pub struct App {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
+pub(crate) enum RunLengthChange {
+    ShowStart,          StartThreshold(u32),
+    ShowEnd,            EndThreshold(u32),
+    ShowHover,          HoverThreshold(u32),
+    HUnderline,         HOverline,
+    HArmBefore,         HArmAfter,
+    VRightWall,         VLeftWall,
+    VArmBefore,         VArmAfter,
+    ArmMinCells(u32),
+    ArmLength(u32),
+    ArmGap(u32),
+    AdjLabelEnabled,
+    AdjLabelHPreferAfter,
+    AdjLabelVPreferAfter,
+    FourDirLabels,
+}
+
+#[derive(Debug, Clone)]
 pub enum Message {
     // File operations
     ImportMenuToggled,
@@ -252,6 +270,7 @@ pub enum Message {
     SettingClueBg(u8, f32),
     SettingSumBg(u8, f32),
     AssistToggle(AssistFlag),
+    RunLengthChanged(RunLengthChange),
     CrosshairColor(u8, f32),  // channel: 0=R, 1=G, 2=B, 3=A
     ClueDimToggle(Key, bool, usize, usize),  // (puzzle key, is_col, line_idx, clue_idx)
 
@@ -274,6 +293,9 @@ pub enum Message {
     // Clipboard / export
     CopyPuzzleString(Key),
     CopyPuzzLink(Key),
+    LogExportCopy(Key),
+    LogExportSave(Key),
+    LogFileSaved(Option<String>, Option<String>),
     ExportMenuToggled,
     ExportBtnHovered,
     CursorMoved(Point),
@@ -1214,6 +1236,41 @@ impl App {
                 Task::none()
             }
 
+            Message::RunLengthChanged(change) => {
+                let rl = &mut self.assistance.run_length;
+                match change {
+                    RunLengthChange::ShowStart          => rl.show_start      = !rl.show_start,
+                    RunLengthChange::StartThreshold(v)  => rl.start_threshold = v,
+                    RunLengthChange::ShowEnd            => rl.show_end        = !rl.show_end,
+                    RunLengthChange::EndThreshold(v)    => rl.end_threshold   = v,
+                    RunLengthChange::ShowHover          => rl.show_hover      = !rl.show_hover,
+                    RunLengthChange::HoverThreshold(v)  => rl.hover_threshold = v,
+                    RunLengthChange::HUnderline         => rl.h_underline     = !rl.h_underline,
+                    RunLengthChange::HOverline          => rl.h_overline      = !rl.h_overline,
+                    RunLengthChange::HArmBefore         => rl.h_arm_before    = !rl.h_arm_before,
+                    RunLengthChange::HArmAfter          => rl.h_arm_after     = !rl.h_arm_after,
+                    RunLengthChange::VRightWall         => rl.v_right_wall    = !rl.v_right_wall,
+                    RunLengthChange::VLeftWall          => rl.v_left_wall     = !rl.v_left_wall,
+                    RunLengthChange::VArmBefore         => rl.v_arm_before    = !rl.v_arm_before,
+                    RunLengthChange::VArmAfter          => rl.v_arm_after     = !rl.v_arm_after,
+                    RunLengthChange::ArmMinCells(v)      => rl.arm_min_cells          = v,
+                    RunLengthChange::ArmLength(v)        => rl.arm_length             = v,
+                    RunLengthChange::ArmGap(v)           => rl.arm_gap                = v,
+                    RunLengthChange::AdjLabelEnabled => {
+                        rl.adj_label_enabled = !rl.adj_label_enabled;
+                        if rl.adj_label_enabled { rl.four_dir_labels_enabled = false; }
+                    }
+                    RunLengthChange::AdjLabelHPreferAfter => rl.adj_label_h_prefer_after = !rl.adj_label_h_prefer_after,
+                    RunLengthChange::AdjLabelVPreferAfter => rl.adj_label_v_prefer_after = !rl.adj_label_v_prefer_after,
+                    RunLengthChange::FourDirLabels => {
+                        rl.four_dir_labels_enabled = !rl.four_dir_labels_enabled;
+                        if rl.four_dir_labels_enabled { rl.adj_label_enabled = false; }
+                    }
+                }
+                save_settings(&self.cell_settings, &self.assistance);
+                Task::none()
+            }
+
             Message::CrosshairColor(channel, value) => {
                 match channel {
                     0 => self.assistance.crosshair_color.r = value,
@@ -1330,6 +1387,58 @@ impl App {
                 let url = puzzle_to_puzzlink_url(puzzle);
                 self.status = "puzz.link URL copied to clipboard".to_string();
                 iced::clipboard::write(url)
+            }
+
+            Message::LogExportCopy(key) => {
+                let (fi, pi) = key;
+                let Some(puzzle) = self.files.get(fi)
+                    .and_then(|f| f.puzzles.get(pi))
+                    .and_then(|e| e.as_puzzle())
+                else { return Task::none(); };
+                let Some(result) = self.results.get(&(key, self.solver)) else { return Task::none(); };
+                let log = format_solve_log(&puzzle.name, puzzle.width, puzzle.height, &result.steps);
+                self.status = "Solve log copied to clipboard".to_string();
+                self.show_export_menu = false;
+                iced::clipboard::write(log)
+            }
+
+            Message::LogExportSave(key) => {
+                let (fi, pi) = key;
+                let Some(puzzle) = self.files.get(fi)
+                    .and_then(|f| f.puzzles.get(pi))
+                    .and_then(|e| e.as_puzzle())
+                else { return Task::none(); };
+                let Some(result) = self.results.get(&(key, self.solver)) else { return Task::none(); };
+                let log = format_solve_log(&puzzle.name, puzzle.width, puzzle.height, &result.steps);
+                self.show_export_menu = false;
+                Task::perform(
+                    async move {
+                        let handle = rfd::AsyncFileDialog::new()
+                            .set_title("Save solve log")
+                            .set_file_name("solve-log.txt")
+                            .add_filter("Text files", &["txt"])
+                            .save_file()
+                            .await;
+                        match handle {
+                            Some(h) => {
+                                let path = h.path().to_string_lossy().into_owned();
+                                let err = std::fs::write(&path, &log).err().map(|e| e.to_string());
+                                (Some(path), err)
+                            }
+                            None => (None, None),
+                        }
+                    },
+                    |(path, err)| Message::LogFileSaved(path, err),
+                )
+            }
+
+            Message::LogFileSaved(path, err) => {
+                match (&path, &err) {
+                    (Some(p), None)  => self.status = format!("Log saved to {p}"),
+                    (_, Some(e))     => self.status = format!("Save failed: {e}"),
+                    (None, None)     => {}
+                }
+                Task::none()
             }
 
             Message::CursorMoved(pos) => {
