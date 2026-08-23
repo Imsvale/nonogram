@@ -11,7 +11,7 @@ use nonogram_core::{CellState, ParsedPuzzle, SolutionState};
 
 use crate::frozen_grid_viewport::FrozenGridViewport;
 use super::{App, Key, Message, RunLengthChange};
-use super::settings::{AssistFlag, FocusKey, SecondaryFocusKey};
+use super::settings::{AssistFlag, FocusKey, SecondaryFocusKey, SubcellKind};
 use super::style::{
     bi, icon_char, popup_menu, primary_menu_btn, style_panel, style_header_row,
     status_row, warn_banner_style,
@@ -87,7 +87,7 @@ impl App {
                     let xr = self.crosshair_row;
                     let xc = self.crosshair_col;
                     if xr.is_none() && xc.is_none() { None }
-                    else { Some((xr, xc, self.assistance.crosshair_color)) }
+                    else { Some((xr, xc, self.assistance.crosshair_h_color, self.assistance.crosshair_v_color)) }
                 } else { None };
                 let regions = build_grid_regions(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), None, None, hover_runs, crosshair, None);
                 let frozen = {
@@ -429,7 +429,7 @@ impl App {
             let xr = self.crosshair_row;
             let xc = self.crosshair_col;
             if xr.is_none() && xc.is_none() { None }
-            else { Some((xr, xc, self.assistance.crosshair_color)) }
+            else { Some((xr, xc, self.assistance.crosshair_h_color, self.assistance.crosshair_v_color)) }
         } else { None };
         let regions = build_grid_regions(puzzle, display_grid, key, &self.cell_settings, trial_info, &self.assistance, self.manual_dim_rows.get(&key), self.manual_dim_cols.get(&key), self.undo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), self.redo_stack.get(&key).map(|s| !s.is_empty()).unwrap_or(false), prev_key, next_key, hover_runs, crosshair, machine_nav);
         let frozen = {
@@ -711,13 +711,21 @@ impl App {
 
         {
             use iced::widget::checkbox;
-            let xc = self.assistance.crosshair_color;
-            let color_row = color_alpha_editor_row(
-                xc,
-                |v| Message::CrosshairColor(0, v),
-                |v| Message::CrosshairColor(1, v),
-                |v| Message::CrosshairColor(2, v),
-                |v| Message::CrosshairColor(3, v),
+            let xhc = self.assistance.crosshair_h_color;
+            let xvc = self.assistance.crosshair_v_color;
+            let h_color_row = color_alpha_editor_row(
+                xhc,
+                |v| Message::CrosshairHColor(0, v),
+                |v| Message::CrosshairHColor(1, v),
+                |v| Message::CrosshairHColor(2, v),
+                |v| Message::CrosshairHColor(3, v),
+            );
+            let v_color_row = color_alpha_editor_row(
+                xvc,
+                |v| Message::CrosshairVColor(0, v),
+                |v| Message::CrosshairVColor(1, v),
+                |v| Message::CrosshairVColor(2, v),
+                |v| Message::CrosshairVColor(3, v),
             );
             let section = container(
                 column![
@@ -728,7 +736,16 @@ impl App {
                     )
                     .on_toggle(|_| Message::AssistToggle(AssistFlag::CrosshairEnabled))
                     .size(14),
-                    color_row,
+                    checkbox(
+                        "Skip intersection cell",
+                        self.assistance.crosshair_skip_hover,
+                    )
+                    .on_toggle(|_| Message::AssistToggle(AssistFlag::CrosshairSkipHover))
+                    .size(14),
+                    text("Row axis color").size(12),
+                    h_color_row,
+                    text("Column axis color").size(12),
+                    v_color_row,
                 ]
                 .spacing(8),
             )
@@ -763,9 +780,90 @@ impl App {
         // ── Run length indicators ──────────────────────────────────────────
         {
             let rl = &self.assistance.run_length;
-            let (st, et, ht, am) = (
-                rl.start_threshold, rl.end_threshold, rl.hover_threshold, rl.arm_min_cells,
-            );
+            let (st, et, ht) = (rl.start_threshold, rl.end_threshold, rl.hover_threshold);
+
+            // 3×3 subcell picker: shared-border grid; H/V are raised buttons, empty is flat.
+            let picker_el: Element<'_, Message> = {
+                const CELL: f32 = 22.0;
+                let unk = self.cell_settings.unknown.color;
+                let border_color = Color {
+                    r: (unk.r * 0.72).min(1.0),
+                    g: (unk.g * 0.72).min(1.0),
+                    b: (unk.b * 0.72).min(1.0),
+                    a: 1.0,
+                };
+                let rows: Vec<Element<'_, Message>> = (0..3usize).map(|sr| {
+                    let cells: Vec<Element<'_, Message>> = (0..3usize).map(|sc| {
+                        let kind = rl.subcells[sr][sc];
+                        let content: Element<'_, Message> = match kind {
+                            SubcellKind::Empty => Space::new(CELL, CELL).into(),
+                            SubcellKind::H => container(text("H").size(10).color(Color::WHITE))
+                                .width(Length::Fixed(CELL)).height(Length::Fixed(CELL))
+                                .align_x(Horizontal::Center).align_y(Vertical::Center).into(),
+                            SubcellKind::V => container(text("V").size(10).color(Color::WHITE))
+                                .width(Length::Fixed(CELL)).height(Length::Fixed(CELL))
+                                .align_x(Horizontal::Center).align_y(Vertical::Center).into(),
+                        };
+                        button(content)
+                        .on_press(Message::RunLengthChanged(RunLengthChange::SubcellToggle(sr, sc)))
+                        .padding(0)
+                        .style(move |_, _| match kind {
+                            SubcellKind::Empty => button::Style {
+                                background: Some(unk.into()),
+                                border: Default::default(),
+                                shadow: Default::default(),
+                                text_color: Color::TRANSPARENT,
+                            },
+                            SubcellKind::H => button::Style {
+                                background: Some(Color::from_rgb(0.18, 0.45, 0.82).into()),
+                                border: Default::default(),
+                                shadow: iced::Shadow {
+                                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.40),
+                                    offset: iced::Vector::new(0.0, 1.5),
+                                    blur_radius: 3.0,
+                                },
+                                text_color: Color::WHITE,
+                            },
+                            SubcellKind::V => button::Style {
+                                background: Some(Color::from_rgb(0.78, 0.38, 0.05).into()),
+                                border: Default::default(),
+                                shadow: iced::Shadow {
+                                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.40),
+                                    offset: iced::Vector::new(0.0, 1.5),
+                                    blur_radius: 3.0,
+                                },
+                                text_color: Color::WHITE,
+                            },
+                        })
+                        .into()
+                    }).collect();
+                    row(cells).spacing(1).into()
+                }).collect();
+                column![
+                    text("Label placement (click: Empty → H → V → Empty)").size(12),
+                    container(column(rows).spacing(1))
+                        .padding(1)
+                        .style(move |_| container::Style {
+                            background: Some(border_color.into()),
+                            ..Default::default()
+                        }),
+                ]
+                .spacing(6)
+                .into()
+            };
+            let num_size_el: Element<'_, Message> = {
+                let ns = rl.num_size;
+                row![
+                    text("Label size:").size(13),
+                    slider(6.0f32..=14.0, ns,
+                        |v| Message::RunLengthChanged(RunLengthChange::NumSize(v)))
+                        .width(Length::Fixed(100.0)),
+                    text(format!("{:.0} px", ns)).size(12),
+                ]
+                .spacing(8)
+                .align_y(Vertical::Center)
+                .into()
+            };
 
             let section = container(
                 column![
@@ -809,65 +907,6 @@ impl App {
                     ]
                     .spacing(6)
                     .align_y(Vertical::Center),
-                    text("H-label decorations (bottom left)").size(12),
-                    row![
-                        checkbox("Underline", rl.h_underline)
-                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::HUnderline))
-                            .size(14),
-                        checkbox("Overline",  rl.h_overline)
-                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::HOverline))
-                            .size(14),
-                        checkbox("← arm", rl.h_arm_before)
-                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::HArmBefore))
-                            .size(14),
-                        checkbox("→ arm", rl.h_arm_after)
-                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::HArmAfter))
-                            .size(14),
-                    ]
-                    .spacing(16),
-                    text("V-label decorations (top right)").size(12),
-                    row![
-                        checkbox("Right wall", rl.v_right_wall)
-                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::VRightWall))
-                            .size(14),
-                        checkbox("Left wall",  rl.v_left_wall)
-                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::VLeftWall))
-                            .size(14),
-                        checkbox("↑ arm", rl.v_arm_before)
-                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::VArmBefore))
-                            .size(14),
-                        checkbox("↓ arm", rl.v_arm_after)
-                            .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::VArmAfter))
-                            .size(14),
-                    ]
-                    .spacing(16),
-                    row![
-                        text("Arm min. cells:").size(13),
-                        u32_stepper(am, 1, 20,
-                            Message::RunLengthChanged(RunLengthChange::ArmMinCells(am.saturating_sub(1))),
-                            Message::RunLengthChanged(RunLengthChange::ArmMinCells(am.saturating_add(1))),
-                        ),
-                    ]
-                    .spacing(8)
-                    .align_y(Vertical::Center),
-                    row![
-                        text("Arm length:").size(13),
-                        slider(1.0f32..=20.0, rl.arm_length as f32,
-                            |v| Message::RunLengthChanged(RunLengthChange::ArmLength(v.round() as u32)))
-                            .width(Length::Fixed(100.0)),
-                        text(format!("{} px", rl.arm_length)).size(12),
-                    ]
-                    .spacing(8)
-                    .align_y(Vertical::Center),
-                    row![
-                        text("Arm gap:").size(13),
-                        slider(0.0f32..=15.0, rl.arm_gap as f32,
-                            |v| Message::RunLengthChanged(RunLengthChange::ArmGap(v.round() as u32)))
-                            .width(Length::Fixed(100.0)),
-                        text(format!("{} px", rl.arm_gap)).size(12),
-                    ]
-                    .spacing(8)
-                    .align_y(Vertical::Center),
                     horizontal_rule(1),
                     checkbox("Adjacent cell label", rl.adj_label_enabled)
                         .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::AdjLabelEnabled))
@@ -881,6 +920,30 @@ impl App {
                     checkbox("4-direction counts", rl.four_dir_labels_enabled)
                         .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::FourDirLabels))
                         .size(14).text_size(13),
+                    horizontal_rule(1),
+                    picker_el,
+                    num_size_el,
+                    horizontal_rule(1),
+                    text("H label color").size(12),
+                    checkbox("Custom H label color", rl.label_h_custom)
+                        .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::LabelHCustom))
+                        .size(14).text_size(13),
+                    color_editor_row(
+                        Color { r: rl.label_h_r, g: rl.label_h_g, b: rl.label_h_b, a: 1.0 },
+                        |v| Message::RunLengthChanged(RunLengthChange::LabelHR(v)),
+                        |v| Message::RunLengthChanged(RunLengthChange::LabelHG(v)),
+                        |v| Message::RunLengthChanged(RunLengthChange::LabelHB(v)),
+                    ),
+                    text("V label color").size(12),
+                    checkbox("Custom V label color", rl.label_v_custom)
+                        .on_toggle(|_| Message::RunLengthChanged(RunLengthChange::LabelVCustom))
+                        .size(14).text_size(13),
+                    color_editor_row(
+                        Color { r: rl.label_v_r, g: rl.label_v_g, b: rl.label_v_b, a: 1.0 },
+                        |v| Message::RunLengthChanged(RunLengthChange::LabelVR(v)),
+                        |v| Message::RunLengthChanged(RunLengthChange::LabelVG(v)),
+                        |v| Message::RunLengthChanged(RunLengthChange::LabelVB(v)),
+                    ),
                 ]
                 .spacing(8),
             )

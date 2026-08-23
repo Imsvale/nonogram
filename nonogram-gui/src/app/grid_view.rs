@@ -7,7 +7,7 @@ use iced_fonts::bootstrap::Bootstrap;
 use nonogram_core::{CellState, Puzzle, SolveResult};
 
 use super::{Key, Message};
-use super::settings::{AssistFlag, AssistanceSettings, CellSettings};
+use super::settings::{AssistFlag, AssistanceSettings, CellSettings, SubcellKind};
 use super::style::{bi, fwd, warn_inline_style, WARN_COLOR, COLOR_SUCCESS, COLOR_ERROR};
 
 // ---------------------------------------------------------------------------
@@ -292,26 +292,6 @@ fn blend_color(base: Color, overlay: Color) -> Color {
 }
 
 // ---------------------------------------------------------------------------
-// Run length label element helpers
-// ---------------------------------------------------------------------------
-
-fn thin_hline<'a>(color: Color, width: f32) -> Element<'a, Message> {
-    container(Space::new(0.0, 0.0))
-        .width(Length::Fixed(width))
-        .height(Length::Fixed(1.0))
-        .style(move |_| container::Style { background: Some(color.into()), ..Default::default() })
-        .into()
-}
-
-fn thin_vline<'a>(color: Color, height: f32) -> Element<'a, Message> {
-    container(Space::new(0.0, 0.0))
-        .width(Length::Fixed(1.0))
-        .height(Length::Fixed(height))
-        .style(move |_| container::Style { background: Some(color.into()), ..Default::default() })
-        .into()
-}
-
-// ---------------------------------------------------------------------------
 // Grid regions
 // ---------------------------------------------------------------------------
 
@@ -353,7 +333,7 @@ pub(crate) fn build_grid_regions<'a>(
     prev_key: Option<Key>,
     next_key: Option<Key>,
     hover_runs: HoverRuns,
-    crosshair: Option<(Option<usize>, Option<usize>, Color)>,
+    crosshair: Option<(Option<usize>, Option<usize>, Color, Color)>,
     machine_nav: Option<Element<'a, Message>>,
 ) -> GridRegions<'a> {
     const C: f32 = 26.0;
@@ -429,10 +409,10 @@ pub(crate) fn build_grid_regions<'a>(
         a: 1.0,
     };
 
-    let (xhair_row, xhair_col, xhair_color): (Option<usize>, Option<usize>, Option<Color>) =
+    let (xhair_row, xhair_col, xhair_h_color, xhair_v_color): (Option<usize>, Option<usize>, Option<Color>, Option<Color>) =
         match crosshair {
-            Some((xr, xc, xc_col)) => (xr, xc, Some(xc_col)),
-            None => (None, None, None),
+            Some((xr, xc, xhc, xvc)) => (xr, xc, Some(xhc), Some(xvc)),
+            None => (None, None, None, None),
         };
 
     macro_rules! bordered {
@@ -535,11 +515,11 @@ pub(crate) fn build_grid_regions<'a>(
         let lp = if c == 0 { 0.0_f32 } else if c % 5 == 0 { 2.0 } else { 1.0 };
         let vc = if c == 0 { border_min } else if c % 5 == 0 { border_maj } else { border_min };
 
-        let col_bg = match (xhair_col == Some(c), xhair_color) {
+        let col_bg = match (xhair_col == Some(c), xhair_v_color) {
             (true, Some(xc)) => blend_color(clue_bg, xc),
             _ => clue_bg,
         };
-        let col_bg_hover = match (xhair_col == Some(c), xhair_color) {
+        let col_bg_hover = match (xhair_col == Some(c), xhair_v_color) {
             (true, Some(xc)) => blend_color(clue_bg_hover, xc),
             _ => clue_bg_hover,
         };
@@ -634,11 +614,11 @@ pub(crate) fn build_grid_regions<'a>(
 
         // Row clue
         {
-            let row_bg = match (xhair_row == Some(r), xhair_color) {
+            let row_bg = match (xhair_row == Some(r), xhair_h_color) {
                 (true, Some(xc)) => blend_color(clue_bg, xc),
                 _ => clue_bg,
             };
-            let row_bg_hover = match (xhair_row == Some(r), xhair_color) {
+            let row_bg_hover = match (xhair_row == Some(r), xhair_h_color) {
                 (true, Some(xc)) => blend_color(clue_bg_hover, xc),
                 _ => clue_bg_hover,
             };
@@ -731,9 +711,17 @@ pub(crate) fn build_grid_regions<'a>(
                 settings.visual_for(state).color
             };
 
-            let bg = match (xhair_row == Some(r) || xhair_col == Some(c), xhair_color) {
-                (true, Some(xc)) => blend_color(bg, xc),
-                _ => bg,
+            let is_xhair_intersection = xhair_row == Some(r) && xhair_col == Some(c);
+            let skip_xhair = is_xhair_intersection && assistance.crosshair_skip_hover;
+            let bg = if skip_xhair { bg } else {
+                let bg = match (xhair_row == Some(r), xhair_h_color) {
+                    (true, Some(xc)) => blend_color(bg, xc),
+                    _ => bg,
+                };
+                match (xhair_col == Some(c), xhair_v_color) {
+                    (true, Some(xc)) => blend_color(bg, xc),
+                    _ => bg,
+                }
             };
 
             let in_h_run = hover_runs.h.as_ref().map_or(false, |hr| r == hr.fixed && c >= hr.start && c <= hr.end);
@@ -744,46 +732,30 @@ pub(crate) fn build_grid_regions<'a>(
             let rl = &assistance.run_length;
             let show_h_label = in_h_run && hover_runs.h.as_ref().map_or(false, |hr| {
                 let len = h_run_len as u32;
+                let ht = rl.hover_threshold as usize;
                 (c == hr.start && rl.show_start && len >= rl.start_threshold) ||
                 (c == hr.end   && rl.show_end   && len >= rl.end_threshold)   ||
-                (c == hr.hover && rl.show_hover && len >= rl.hover_threshold)
+                (c == hr.hover && rl.show_hover &&
+                    hr.hover.saturating_sub(hr.start) >= ht &&
+                    hr.end.saturating_sub(hr.hover)   >= ht)
             });
             let show_v_label = in_v_run && hover_runs.v.as_ref().map_or(false, |vr| {
                 let len = v_run_len as u32;
+                let ht = rl.hover_threshold as usize;
                 (r == vr.start && rl.show_start && len >= rl.start_threshold) ||
                 (r == vr.end   && rl.show_end   && len >= rl.end_threshold)   ||
-                (r == vr.hover && rl.show_hover && len >= rl.hover_threshold)
+                (r == vr.hover && rl.show_hover &&
+                    vr.hover.saturating_sub(vr.start) >= ht &&
+                    vr.end.saturating_sub(vr.hover)   >= ht)
             });
             let hover_run_filled = hover_runs.h.as_ref().or(hover_runs.v.as_ref()).map_or(true, |r| r.filled);
-            let label_color = if hover_run_filled { Color::WHITE } else { Color::from_rgb(0.1, 0.1, 0.2) };
+            let auto_label_color = if hover_run_filled { Color::WHITE } else { Color::from_rgb(0.1, 0.1, 0.2) };
+            let label_h_color = if rl.label_h_custom { Color::from_rgb(rl.label_h_r, rl.label_h_g, rl.label_h_b) } else { auto_label_color };
+            let label_v_color = if rl.label_v_custom { Color::from_rgb(rl.label_v_r, rl.label_v_g, rl.label_v_b) } else { auto_label_color };
 
-            // Arms in adjacent cells — check whether a neighboring label points here.
-            // h_arm_from_right: label at (r, c+1) with h_arm_before (←) → arm rendered here
-            let h_arm_from_right = rl.h_arm_before && c + 1 < puzzle.width &&
-                hover_runs.h.as_ref().map_or(false, |hr| {
-                    r == hr.fixed && { let lc = c + 1;
-                        lc >= hr.start && lc <= hr.end && {
-                            let len = (hr.end - hr.start + 1) as u32;
-                            let show = (lc == hr.start && rl.show_start && len >= rl.start_threshold)
-                                    || (lc == hr.end   && rl.show_end   && len >= rl.end_threshold)
-                                    || (lc == hr.hover && rl.show_hover && len >= rl.hover_threshold);
-                            show && (lc as u32).saturating_sub(hr.start as u32) >= rl.arm_min_cells
-                        }
-                    }
-                });
-            // v_arm_from_below: label at (r+1, c) with v_arm_before (↑) → arm rendered here
-            let v_arm_from_below = rl.v_arm_before && r + 1 < puzzle.height &&
-                hover_runs.v.as_ref().map_or(false, |vr| {
-                    c == vr.fixed && { let lr = r + 1;
-                        lr >= vr.start && lr <= vr.end && {
-                            let len = (vr.end - vr.start + 1) as u32;
-                            let show = (lr == vr.start && rl.show_start && len >= rl.start_threshold)
-                                    || (lr == vr.end   && rl.show_end   && len >= rl.end_threshold)
-                                    || (lr == vr.hover && rl.show_hover && len >= rl.hover_threshold);
-                            show && (lr as u32).saturating_sub(vr.start as u32) >= rl.arm_min_cells
-                        }
-                    }
-                });
+            // Pre-compute which subcells hold H and V labels.
+            let h_subcells = rl.subcells_of(SubcellKind::H);
+            let v_subcells = rl.subcells_of(SubcellKind::V);
 
             // Adjacent-cell label: run length shown in the cell next to the hovered cell.
             let show_adj_h = rl.adj_label_enabled && hover_runs.h.as_ref().map_or(false, |hr| {
@@ -920,24 +892,6 @@ pub(crate) fn build_grid_regions<'a>(
 
             let expected_run_state = if hover_run_filled { CellState::Filled } else { CellState::Unknown };
 
-            // Layout constants for decoration anchoring
-            // H-label: bottom-left corner, number at bottom: 2px, text ~9px tall
-            const H_NUM_BOT: f32 = 2.0;
-            const H_NUM_LEFT: f32 = 2.0;
-            const H_TEXT_H:  f32 = 9.0;
-            // V-label: top-right corner, number at top: 1px, right: 2px, text ~9px tall
-            const V_NUM_TOP:  f32 = 1.0;
-            const V_NUM_RIGHT: f32 = 2.0;
-            const V_TEXT_H:   f32 = 9.0;
-
-            let arm_len = rl.arm_length as f32;
-            let arm_gap = rl.arm_gap as f32;
-            // Approximate text widths at size 9
-            let h_text_w = if h_run_len < 10 { 6.0_f32 } else { 11.0_f32 };
-            let v_arm_right = if v_run_len < 10 { 4.0_f32 } else { 5.0_f32 };
-            // V left wall shifts right based on digit count
-            let v_lwall_right = if v_run_len < 10 { 8.0_f32 } else { 13.0_f32 };
-
             let cell_face: Element<'a, Message> = if in_hover_run && state == expected_run_state {
                 let hl_color = if hover_run_filled {
                     Color::from_rgba(1.0, 1.0, 1.0, 0.10)
@@ -951,95 +905,32 @@ pub(crate) fn build_grid_regions<'a>(
                         background: Some(hl_color.into()),
                         ..Default::default()
                     });
-                let lc = label_color;
                 let mut layers: Vec<Element<'a, Message>> = vec![cell_face, highlight.into()];
 
+                // H labels — one layer per configured H subcell.
                 if show_h_label {
-                    let hr = hover_runs.h.as_ref().unwrap();
-
-                    // Number — anchored bottom-left, never displaced
-                    layers.push(
-                        container(text(h_run_len.to_string()).size(9).color(lc))
-                            .align_x(Horizontal::Left).align_y(Vertical::Bottom)
-                            .width(Length::Fill).height(Length::Fill)
-                            .padding(Padding { bottom: H_NUM_BOT, left: H_NUM_LEFT, ..Padding::ZERO })
-                            .into(),
-                    );
-
-                    // H-label decorations — each is an independent stack layer
-                    // Underline: 1px below number bottom edge
-                    if rl.h_underline {
+                    let lhc = label_h_color;
+                    for &(sr, sc) in &h_subcells {
+                        let ax = [Horizontal::Left, Horizontal::Center, Horizontal::Right][sc];
+                        let ay = [Vertical::Top, Vertical::Center, Vertical::Bottom][sr];
                         layers.push(
-                            container(thin_hline(lc, 10.0))
-                                .align_x(Horizontal::Left).align_y(Vertical::Bottom)
+                            container(text(h_run_len.to_string()).size(rl.num_size).color(lhc))
+                                .align_x(ax).align_y(ay)
                                 .width(Length::Fill).height(Length::Fill)
-                                .padding(Padding { bottom: H_NUM_BOT, left: H_NUM_LEFT, ..Padding::ZERO })
-                                .into(),
-                        );
-                    }
-                    // Overline: 1px above number top edge
-                    if rl.h_overline {
-                        layers.push(
-                            container(thin_hline(lc, 10.0))
-                                .align_x(Horizontal::Left).align_y(Vertical::Bottom)
-                                .width(Length::Fill).height(Length::Fill)
-                                .padding(Padding { bottom: H_NUM_BOT + H_TEXT_H + 1.0, left: H_NUM_LEFT, ..Padding::ZERO })
-                                .into(),
-                        );
-                    }
-
-                    // After-arm (→): in this same cell, right of the number
-                    if rl.h_arm_after && (hr.end as u32).saturating_sub(c as u32) >= rl.arm_min_cells {
-                        layers.push(
-                            container(thin_hline(lc, arm_len))
-                                .align_x(Horizontal::Left).align_y(Vertical::Bottom)
-                                .width(Length::Fill).height(Length::Fill)
-                                .padding(Padding { bottom: H_NUM_BOT + H_TEXT_H / 2.0 - 0.5, left: H_NUM_LEFT + h_text_w + arm_gap, ..Padding::ZERO })
                                 .into(),
                         );
                     }
                 }
-
+                // V labels.
                 if show_v_label {
-                    let vr = hover_runs.v.as_ref().unwrap();
-
-                    // Number — anchored top-right, never displaced
-                    layers.push(
-                        container(text(v_run_len.to_string()).size(9).color(lc))
-                            .align_x(Horizontal::Right).align_y(Vertical::Top)
-                            .width(Length::Fill).height(Length::Fill)
-                            .padding(Padding { top: V_NUM_TOP, right: V_NUM_RIGHT, ..Padding::ZERO })
-                            .into(),
-                    );
-
-                    // V-label decorations — each is an independent stack layer
-                    // Walls are anchored 2px below number top (down 2px from V_NUM_TOP)
-                    if rl.v_right_wall {
+                    let lvc = label_v_color;
+                    for &(sr, sc) in &v_subcells {
+                        let ax = [Horizontal::Left, Horizontal::Center, Horizontal::Right][sc];
+                        let ay = [Vertical::Top, Vertical::Center, Vertical::Bottom][sr];
                         layers.push(
-                            container(thin_vline(lc, V_TEXT_H))
-                                .align_x(Horizontal::Right).align_y(Vertical::Top)
+                            container(text(v_run_len.to_string()).size(rl.num_size).color(lvc))
+                                .align_x(ax).align_y(ay)
                                 .width(Length::Fill).height(Length::Fill)
-                                .padding(Padding { top: V_NUM_TOP + 2.0, right: V_NUM_RIGHT - 2.0, ..Padding::ZERO })
-                                .into(),
-                        );
-                    }
-                    if rl.v_left_wall {
-                        layers.push(
-                            container(thin_vline(lc, V_TEXT_H))
-                                .align_x(Horizontal::Right).align_y(Vertical::Top)
-                                .width(Length::Fill).height(Length::Fill)
-                                .padding(Padding { top: V_NUM_TOP + 2.0, right: v_lwall_right, ..Padding::ZERO })
-                                .into(),
-                        );
-                    }
-
-                    // After-arm (↓): in this same cell, below the number
-                    if rl.v_arm_after && (vr.end as u32).saturating_sub(r as u32) >= rl.arm_min_cells {
-                        layers.push(
-                            container(thin_vline(lc, arm_len))
-                                .align_x(Horizontal::Right).align_y(Vertical::Top)
-                                .width(Length::Fill).height(Length::Fill)
-                                .padding(Padding { top: V_NUM_TOP + V_TEXT_H + arm_gap + 2.0, right: v_arm_right, ..Padding::ZERO })
                                 .into(),
                         );
                     }
@@ -1053,103 +944,72 @@ pub(crate) fn build_grid_regions<'a>(
                 cell_face
             };
 
-            // Before-arms render in the ADJACENT cell (right edge for ←, bottom edge for ↑)
-            // so they appear close to the number across the 1px cell gap.
-            let lc = label_color;
-            let need_h_arm = h_arm_from_right;   // ← arm: label at c+1, arm here at right edge
-            let need_v_arm = v_arm_from_below;   // ↑ arm: label at r+1, arm here at bottom edge
-            let cell_face: Element<'a, Message> = if need_h_arm || need_v_arm {
-                let mut arm_layers: Vec<Element<'a, Message>> = vec![cell_face];
-                if need_h_arm {
-                    // Short arm at the right edge of this cell, at H-label vertical level
-                    arm_layers.push(
-                        container(thin_hline(lc, arm_len))
-                            .align_x(Horizontal::Right).align_y(Vertical::Bottom)
-                            .width(Length::Fill).height(Length::Fill)
-                            .padding(Padding { bottom: H_NUM_BOT + H_TEXT_H / 2.0 - 0.5, right: (arm_gap - 2.0).max(0.0), ..Padding::ZERO })
-                            .into(),
-                    );
-                }
-                if need_v_arm {
-                    // Short arm at the bottom edge of this cell, at V-label horizontal level
-                    arm_layers.push(
-                        container(thin_vline(lc, arm_len))
-                            .align_x(Horizontal::Right).align_y(Vertical::Bottom)
-                            .width(Length::Fill).height(Length::Fill)
-                            .padding(Padding { bottom: (arm_gap - 2.0).max(0.0), right: v_arm_right, ..Padding::ZERO })
-                            .into(),
-                    );
-                }
-                iced::widget::stack(arm_layers).width(Length::Fill).height(Length::Fill).into()
-            } else {
-                cell_face
-            };
-
-            // Adjacent-cell labels and 4-direction counts — rendered on top of anything else.
+            // Adjacent-cell labels and 4-direction counts — use mirror subcell of the
+            // first configured H/V subcell for positioning within the neighbor cell.
             let cell_face: Element<'a, Message> = if show_adj_h || show_adj_v || h4_left || h4_right || v4_above || v4_below {
                 let lum = 0.299 * bg.r + 0.587 * bg.g + 0.114 * bg.b;
                 let adj_color  = if lum > 0.5 { Color::from_rgb(0.0, 0.20, 0.70) } else { Color::from_rgb(0.55, 0.80, 1.0) };
                 let four_color = if lum > 0.5 { Color::from_rgb(0.60, 0.30, 0.0) } else { Color::from_rgb(1.0, 0.85, 0.40) };
                 let mut extra: Vec<Element<'a, Message>> = vec![cell_face];
 
+                // Position adj/4-dir labels using the mirror of the first H/V subcell.
+                let (h_adj_sr, _) = rl.first_subcell_of(SubcellKind::H).unwrap_or((2, 0));
+                let (_, v_sc_first) = rl.first_subcell_of(SubcellKind::V).unwrap_or((0, 2));
+                let h_adj_ay = [Vertical::Top, Vertical::Center, Vertical::Bottom][h_adj_sr];
+                let v_adj_ax = [Horizontal::Left, Horizontal::Center, Horizontal::Right][v_sc_first];
+
                 if show_adj_h {
                     let hr = hover_runs.h.as_ref().unwrap();
-                    let (ax, pad) = if adj_h_is_right {
-                        (Horizontal::Left,  Padding { bottom: H_NUM_BOT, left: H_NUM_LEFT, ..Padding::ZERO })
-                    } else {
-                        (Horizontal::Right, Padding { bottom: H_NUM_BOT, right: H_NUM_LEFT, ..Padding::ZERO })
-                    };
+                    // Mirror: adj label is on the opposite side, near the boundary
+                    let ax = if adj_h_is_right { Horizontal::Left } else { Horizontal::Right };
                     extra.push(
-                        container(text((hr.end - hr.start + 1).to_string()).size(9).color(adj_color))
-                            .align_x(ax).align_y(Vertical::Bottom)
+                        container(text((hr.end - hr.start + 1).to_string()).size(rl.num_size).color(adj_color))
+                            .align_x(ax).align_y(h_adj_ay)
                             .width(Length::Fill).height(Length::Fill)
-                            .padding(pad).into(),
+                            .into(),
                     );
                 }
                 if show_adj_v {
                     let vr = hover_runs.v.as_ref().unwrap();
-                    let (ay, pad) = if adj_v_is_below {
-                        (Vertical::Top,    Padding { top: V_NUM_TOP, right: V_NUM_RIGHT, ..Padding::ZERO })
-                    } else {
-                        (Vertical::Bottom, Padding { bottom: V_NUM_TOP, right: V_NUM_RIGHT, ..Padding::ZERO })
-                    };
+                    let ay = if adj_v_is_below { Vertical::Top } else { Vertical::Bottom };
                     extra.push(
-                        container(text((vr.end - vr.start + 1).to_string()).size(9).color(adj_color))
-                            .align_x(Horizontal::Right).align_y(ay)
+                        container(text((vr.end - vr.start + 1).to_string()).size(rl.num_size).color(adj_color))
+                            .align_x(v_adj_ax).align_y(ay)
                             .width(Length::Fill).height(Length::Fill)
-                            .padding(pad).into(),
+                            .into(),
                     );
                 }
+                // 4-dir counts: mirror subcell in each direction.
                 if h4_left && h4_left_count > 0 {
                     extra.push(
-                        container(text(h4_left_count.to_string()).size(9).color(four_color))
-                            .align_x(Horizontal::Right).align_y(Vertical::Bottom)
+                        container(text(h4_left_count.to_string()).size(rl.num_size).color(four_color))
+                            .align_x(Horizontal::Right).align_y(h_adj_ay)
                             .width(Length::Fill).height(Length::Fill)
-                            .padding(Padding { bottom: H_NUM_BOT, right: H_NUM_LEFT, ..Padding::ZERO }).into(),
+                            .into(),
                     );
                 }
                 if h4_right && h4_right_count > 0 {
                     extra.push(
-                        container(text(h4_right_count.to_string()).size(9).color(four_color))
-                            .align_x(Horizontal::Left).align_y(Vertical::Bottom)
+                        container(text(h4_right_count.to_string()).size(rl.num_size).color(four_color))
+                            .align_x(Horizontal::Left).align_y(h_adj_ay)
                             .width(Length::Fill).height(Length::Fill)
-                            .padding(Padding { bottom: H_NUM_BOT, left: H_NUM_LEFT, ..Padding::ZERO }).into(),
+                            .into(),
                     );
                 }
                 if v4_above && v4_above_count > 0 {
                     extra.push(
-                        container(text(v4_above_count.to_string()).size(9).color(four_color))
-                            .align_x(Horizontal::Right).align_y(Vertical::Bottom)
+                        container(text(v4_above_count.to_string()).size(rl.num_size).color(four_color))
+                            .align_x(v_adj_ax).align_y(Vertical::Bottom)
                             .width(Length::Fill).height(Length::Fill)
-                            .padding(Padding { bottom: V_NUM_TOP, right: V_NUM_RIGHT, ..Padding::ZERO }).into(),
+                            .into(),
                     );
                 }
                 if v4_below && v4_below_count > 0 {
                     extra.push(
-                        container(text(v4_below_count.to_string()).size(9).color(four_color))
-                            .align_x(Horizontal::Right).align_y(Vertical::Top)
+                        container(text(v4_below_count.to_string()).size(rl.num_size).color(four_color))
+                            .align_x(v_adj_ax).align_y(Vertical::Top)
                             .width(Length::Fill).height(Length::Fill)
-                            .padding(Padding { top: V_NUM_TOP, right: V_NUM_RIGHT, ..Padding::ZERO }).into(),
+                            .into(),
                     );
                 }
                 iced::widget::stack(extra).width(Length::Fill).height(Length::Fill).into()

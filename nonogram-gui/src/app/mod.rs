@@ -28,7 +28,7 @@ mod url_import;
 mod view_panel;
 mod view_detail;
 
-use settings::{AssistFlag, CellSettings, AssistanceSettings, SecondaryFocusKey, load_settings, save_settings};
+use settings::{AssistFlag, CellSettings, AssistanceSettings, SecondaryFocusKey, SubcellKind, load_settings, save_settings};
 use persistence::{
     load_solved, save_solved, save_session, load_session,
     save_solution_to_file, relative_path, save_window_state,
@@ -178,17 +178,19 @@ pub(crate) enum RunLengthChange {
     ShowStart,          StartThreshold(u32),
     ShowEnd,            EndThreshold(u32),
     ShowHover,          HoverThreshold(u32),
-    HUnderline,         HOverline,
-    HArmBefore,         HArmAfter,
-    VRightWall,         VLeftWall,
-    VArmBefore,         VArmAfter,
-    ArmMinCells(u32),
-    ArmLength(u32),
-    ArmGap(u32),
     AdjLabelEnabled,
     AdjLabelHPreferAfter,
     AdjLabelVPreferAfter,
     FourDirLabels,
+    // 3×3 subcell picker: cycle clicked cell through Empty→H→V→Empty
+    SubcellToggle(usize, usize),
+    // Label text size
+    NumSize(f32),
+    // Per-axis custom label colors
+    LabelHCustom,
+    LabelHR(f32), LabelHG(f32), LabelHB(f32),
+    LabelVCustom,
+    LabelVR(f32), LabelVG(f32), LabelVB(f32),
 }
 
 #[derive(Debug, Clone)]
@@ -271,7 +273,8 @@ pub enum Message {
     SettingSumBg(u8, f32),
     AssistToggle(AssistFlag),
     RunLengthChanged(RunLengthChange),
-    CrosshairColor(u8, f32),  // channel: 0=R, 1=G, 2=B, 3=A
+    CrosshairHColor(u8, f32),  // channel: 0=R, 1=G, 2=B, 3=A (horizontal / row axis)
+    CrosshairVColor(u8, f32),  // channel: 0=R, 1=G, 2=B, 3=A (vertical / col axis)
     ClueDimToggle(Key, bool, usize, usize),  // (puzzle key, is_col, line_idx, clue_idx)
 
     // Grid editing
@@ -1229,8 +1232,9 @@ impl App {
                     AssistFlag::AutoFillEmpty    => self.assistance.auto_fill_empty     = !self.assistance.auto_fill_empty,
                     AssistFlag::ClueSumsWithGaps => self.assistance.clue_sums_with_gaps = !self.assistance.clue_sums_with_gaps,
                     AssistFlag::AutoCrossEdges   => self.assistance.auto_cross_edges    = !self.assistance.auto_cross_edges,
-                    AssistFlag::CrosshairEnabled => self.assistance.crosshair_enabled   = !self.assistance.crosshair_enabled,
-                    AssistFlag::AxisLock         => self.assistance.axis_lock           = !self.assistance.axis_lock,
+                    AssistFlag::CrosshairEnabled   => self.assistance.crosshair_enabled   = !self.assistance.crosshair_enabled,
+                    AssistFlag::CrosshairSkipHover => self.assistance.crosshair_skip_hover = !self.assistance.crosshair_skip_hover,
+                    AssistFlag::AxisLock           => self.assistance.axis_lock           = !self.assistance.axis_lock,
                 }
                 save_settings(&self.cell_settings, &self.assistance);
                 Task::none()
@@ -1245,17 +1249,6 @@ impl App {
                     RunLengthChange::EndThreshold(v)    => rl.end_threshold   = v,
                     RunLengthChange::ShowHover          => rl.show_hover      = !rl.show_hover,
                     RunLengthChange::HoverThreshold(v)  => rl.hover_threshold = v,
-                    RunLengthChange::HUnderline         => rl.h_underline     = !rl.h_underline,
-                    RunLengthChange::HOverline          => rl.h_overline      = !rl.h_overline,
-                    RunLengthChange::HArmBefore         => rl.h_arm_before    = !rl.h_arm_before,
-                    RunLengthChange::HArmAfter          => rl.h_arm_after     = !rl.h_arm_after,
-                    RunLengthChange::VRightWall         => rl.v_right_wall    = !rl.v_right_wall,
-                    RunLengthChange::VLeftWall          => rl.v_left_wall     = !rl.v_left_wall,
-                    RunLengthChange::VArmBefore         => rl.v_arm_before    = !rl.v_arm_before,
-                    RunLengthChange::VArmAfter          => rl.v_arm_after     = !rl.v_arm_after,
-                    RunLengthChange::ArmMinCells(v)      => rl.arm_min_cells          = v,
-                    RunLengthChange::ArmLength(v)        => rl.arm_length             = v,
-                    RunLengthChange::ArmGap(v)           => rl.arm_gap                = v,
                     RunLengthChange::AdjLabelEnabled => {
                         rl.adj_label_enabled = !rl.adj_label_enabled;
                         if rl.adj_label_enabled { rl.four_dir_labels_enabled = false; }
@@ -1266,19 +1259,38 @@ impl App {
                         rl.four_dir_labels_enabled = !rl.four_dir_labels_enabled;
                         if rl.four_dir_labels_enabled { rl.adj_label_enabled = false; }
                     }
+                    RunLengthChange::SubcellToggle(sr, sc) => {
+                        use settings::SubcellKind;
+                        rl.subcells[sr][sc] = match rl.subcells[sr][sc] {
+                            SubcellKind::Empty => SubcellKind::H,
+                            SubcellKind::H     => SubcellKind::V,
+                            SubcellKind::V     => SubcellKind::Empty,
+                        };
+                    }
+                    RunLengthChange::NumSize(v)      => rl.num_size           = v,
+                    RunLengthChange::LabelHCustom    => rl.label_h_custom     = !rl.label_h_custom,
+                    RunLengthChange::LabelHR(v)      => rl.label_h_r          = v,
+                    RunLengthChange::LabelHG(v)      => rl.label_h_g          = v,
+                    RunLengthChange::LabelHB(v)      => rl.label_h_b          = v,
+                    RunLengthChange::LabelVCustom    => rl.label_v_custom     = !rl.label_v_custom,
+                    RunLengthChange::LabelVR(v)      => rl.label_v_r          = v,
+                    RunLengthChange::LabelVG(v)      => rl.label_v_g          = v,
+                    RunLengthChange::LabelVB(v)      => rl.label_v_b          = v,
                 }
                 save_settings(&self.cell_settings, &self.assistance);
                 Task::none()
             }
 
-            Message::CrosshairColor(channel, value) => {
-                match channel {
-                    0 => self.assistance.crosshair_color.r = value,
-                    1 => self.assistance.crosshair_color.g = value,
-                    2 => self.assistance.crosshair_color.b = value,
-                    3 => self.assistance.crosshair_color.a = value,
-                    _ => {}
-                }
+            Message::CrosshairHColor(channel, value) => {
+                let c = &mut self.assistance.crosshair_h_color;
+                match channel { 0 => c.r = value, 1 => c.g = value, 2 => c.b = value, 3 => c.a = value, _ => {} }
+                save_settings(&self.cell_settings, &self.assistance);
+                Task::none()
+            }
+
+            Message::CrosshairVColor(channel, value) => {
+                let c = &mut self.assistance.crosshair_v_color;
+                match channel { 0 => c.r = value, 1 => c.g = value, 2 => c.b = value, 3 => c.a = value, _ => {} }
                 save_settings(&self.cell_settings, &self.assistance);
                 Task::none()
             }

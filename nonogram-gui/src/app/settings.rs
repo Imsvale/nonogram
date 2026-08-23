@@ -175,12 +175,29 @@ pub(crate) enum AssistFlag {
     ClueSumsWithGaps,
     AutoCrossEdges,
     CrosshairEnabled,
+    CrosshairSkipHover,
     AxisLock,
 }
 
 // ---------------------------------------------------------------------------
 // Run length display settings
 // ---------------------------------------------------------------------------
+
+/// Which axis label (if any) occupies a 3×3 subcell within a grid cell.
+/// Each subcell holds at most one of H, V, or Empty.
+/// TODO: extend to a 5×5 cross widget covering the primary cell plus its 4
+/// orthogonal and 4 end-of-arm neighbours (9 cells × 9 subcells = 81 targets).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum SubcellKind { #[default] Empty, H, V }
+
+fn default_subcells() -> [[SubcellKind; 3]; 3] {
+    let mut s = [[SubcellKind::Empty; 3]; 3];
+    s[2][0] = SubcellKind::H;  // bottom-left
+    s[0][2] = SubcellKind::V;  // top-right
+    s
+}
+
+fn default_num_size() -> f32 { 9.0 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
@@ -191,21 +208,25 @@ pub(crate) struct RunLengthSettings {
     pub end_threshold:   u32,
     pub show_hover:      bool,
     pub hover_threshold: u32,
-    pub h_underline:     bool,
-    pub h_overline:      bool,
-    pub h_arm_before:    bool,
-    pub h_arm_after:     bool,
-    pub v_right_wall:    bool,
-    pub v_left_wall:     bool,
-    pub v_arm_before:    bool,
-    pub v_arm_after:     bool,
-    pub arm_min_cells:   u32,
-    pub arm_length:      u32,
-    pub arm_gap:         u32,
-    pub adj_label_enabled:       bool,
+    pub adj_label_enabled:        bool,
     pub adj_label_h_prefer_after: bool,
     pub adj_label_v_prefer_after: bool,
-    pub four_dir_labels_enabled: bool,
+    pub four_dir_labels_enabled:  bool,
+    // 3×3 subcell grid: each cell holds Empty, H, or V
+    #[serde(default = "default_subcells")]
+    pub subcells: [[SubcellKind; 3]; 3],
+    // Label text size in pixels
+    #[serde(default = "default_num_size")]
+    pub num_size: f32,
+    // Per-axis custom label colors (auto = white/dark from bg)
+    pub label_h_custom:           bool,
+    pub label_h_r:                f32,
+    pub label_h_g:                f32,
+    pub label_h_b:                f32,
+    pub label_v_custom:           bool,
+    pub label_v_r:                f32,
+    pub label_v_g:                f32,
+    pub label_v_b:                f32,
 }
 
 impl Default for RunLengthSettings {
@@ -217,23 +238,41 @@ impl Default for RunLengthSettings {
             end_threshold:   3,
             show_hover:      true,
             hover_threshold: 2,
-            h_underline:     false,
-            h_overline:      false,
-            h_arm_before:    false,
-            h_arm_after:     false,
-            v_right_wall:    false,
-            v_left_wall:     false,
-            v_arm_before:    false,
-            v_arm_after:     false,
-            arm_min_cells:   2,
-            arm_length:      5,
-            arm_gap:         1,
-            adj_label_enabled:       false,
+            adj_label_enabled:        false,
             adj_label_h_prefer_after: true,
             adj_label_v_prefer_after: true,
-            four_dir_labels_enabled: false,
+            four_dir_labels_enabled:  false,
+            subcells:         default_subcells(),
+            num_size:         9.0,
+            label_h_custom:           false,
+            label_h_r:                0.40,
+            label_h_g:                0.72,
+            label_h_b:                1.0,
+            label_v_custom:           false,
+            label_v_r:                0.40,
+            label_v_g:                0.72,
+            label_v_b:                1.0,
         }
     }
+}
+
+impl RunLengthSettings {
+    /// Returns all subcell positions that hold the given kind, in row-major order.
+    pub(crate) fn subcells_of(&self, kind: SubcellKind) -> Vec<(usize, usize)> {
+        let mut out = Vec::new();
+        for sr in 0..3 {
+            for sc in 0..3 {
+                if self.subcells[sr][sc] == kind { out.push((sr, sc)); }
+            }
+        }
+        out
+    }
+
+    /// Returns the first subcell position holding the given kind, if any.
+    pub(crate) fn first_subcell_of(&self, kind: SubcellKind) -> Option<(usize, usize)> {
+        self.subcells_of(kind).into_iter().next()
+    }
+
 }
 
 #[derive(Clone, Debug)]
@@ -244,7 +283,9 @@ pub(crate) struct AssistanceSettings {
     pub(crate) clue_sums_with_gaps: bool,
     pub(crate) crosshair_enabled: bool,
     pub(crate) axis_lock: bool,
-    pub(crate) crosshair_color: Color,
+    pub(crate) crosshair_h_color: Color,
+    pub(crate) crosshair_v_color: Color,
+    pub(crate) crosshair_skip_hover: bool,
     pub(crate) focus_key: FocusKey,
     pub(crate) focus_key2: SecondaryFocusKey,
     pub(crate) run_length: RunLengthSettings,
@@ -259,7 +300,9 @@ impl Default for AssistanceSettings {
             clue_sums_with_gaps: false,
             crosshair_enabled: false,
             axis_lock: false,
-            crosshair_color: Color { r: 0.40, g: 0.72, b: 1.0, a: 0.18 },
+            crosshair_h_color: Color { r: 0.40, g: 0.72, b: 1.0, a: 0.18 },
+            crosshair_v_color: Color { r: 0.40, g: 0.72, b: 1.0, a: 0.18 },
+            crosshair_skip_hover: false,
             focus_key: FocusKey::F11,
             focus_key2: SecondaryFocusKey::F,
             run_length: RunLengthSettings::default(),
@@ -283,10 +326,14 @@ fn default_clue_bg_channel() -> f32 { 0.97 }
 fn default_sum_bg_channel()  -> f32 { 0.82 }
 fn default_focus_key()       -> FocusKey { FocusKey::F11 }
 fn default_focus_key2()      -> SecondaryFocusKey { SecondaryFocusKey::F }
-fn default_xhair_r()         -> f32 { 0.40 }
-fn default_xhair_g()         -> f32 { 0.72 }
-fn default_xhair_b()         -> f32 { 1.0  }
-fn default_xhair_a()         -> f32 { 0.18 }
+fn default_xhair_h_r()       -> f32 { 0.40 }
+fn default_xhair_h_g()       -> f32 { 0.72 }
+fn default_xhair_h_b()       -> f32 { 1.0  }
+fn default_xhair_h_a()       -> f32 { 0.18 }
+fn default_xhair_v_r()       -> f32 { 0.40 }
+fn default_xhair_v_g()       -> f32 { 0.72 }
+fn default_xhair_v_b()       -> f32 { 1.0  }
+fn default_xhair_v_a()       -> f32 { 0.18 }
 
 #[derive(Serialize, Deserialize)]
 struct SavedSettings {
@@ -305,10 +352,15 @@ struct SavedSettings {
     #[serde(default)] clue_sums_with_gaps: bool,
     #[serde(default)] crosshair_enabled: bool,
     #[serde(default)] axis_lock: bool,
-    #[serde(default = "default_xhair_r")] crosshair_r: f32,
-    #[serde(default = "default_xhair_g")] crosshair_g: f32,
-    #[serde(default = "default_xhair_b")] crosshair_b: f32,
-    #[serde(default = "default_xhair_a")] crosshair_a: f32,
+    #[serde(default = "default_xhair_h_r")] crosshair_h_r: f32,
+    #[serde(default = "default_xhair_h_g")] crosshair_h_g: f32,
+    #[serde(default = "default_xhair_h_b")] crosshair_h_b: f32,
+    #[serde(default = "default_xhair_h_a")] crosshair_h_a: f32,
+    #[serde(default = "default_xhair_v_r")] crosshair_v_r: f32,
+    #[serde(default = "default_xhair_v_g")] crosshair_v_g: f32,
+    #[serde(default = "default_xhair_v_b")] crosshair_v_b: f32,
+    #[serde(default = "default_xhair_v_a")] crosshair_v_a: f32,
+    #[serde(default)] crosshair_skip_hover: bool,
     #[serde(default = "default_focus_key")]  focus_key:  FocusKey,
     #[serde(default = "default_focus_key2")] focus_key2: SecondaryFocusKey,
     #[serde(default)] run_length: RunLengthSettings,
@@ -371,7 +423,9 @@ pub(crate) fn load_settings() -> (CellSettings, AssistanceSettings) {
         clue_sums_with_gaps:  saved.clue_sums_with_gaps,
         crosshair_enabled:    saved.crosshair_enabled,
         axis_lock:            saved.axis_lock,
-        crosshair_color:      Color { r: saved.crosshair_r, g: saved.crosshair_g, b: saved.crosshair_b, a: saved.crosshair_a },
+        crosshair_h_color:    Color { r: saved.crosshair_h_r, g: saved.crosshair_h_g, b: saved.crosshair_h_b, a: saved.crosshair_h_a },
+        crosshair_v_color:    Color { r: saved.crosshair_v_r, g: saved.crosshair_v_g, b: saved.crosshair_v_b, a: saved.crosshair_v_a },
+        crosshair_skip_hover: saved.crosshair_skip_hover,
         focus_key:            saved.focus_key,
         focus_key2:           saved.focus_key2,
         run_length:           saved.run_length,
@@ -400,10 +454,15 @@ pub(crate) fn save_settings(settings: &CellSettings, assist: &AssistanceSettings
         clue_sums_with_gaps: assist.clue_sums_with_gaps,
         crosshair_enabled:   assist.crosshair_enabled,
         axis_lock:           assist.axis_lock,
-        crosshair_r:         assist.crosshair_color.r,
-        crosshair_g:         assist.crosshair_color.g,
-        crosshair_b:         assist.crosshair_color.b,
-        crosshair_a:         assist.crosshair_color.a,
+        crosshair_h_r:       assist.crosshair_h_color.r,
+        crosshair_h_g:       assist.crosshair_h_color.g,
+        crosshair_h_b:       assist.crosshair_h_color.b,
+        crosshair_h_a:       assist.crosshair_h_color.a,
+        crosshair_v_r:       assist.crosshair_v_color.r,
+        crosshair_v_g:       assist.crosshair_v_color.g,
+        crosshair_v_b:       assist.crosshair_v_color.b,
+        crosshair_v_a:       assist.crosshair_v_color.a,
+        crosshair_skip_hover: assist.crosshair_skip_hover,
         focus_key:           assist.focus_key,
         focus_key2:          assist.focus_key2,
         run_length:          assist.run_length.clone(),
