@@ -18,7 +18,7 @@ fn app_icon() -> Option<window::Icon> {
 }
 
 fn main() -> iced::Result {
-    let (width, height, pos, _was_maximized) = app::persistence::load_window_state();
+    let (width, height, pos, _was_maximized) = app::settings::load_window_from_settings();
     let position = match pos {
         Some((x, y)) => window::Position::Specific(Point::new(x, y)),
         None => window::Position::Default,

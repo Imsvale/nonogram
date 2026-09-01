@@ -28,10 +28,15 @@ mod url_import;
 mod view_panel;
 mod view_detail;
 
-use settings::{AssistFlag, CellSettings, AssistanceSettings, SecondaryFocusKey, SubcellKind, load_settings, save_settings};
 use persistence::{
     load_solved, save_solved, save_session, load_session,
-    save_solution_to_file, relative_path, save_window_state,
+    save_solution_to_file, relative_path,
+    load_progress, save_progress,
+    load_imported_urls, save_imported_urls, append_to_imported_file, imported_file_path,
+};
+use settings::{
+    AssistFlag, CellSettings, AssistanceSettings, SecondaryFocusKey, SubcellKind,
+    load_settings, save_settings, load_window_from_settings, save_window_to_settings,
 };
 use scan::scan_puzzle_dirs;
 use export::{ExportFormat, format_solve_log, puzzle_to_file_string, export_puzprv3, puzzle_to_puzzlink_url, parse_puzzlink_url, parse_pzprv3};
@@ -157,6 +162,8 @@ pub struct App {
     url_input: String,
     show_url_import: bool,
     imported_urls: HashSet<String>,
+    // Manual solve progress persisted across sessions
+    pending_progress: HashMap<String, persistence::ProgressEntry>,
     // Keyboard-driven modes
     space_held: bool,
     focus_mode: bool,
@@ -345,13 +352,61 @@ pub enum Message {
 }
 
 // ---------------------------------------------------------------------------
+// Progress persistence helpers
+// ---------------------------------------------------------------------------
+
+fn grid_to_str(grid: &[CellState]) -> String {
+    grid.iter().map(|c| match c {
+        CellState::Filled  => 'F',
+        CellState::Empty   => 'E',
+        CellState::Unknown => 'U',
+    }).collect()
+}
+
+fn str_to_grid(s: &str) -> Vec<CellState> {
+    s.chars().map(|c| match c {
+        'F' => CellState::Filled,
+        'E' => CellState::Empty,
+        _   => CellState::Unknown,
+    }).collect()
+}
+
+fn diff_grids(from: &[CellState], to: &[CellState]) -> Vec<(usize, char)> {
+    from.iter().zip(to.iter()).enumerate()
+        .filter_map(|(i, (a, b))| {
+            if a != b {
+                Some((i, match b {
+                    CellState::Filled  => 'F',
+                    CellState::Empty   => 'E',
+                    CellState::Unknown => 'U',
+                }))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn apply_delta(grid: &mut Vec<CellState>, delta: &[(usize, char)]) {
+    for &(i, c) in delta {
+        if i < grid.len() {
+            grid[i] = match c {
+                'F' => CellState::Filled,
+                'E' => CellState::Empty,
+                _   => CellState::Unknown,
+            };
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // impl App
 // ---------------------------------------------------------------------------
 
 impl App {
     pub fn new() -> (Self, Task<Message>) {
         let (cell_settings, assistance) = load_settings();
-        let (_, _, _, was_maximized) = persistence::load_window_state();
+        let (_, _, _, was_maximized) = load_window_from_settings();
         let app = App {
             files: Vec::new(),
             selected: HashSet::new(),
@@ -400,7 +455,8 @@ impl App {
             scan_total: 0,
             url_input: String::new(),
             show_url_import: false,
-            imported_urls: HashSet::new(),
+            imported_urls: load_imported_urls(),
+            pending_progress: load_progress(),
             space_held: false,
             focus_mode: false,
             toolbar_visible: true,
@@ -410,13 +466,79 @@ impl App {
             solving_done: 0,
         };
 
-        let task = Task::perform(scan_puzzle_dirs(), Message::FilePathsDiscovered);
+        let task = Task::perform(
+            async {
+                let mut paths = scan_puzzle_dirs().await;
+                paths.extend(persistence::list_imported_files());
+                paths
+            },
+            Message::FilePathsDiscovered,
+        );
 
         (app, task)
     }
 
     pub fn theme(&self) -> Theme {
         self.theme.clone()
+    }
+
+    /// Serialize the current manual grid and undo stack for `key` and write
+    /// them to `progress.json`. Virtual files (path starts with `__`) are skipped.
+    fn save_progress_for(&mut self, key: Key) {
+        let (fi, pi) = key;
+        let Some(file) = self.files.get(fi) else { return };
+        let Some(puzzle) = file.puzzles.get(pi) else { return };
+        let progress_key = format!("{}\x1f{}", relative_path(&file.path), puzzle.name());
+        let Some(grid) = self.manual_grids.get(&key) else { return };
+        let state = grid_to_str(grid);
+        let undo = self.undo_stack.get(&key).map(|s| s.as_slice()).unwrap_or(&[]);
+        let (undo_base, undo_deltas) = if undo.is_empty() {
+            (String::new(), Vec::new())
+        } else {
+            let base_str = grid_to_str(&undo[0]);
+            let mut deltas: Vec<Vec<(usize, char)>> = Vec::new();
+            for i in 1..undo.len() {
+                deltas.push(diff_grids(&undo[i - 1], &undo[i]));
+            }
+            deltas.push(diff_grids(&undo[undo.len() - 1], grid));
+            (base_str, deltas)
+        };
+        self.pending_progress.insert(progress_key, persistence::ProgressEntry { state, undo_base, undo_deltas });
+        save_progress(&self.pending_progress);
+    }
+
+    /// Restore saved progress for every puzzle in file `fi`. Only called when
+    /// no manual grid for that puzzle exists yet (first load this session).
+    fn apply_progress_to_file(&mut self, fi: usize) {
+        let Some(file) = self.files.get(fi) else { return };
+        let rel = relative_path(&file.path);
+        let to_apply: Vec<(usize, persistence::ProgressEntry)> = file.puzzles.iter().enumerate()
+            .filter_map(|(pi, p)| {
+                let k = format!("{}\x1f{}", rel, p.name());
+                self.pending_progress.get(&k).cloned().map(|e| (pi, e))
+            })
+            .collect();
+        for (pi, entry) in to_apply {
+            let key = (fi, pi);
+            if self.manual_grids.contains_key(&key) { continue; }
+            let grid = str_to_grid(&entry.state);
+            let undo_stack = if entry.undo_base.is_empty() {
+                Vec::new()
+            } else {
+                let mut states: Vec<Vec<CellState>> = vec![str_to_grid(&entry.undo_base)];
+                for delta in &entry.undo_deltas {
+                    let mut next = states.last().unwrap().clone();
+                    apply_delta(&mut next, delta);
+                    states.push(next);
+                }
+                states.pop(); // last state == grid (current); rest becomes undo_stack
+                states
+            };
+            self.manual_grids.insert(key, grid);
+            if !undo_stack.is_empty() {
+                self.undo_stack.insert(key, undo_stack);
+            }
+        }
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
@@ -525,7 +647,10 @@ impl App {
                 };
                 self.busy = false;
                 if !self.files.iter().any(|f| f.path == path) {
-                    self.files.push(LoadedFile { path, name, folder: None, auto_loaded: false, puzzles, collapsed: true });
+                    self.files.push(LoadedFile { path: path.clone(), name, folder: None, auto_loaded: false, puzzles, collapsed: true });
+                }
+                if let Some(fi) = self.files.iter().position(|f| f.path == path) {
+                    self.apply_progress_to_file(fi);
                 }
                 Task::none()
             }
@@ -562,7 +687,10 @@ impl App {
                     if let Some(ref f) = folder {
                         self.folder_collapsed.entry(f.clone()).or_insert(true);
                     }
-                    self.files.push(LoadedFile { path, name, folder, auto_loaded: true, puzzles, collapsed: true });
+                    self.files.push(LoadedFile { path: path.clone(), name, folder, auto_loaded: true, puzzles, collapsed: true });
+                }
+                if let Some(fi) = self.files.iter().position(|f| f.path == path) {
+                    self.apply_progress_to_file(fi);
                 }
                 if self.pending_scans == 0 {
                     self.busy = false;
@@ -849,6 +977,7 @@ impl App {
                 self.manual_grids.insert(key, final_grid);
                 self.redo_stack.remove(&key);
                 self.solver = SolverKind::Manual;
+                self.save_progress_for(key);
                 Task::none()
             }
 
@@ -1141,6 +1270,7 @@ impl App {
                             self.apply_line_assistance(key, r, c, paint);
                         }
                         self.check_and_record_manual_solve(key);
+                        self.save_progress_for(key);
                     }
                 }
                 self.drag_state = None;
@@ -1337,6 +1467,7 @@ impl App {
                             self.trial_stack.remove(&key);
                         }
                     }
+                    self.save_progress_for(key);
                 }
                 Task::none()
             }
@@ -1366,7 +1497,7 @@ impl App {
             }
 
             Message::FinalizeClose { id, maximized } => {
-                save_window_state(
+                save_window_to_settings(
                     self.window_size.width, self.window_size.height,
                     self.window_pos.x, self.window_pos.y,
                     maximized,
@@ -1572,6 +1703,7 @@ impl App {
                             self.trial_stack.remove(&key);
                         }
                     }
+                    self.save_progress_for(key);
                 }
                 Task::none()
             }
@@ -1591,6 +1723,7 @@ impl App {
                     .unwrap_or(0);
                 if size > 0 {
                     self.manual_grids.insert(key, vec![CellState::Unknown; size]);
+                    self.save_progress_for(key);
                 }
                 Task::none()
             }
@@ -1601,6 +1734,7 @@ impl App {
                         self.redo_stack.entry(key).or_default().push(current);
                     }
                     self.manual_grids.insert(key, prev);
+                    self.save_progress_for(key);
                 }
                 Task::none()
             }
@@ -1611,6 +1745,7 @@ impl App {
                         self.undo_stack.entry(key).or_default().push(current);
                     }
                     self.manual_grids.insert(key, next);
+                    self.save_progress_for(key);
                 }
                 Task::none()
             }
@@ -1748,6 +1883,7 @@ impl App {
             return "Already imported (same URL)".to_string();
         }
         self.imported_urls.insert(url);
+        save_imported_urls(&self.imported_urls);
 
         const FOLDER: &str = "Imported";
         self.folder_collapsed.entry(FOLDER.to_string()).or_insert(false);
@@ -1766,7 +1902,11 @@ impl App {
             } else {
                 format!("{w}×{h}")
             };
-            let path = format!("__imported__{size_key}");
+            // Use the real appdata path; fall back to the virtual sentinel only if
+            // ProjectDirs is unavailable (edge case on locked-down systems).
+            let path = imported_file_path(&size_key)
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|| format!("__imported__{size_key}"));
 
             let n = self.files.iter()
                 .find(|f| f.path == path)
@@ -1775,7 +1915,12 @@ impl App {
 
             let label = format!("{size_key} #{n}");
             let renamed = match parsed {
-                ParsedPuzzle::Valid(mut p) => { p.name = label; ParsedPuzzle::Valid(p) }
+                ParsedPuzzle::Valid(mut p) => {
+                    p.name = label.clone();
+                    // Persist to disk before moving p into the enum wrapper.
+                    append_to_imported_file(&size_key, &puzzle_to_file_string(&p));
+                    ParsedPuzzle::Valid(p)
+                }
                 ParsedPuzzle::Invalid { reason, puzzle, .. } => {
                     ParsedPuzzle::Invalid { name: label, reason, puzzle }
                 }
@@ -2089,10 +2234,17 @@ impl App {
         };
         if !fully_solved { return; }
         if let Some(t) = self.timers.get_mut(&key) { t.running = false; }
-        let newly_tracked = self.solved_manually.insert((rel, name.clone()));
+        let newly_tracked = self.solved_manually.insert((rel.clone(), name.clone()));
         if newly_tracked {
             save_solved(&self.solved_manually);
             self.revealed_answers.insert(key);
+            // Completed — drop saved progress and undo history for this puzzle.
+            let progress_key = format!("{}\x1f{}", rel, name);
+            if self.pending_progress.remove(&progress_key).is_some() {
+                save_progress(&self.pending_progress);
+            }
+            self.undo_stack.remove(&key);
+            self.redo_stack.remove(&key);
         }
         if newly_tracked || no_file_solution {
             if let Some(grid) = self.manual_grids.get(&key) {

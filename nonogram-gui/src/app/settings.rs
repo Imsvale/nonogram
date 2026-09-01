@@ -322,6 +322,8 @@ struct SavedCellVisual {
     icon_idx: usize,
 }
 
+fn default_window_width()  -> f32 { 1200.0 }
+fn default_window_height() -> f32 { 780.0 }
 fn default_clue_bg_channel() -> f32 { 0.97 }
 fn default_sum_bg_channel()  -> f32 { 0.82 }
 fn default_focus_key()       -> FocusKey { FocusKey::F11 }
@@ -364,6 +366,11 @@ struct SavedSettings {
     #[serde(default = "default_focus_key")]  focus_key:  FocusKey,
     #[serde(default = "default_focus_key2")] focus_key2: SecondaryFocusKey,
     #[serde(default)] run_length: RunLengthSettings,
+    // Window geometry — absorbed from the old window.json
+    #[serde(default = "default_window_width")]  window_width:     f32,
+    #[serde(default = "default_window_height")] window_height:    f32,
+    #[serde(default)] window_pos:       Option<[f32; 2]>,
+    #[serde(default)] window_maximized: bool,
 }
 
 pub(crate) fn icon_to_idx(icon: Option<Bootstrap>) -> usize {
@@ -433,11 +440,22 @@ pub(crate) fn load_settings() -> (CellSettings, AssistanceSettings) {
     (cell, assist)
 }
 
+/// Read the window fields from an existing settings file so `save_settings`
+/// never clobbers geometry it did not write. Returns defaults on any failure.
+fn read_window_fields(path: &std::path::Path) -> (f32, f32, Option<[f32; 2]>, bool) {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<SavedSettings>(&s).ok())
+        .map(|s| (s.window_width, s.window_height, s.window_pos, s.window_maximized))
+        .unwrap_or((default_window_width(), default_window_height(), None, false))
+}
+
 pub(crate) fn save_settings(settings: &CellSettings, assist: &AssistanceSettings) {
     let Some(path) = config_path() else { return };
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
+    let preserved = read_window_fields(&path);
     let saved = SavedSettings {
         unknown:  visual_to_saved(&settings.unknown),
         filled:   visual_to_saved(&settings.filled),
@@ -466,8 +484,45 @@ pub(crate) fn save_settings(settings: &CellSettings, assist: &AssistanceSettings
         focus_key:           assist.focus_key,
         focus_key2:          assist.focus_key2,
         run_length:          assist.run_length.clone(),
+        // Preserve whatever window geometry is already stored so frequent
+        // settings saves (e.g. slider drags) never clobber the window state.
+        window_width:     preserved.0,
+        window_height:    preserved.1,
+        window_pos:       preserved.2,
+        window_maximized: preserved.3,
     };
     if let Ok(json) = serde_json::to_string_pretty(&saved) {
+        let _ = std::fs::write(&path, json);
+    }
+}
+
+/// Returns `(width, height, Option<(x, y)>, maximized)`.
+/// Position is `None` when no saved geometry exists (first launch or no prior save).
+pub(crate) fn load_window_from_settings() -> (f32, f32, Option<(f32, f32)>, bool) {
+    let path = match config_path() { Some(p) => p, None => return (1200.0, 780.0, None, false) };
+    let content = match std::fs::read_to_string(&path) { Ok(s) => s, Err(_) => return (1200.0, 780.0, None, false) };
+    let saved: SavedSettings = match serde_json::from_str(&content) { Ok(s) => s, Err(_) => return (1200.0, 780.0, None, false) };
+    let pos = saved.window_pos.map(|[x, y]| (x, y));
+    (saved.window_width, saved.window_height, pos, saved.window_maximized)
+}
+
+/// Merge window geometry into `settings.json` without touching any other fields.
+/// Uses a JSON-value patch so frequent `save_settings` calls are unaffected.
+/// Only called once, on window close.
+pub(crate) fn save_window_to_settings(width: f32, height: f32, x: f32, y: f32, maximized: bool) {
+    let Some(path) = config_path() else { return };
+    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+    let mut val: serde_json::Value = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    if let serde_json::Value::Object(ref mut map) = val {
+        map.insert("window_width".into(),     serde_json::json!(width));
+        map.insert("window_height".into(),    serde_json::json!(height));
+        map.insert("window_pos".into(),       serde_json::json!([x, y]));
+        map.insert("window_maximized".into(), serde_json::json!(maximized));
+    }
+    if let Ok(json) = serde_json::to_string_pretty(&val) {
         let _ = std::fs::write(&path, json);
     }
 }

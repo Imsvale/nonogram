@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
@@ -12,6 +12,67 @@ pub(crate) fn relative_path(full_path: &str) -> String {
         }
     }
     full_path.replace('\\', "/")
+}
+
+// ---------------------------------------------------------------------------
+// Imported puzzle files
+// ---------------------------------------------------------------------------
+
+/// One level above config_dir — `%APPDATA%\nonogram\nonogram-gui\` on Windows.
+pub fn imported_dir() -> Option<PathBuf> {
+    ProjectDirs::from("", "nonogram", "nonogram-gui")
+        .and_then(|pd| pd.config_dir().parent().map(|p| p.join("Imported")))
+}
+
+pub fn imported_file_path(size_name: &str) -> Option<PathBuf> {
+    imported_dir().map(|d| d.join(format!("{size_name}.txt")))
+}
+
+/// Appends one puzzle line (already serialised to the standard format) to the
+/// appropriate per-size file, creating the file and directory if necessary.
+pub fn append_to_imported_file(size_name: &str, puzzle_line: &str) {
+    let Some(path) = imported_file_path(size_name) else { return };
+    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(f, "{puzzle_line}");
+    }
+}
+
+fn imported_urls_path() -> Option<PathBuf> {
+    ProjectDirs::from("", "nonogram", "nonogram-gui")
+        .map(|pd| pd.config_dir().join("imported_urls.json"))
+}
+
+pub fn save_imported_urls(urls: &HashSet<String>) {
+    let Some(path) = imported_urls_path() else { return };
+    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+    let list: Vec<&str> = urls.iter().map(|s| s.as_str()).collect();
+    if let Ok(json) = serde_json::to_string(&list) { let _ = std::fs::write(&path, json); }
+}
+
+pub fn load_imported_urls() -> HashSet<String> {
+    let path = match imported_urls_path() { Some(p) => p, None => return HashSet::new() };
+    let content = match std::fs::read_to_string(&path) { Ok(s) => s, Err(_) => return HashSet::new() };
+    serde_json::from_str::<Vec<String>>(&content).unwrap_or_default().into_iter().collect()
+}
+
+/// List all `.txt` files in the Imported dir as `(abs_path, size_name, Some("Imported"))` triples,
+/// sorted by name. These feed directly into `FilePathsDiscovered` at startup.
+pub fn list_imported_files() -> Vec<(String, String, Option<String>)> {
+    let Some(dir) = imported_dir() else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(&dir) else { return Vec::new() };
+    let mut result: Vec<_> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|x| x == "txt").unwrap_or(false))
+        .filter_map(|e| {
+            let path = e.path();
+            let name = path.file_stem()?.to_string_lossy().into_owned();
+            Some((path.to_string_lossy().into_owned(), name, Some("Imported".to_string())))
+        })
+        .collect();
+    result.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
+    result
 }
 
 fn solved_path() -> Option<PathBuf> {
@@ -83,36 +144,45 @@ pub(crate) fn load_session() -> Option<(String, String)> {
     Some((entry.path, entry.name))
 }
 
+
 // ---------------------------------------------------------------------------
-// Window state
+// Manual solve progress
 // ---------------------------------------------------------------------------
 
-#[derive(Serialize, Deserialize)]
-struct SavedWindowState {
-    x: f32, y: f32, width: f32, height: f32,
-    #[serde(default)]
-    maximized: bool,
-}
-
-fn window_state_path() -> Option<PathBuf> {
+fn progress_path() -> Option<PathBuf> {
     ProjectDirs::from("", "nonogram", "nonogram-gui")
-        .map(|pd| pd.config_dir().join("window.json"))
+        .map(|pd| pd.config_dir().join("progress.json"))
 }
 
-/// Returns `(width, height, Option<(x, y)>, maximized)`. Position is `None`
-/// when no saved state exists so the caller can apply `window::Position::Default`.
-pub(crate) fn load_window_state() -> (f32, f32, Option<(f32, f32)>, bool) {
-    let path = match window_state_path() { Some(p) => p, None => return (1200.0, 780.0, None, false) };
-    let content = match std::fs::read_to_string(&path) { Ok(s) => s, Err(_) => return (1200.0, 780.0, None, false) };
-    let s: SavedWindowState = match serde_json::from_str(&content) { Ok(s) => s, Err(_) => return (1200.0, 780.0, None, false) };
-    (s.width, s.height, Some((s.x, s.y)), s.maximized)
+/// Per-puzzle manual solve progress. Stored as a flat grid string plus a
+/// delta-encoded undo history so sessions can resume exactly where they left off.
+///
+/// Key in the outer map: `"relative/file/path\x1fpuzzle_name"`.
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct ProgressEntry {
+    /// Flat grid string: one char per cell in row-major order (F/E/U).
+    pub state: String,
+    /// Flat string of the oldest undo state. Empty when there is no undo history.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub undo_base: String,
+    /// Diffs between consecutive undo states, with the final diff reaching `state`.
+    /// Length == undo_stack depth. Each diff is a list of (cell_index, 'F'/'E'/'U').
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub undo_deltas: Vec<Vec<(usize, char)>>,
 }
 
-pub(crate) fn save_window_state(width: f32, height: f32, x: f32, y: f32, maximized: bool) {
-    let Some(path) = window_state_path() else { return };
+pub fn save_progress(entries: &HashMap<String, ProgressEntry>) {
+    let Some(path) = progress_path() else { return };
     if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
-    let saved = SavedWindowState { x, y, width, height, maximized };
-    if let Ok(json) = serde_json::to_string(&saved) { let _ = std::fs::write(&path, json); }
+    if let Ok(json) = serde_json::to_string(entries) {
+        let _ = std::fs::write(&path, json);
+    }
+}
+
+pub fn load_progress() -> HashMap<String, ProgressEntry> {
+    let path = match progress_path() { Some(p) => p, None => return HashMap::new() };
+    let content = match std::fs::read_to_string(&path) { Ok(s) => s, Err(_) => return HashMap::new() };
+    serde_json::from_str(&content).unwrap_or_default()
 }
 
 /// Write the solved grid back into the puzzle file as the fourth `;`-field.
