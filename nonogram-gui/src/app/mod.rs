@@ -156,6 +156,7 @@ pub struct App {
     // URL import
     url_input: String,
     show_url_import: bool,
+    imported_urls: HashSet<String>,
     // Keyboard-driven modes
     space_held: bool,
     focus_mode: bool,
@@ -327,7 +328,7 @@ pub enum Message {
     UrlImportToggled,
     UrlInputChanged(String),
     UrlFetchClicked,
-    UrlFetched(Result<(String, Vec<ParsedPuzzle>), String>),
+    UrlFetched(String, Result<(String, Vec<ParsedPuzzle>), String>),
 
     // Keyboard-driven modes
     NamedKeyPressed(keyboard::key::Named),
@@ -399,6 +400,7 @@ impl App {
             scan_total: 0,
             url_input: String::new(),
             show_url_import: false,
+            imported_urls: HashSet::new(),
             space_held: false,
             focus_mode: false,
             toolbar_visible: true,
@@ -1693,20 +1695,8 @@ impl App {
                 if url.contains("puzz.link/p?nonogram") {
                     // Decode locally — no HTTP.
                     match parse_puzzlink_url(&url) {
-                        Ok((name, puzzles)) => {
-                            let n_valid = puzzles.iter().filter(|e| e.is_valid()).count();
-                            self.status = format!("Imported {n_valid} puzzle(s) from puzz.link as \"{name}\"");
-                            let path = format!("__url__{name}");
-                            if !self.files.iter().any(|f| f.path == path) {
-                                self.files.push(LoadedFile {
-                                    path,
-                                    name,
-                                    folder: None,
-                                    auto_loaded: false,
-                                    puzzles,
-                                    collapsed: false,
-                                });
-                            }
+                        Ok((_name, puzzles)) => {
+                            self.status = self.add_url_import(url, puzzles);
                             self.show_url_import = false;
                         }
                         Err(e) => {
@@ -1717,33 +1707,22 @@ impl App {
                 } else {
                     self.status = format!("Fetching {url}…");
                     self.busy = true;
+                    let url_key = url.clone();
                     Task::perform(
                         url_import::fetch_puzzle_from_url(url),
-                        Message::UrlFetched,
+                        move |r| Message::UrlFetched(url_key.clone(), r),
                     )
                 }
             }
 
-            Message::UrlFetched(Ok((name, puzzles))) => {
-                let n_valid = puzzles.iter().filter(|e| e.is_valid()).count();
-                self.status = format!("Imported {n_valid} puzzle(s) from URL as \"{name}\"");
+            Message::UrlFetched(url, Ok((_name, puzzles))) => {
                 self.busy = false;
-                let path = format!("__url__{name}");
-                if !self.files.iter().any(|f| f.path == path) {
-                    self.files.push(LoadedFile {
-                        path,
-                        name,
-                        folder: None,
-                        auto_loaded: false,
-                        puzzles,
-                        collapsed: false,
-                    });
-                }
+                self.status = self.add_url_import(url, puzzles);
                 self.show_url_import = false;
                 Task::none()
             }
 
-            Message::UrlFetched(Err(e)) => {
+            Message::UrlFetched(_, Err(e)) => {
                 self.status = format!("Import failed: {e}");
                 self.busy = false;
                 Task::none()
@@ -1754,6 +1733,70 @@ impl App {
                 self.busy = false;
                 Task::none()
             }
+        }
+    }
+
+    // ── URL import helper ────────────────────────────────────────────────
+
+    fn add_url_import(&mut self, url: String, puzzles: Vec<ParsedPuzzle>) -> String {
+        if self.imported_urls.contains(&url) {
+            return "Already imported (same URL)".to_string();
+        }
+        self.imported_urls.insert(url);
+
+        const FOLDER: &str = "Imported";
+        self.folder_collapsed.entry(FOLDER.to_string()).or_insert(false);
+
+        let mut n_added = 0usize;
+        let mut last_size = String::new();
+
+        for parsed in puzzles {
+            let (w, h) = match &parsed {
+                ParsedPuzzle::Valid(p) => (p.width, p.height),
+                ParsedPuzzle::Invalid { puzzle: Some(p), .. } => (p.width, p.height),
+                ParsedPuzzle::Invalid { puzzle: None, .. } => (0, 0),
+            };
+            let size_key = if w == 0 && h == 0 {
+                "Unknown".to_string()
+            } else {
+                format!("{w}×{h}")
+            };
+            let path = format!("__imported__{size_key}");
+
+            let n = self.files.iter()
+                .find(|f| f.path == path)
+                .map(|f| f.puzzles.len() + 1)
+                .unwrap_or(1);
+
+            let label = format!("{size_key} #{n}");
+            let renamed = match parsed {
+                ParsedPuzzle::Valid(mut p) => { p.name = label; ParsedPuzzle::Valid(p) }
+                ParsedPuzzle::Invalid { reason, puzzle, .. } => {
+                    ParsedPuzzle::Invalid { name: label, reason, puzzle }
+                }
+            };
+
+            if let Some(file) = self.files.iter_mut().find(|f| f.path == path) {
+                file.puzzles.push(renamed);
+            } else {
+                self.files.push(LoadedFile {
+                    path,
+                    name: size_key.clone(),
+                    folder: Some(FOLDER.to_string()),
+                    auto_loaded: false,
+                    puzzles: vec![renamed],
+                    collapsed: false,
+                });
+            }
+
+            last_size = size_key;
+            n_added += 1;
+        }
+
+        if n_added == 0 {
+            "No puzzles imported".to_string()
+        } else {
+            format!("Imported {n_added} puzzle(s) → Imported / {last_size}")
         }
     }
 
