@@ -346,6 +346,7 @@ impl App {
                 container(
                     row![
                         text_input("https://puzzle-nonograms.com/?pl=…", &self.url_input)
+                            .id(text_input::Id::new("url-import-input"))
                             .on_input(Message::UrlInputChanged)
                             .on_submit(Message::UrlFetchClicked)
                             .size(12)

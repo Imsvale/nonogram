@@ -4,7 +4,7 @@ use std::path::Path;
 use iced::{
     alignment::{Horizontal, Vertical},
     keyboard, mouse,
-    widget::{button, column, container, horizontal_rule, row, Space, stack, text, vertical_rule},
+    widget::{button, column, container, horizontal_rule, row, text_input, Space, stack, text, vertical_rule},
     Color, Element, Event, Length, Padding, Point, Size, Subscription, Task, Theme, Vector,
     window,
 };
@@ -1681,7 +1681,12 @@ impl App {
             Message::UrlImportToggled => {
                 self.show_url_import = !self.show_url_import;
                 self.show_import_menu = false;
-                Task::none()
+                if self.show_url_import {
+                    self.url_input.clear();
+                    text_input::focus(text_input::Id::new("url-import-input"))
+                } else {
+                    Task::none()
+                }
             }
 
             Message::UrlInputChanged(s) => {
