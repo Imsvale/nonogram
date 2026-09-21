@@ -715,6 +715,12 @@ export function startApp(root: HTMLElement): AppHandle {
       case "x":
         swapPaintMode();
         break;
+      case "l":
+        settings.lockFrame = !settings.lockFrame;
+        settingsChanged();
+        settingsPanel.refresh();
+        toast(settings.lockFrame ? "Puzzle position locked" : "Puzzle position unlocked");
+        break;
       case "t":
         game.enterTrial();
         break;

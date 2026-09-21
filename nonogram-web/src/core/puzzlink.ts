@@ -125,9 +125,13 @@ export function decodePuzzlinkParts(w: number, h: number, data: string): Puzzle 
   throw firstError!;
 }
 
-export const PUZZLINK_RE = /nonogram\/(\d+)\/(\d+)\/([0-9a-z-]*)/;
+/**
+ * `nonogram/W/H/data` (puzz.link URLs), `#W/H/data` (this app's links) or a bare
+ * `W/H/data` at the start of the text.
+ */
+export const PUZZLINK_RE = /(?:nonogram\/|#|^\s*)(\d+)\/(\d+)\/([0-9a-z-]*)/;
 
-/** Decode any string containing `nonogram/W/H/data` (full URL or just the tail). */
+/** Decode any string containing a puzz.link / app link (full URL or just the tail). */
 export function parsePuzzlinkUrl(url: string): Puzzle {
   const m = PUZZLINK_RE.exec(url);
   if (!m) throw new Error("Not a puzz.link nonogram URL");

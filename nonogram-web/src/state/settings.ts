@@ -1,5 +1,7 @@
 /** User settings: the desktop GUI's assistance / visual options, persisted in localStorage. */
 
+import { DARK, LIGHT, type Palette } from "./colors";
+
 export type ThemeChoice = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
 export type IconKind = "none" | "circle" | "square" | "diamond" | "check" | "x" | "dash" | "dot";
@@ -60,6 +62,8 @@ export interface Settings {
   primaryMode: "fill" | "mark";
   /** Cell size in px that counts as "100%" zoom. */
   zoomReference: number;
+  /** Keep the puzzle frame where it is; dragging then only scrolls the grid inside it. */
+  lockFrame: boolean;
   headerHidden: boolean;
 }
 
@@ -109,50 +113,12 @@ export function defaultSettings(): Settings {
     autoStartTimer: false,
     primaryMode: "fill",
     zoomReference: 26,
+    lockFrame: false,
     headerHidden: false,
   };
 }
 
-// ── Palettes ────────────────────────────────────────────────────────────────
-
-export interface Palette {
-  unknown: string;
-  filled: string;
-  empty: string;
-  clueBg: string;
-  sumBg: string;
-  clueText: string;
-  clueDim: string;
-  borderMin: string;
-  borderMaj: string;
-  canvasBg: string;
-}
-
-export const LIGHT: Palette = {
-  unknown: "#b8c2d1",
-  filled: "#1a1a26",
-  empty: "#ffffff",
-  clueBg: "#f7f7f7",
-  sumBg: "#d1d1d1",
-  clueText: "#1a1a1a",
-  clueDim: "#b3b3b3",
-  borderMin: "#808794",
-  borderMaj: "#475270",
-  canvasBg: "#ffffff",
-};
-
-export const DARK: Palette = {
-  unknown: "#5b6577",
-  filled: "#e8eaf2",
-  empty: "#20242e",
-  clueBg: "#2a2f3b",
-  sumBg: "#3a4050",
-  clueText: "#e6e8ef",
-  clueDim: "#666d7d",
-  borderMin: "#485064",
-  borderMaj: "#9aa4bd",
-  canvasBg: "#181b22",
-};
+// Palettes (LIGHT / DARK) and every other colour the grid uses live in ./colors.ts.
 
 export function resolveTheme(choice: ThemeChoice): ResolvedTheme {
   if (choice !== "system") return choice;

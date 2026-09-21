@@ -1,24 +1,20 @@
 import { clueTotal, minSpan } from "../core/lines";
 import { EMPTY, FILLED, type Grid, type Puzzle } from "../core/types";
 import type { Derived, Pos, TrialTier } from "../state/game";
-import type { Palette, ResolvedTheme, Settings, SubcellKind } from "../state/settings";
+import {
+  HOVER_RUN_TINT,
+  MINIMAP_VIEWPORT,
+  RUN_LABEL_INK,
+  TRIAL_ORIGIN_INK,
+  trialEmpty,
+  trialFilled,
+  WARN,
+  type Palette,
+} from "../state/colors";
+import type { ResolvedTheme, Settings, SubcellKind } from "../state/settings";
 import { contrastOn, hoverShade, luminance, mix, rgba } from "./color";
 import { computeHoverRuns, hoverLabelVisible, type HoverRun, type Layout } from "./geometry";
 import { drawIcon } from "./icons";
-
-// Trial-tier colours (from the desktop GUI): saturated for filled, pale for empty.
-const TRIAL_FILLED = ["#405294", "#73388c", "#2e7a61", "#8c612e", "#803347"];
-const TRIAL_EMPTY_LIGHT = ["#dbe8fc", "#f0e0fc", "#e0faed", "#fcf2d6", "#fce0e8"];
-
-export function trialFilled(tier: number): string {
-  return TRIAL_FILLED[(tier - 1) % TRIAL_FILLED.length];
-}
-export function trialEmpty(tier: number, theme: ResolvedTheme, emptyBase: string): string {
-  if (theme === "light") return TRIAL_EMPTY_LIGHT[(tier - 1) % TRIAL_EMPTY_LIGHT.length];
-  return mix(emptyBase, trialFilled(tier), 0.3);
-}
-
-export const WARN = { light: "#bf6100", dark: "#ffb347" };
 
 export interface HoverState {
   cell: Pos | null;
@@ -192,7 +188,7 @@ class Draw {
     const runs = hc ? computeHoverRuns(grid, w, h, hc[0], hc[1]) : { h: null, v: null };
     const tint = (r: number, c: number) => {
       const bg = this.stateColor(grid[r * w + c], tierMap[r * w + c]);
-      ctx.fillStyle = luminance(bg) > 0.5 ? "rgba(0,0,60,0.12)" : "rgba(255,255,255,0.10)";
+      ctx.fillStyle = luminance(bg) > 0.5 ? HOVER_RUN_TINT.onLight : HOVER_RUN_TINT.onDark;
       ctx.fillRect(this.cx(c), this.cy(r), C, C);
     };
     if (runs.h && runs.h.fixed >= this.r0 && runs.h.fixed <= this.r1) {
@@ -246,13 +242,12 @@ class Draw {
             if (settings.icons.empty !== "none") {
               drawIcon(ctx, settings.icons.empty, x + C / 2, y + C / 2, iconSize, trialFilled(tier || ot));
             }
-            ctx.fillStyle = "#4d4d73";
-            if (this.inp.theme === "dark") ctx.fillStyle = "#b9bfe0";
+            ctx.fillStyle = this.inp.theme === "dark" ? TRIAL_ORIGIN_INK.onEmptyDark : TRIAL_ORIGIN_INK.onEmptyLight;
             ctx.font = `${Math.max(8, C * 0.34)}px ${FONT}`;
             ctx.textAlign = "right";
             ctx.fillText(String(ot), x + C - 2, y + C - C * 0.2);
           } else {
-            ctx.fillStyle = "#ffffff";
+            ctx.fillStyle = TRIAL_ORIGIN_INK.onFilled;
             ctx.font = `${Math.max(9, C * 0.5)}px ${FONT}`;
             ctx.textAlign = "center";
             ctx.fillText(String(ot), x + C / 2, y + C / 2 + 0.5);
@@ -309,8 +304,8 @@ class Draw {
       const y = this.cy(r);
       const bg = this.stateColor(grid[r * w + c], tierMap[r * w + c]);
       const light = luminance(bg) > 0.5;
-      const adjColor = light ? "#0033b3" : "#8dccff";
-      const fourColor = light ? "#994d00" : "#ffd966";
+      const adjColor = light ? RUN_LABEL_INK.adjOnLight : RUN_LABEL_INK.adjOnDark;
+      const fourColor = light ? RUN_LABEL_INK.fourOnLight : RUN_LABEL_INK.fourOnDark;
 
       // Labels inside the hovered runs.
       if (hr && r === hr.fixed && c >= hr.start && c <= hr.end) {
@@ -575,7 +570,7 @@ class Draw {
       const vy = py + (L.panY / L.fullH) * mh;
       const vw = (L.cw / L.fullW) * mw;
       const vh = (L.ch / L.fullH) * mh;
-      ctx.strokeStyle = "#ff8c1a";
+      ctx.strokeStyle = MINIMAP_VIEWPORT;
       ctx.lineWidth = 1.5;
       ctx.strokeRect(vx, vy, vw, vh);
     }

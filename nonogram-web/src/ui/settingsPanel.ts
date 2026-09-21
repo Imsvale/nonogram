@@ -144,7 +144,8 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
   const painting = section(
     "Mouse & zoom",
     selectRow<"fill" | "mark">("Left button / tap", [["fill", "Fills cells"], ["mark", "Marks cells empty"]], () => s.primaryMode, (v) => (s.primaryMode = v)),
-    h("p", { class: "note" }, "The right button (or holding Shift) does the other one. Press X to swap."),
+    h("p", { class: "note" }, "The right button (or holding Shift) does the other one. Press X to swap. On a touch screen a tap cycles a cell: unknown → filled → crossed → unknown."),
+    check("Lock the puzzle's position", () => s.lockFrame, (v) => (s.lockFrame = v), "Dragging then only scrolls the grid inside the frame; the frame stays where it is. (L)"),
     range("100% zoom is a cell size of", 12, 60, 1, () => s.zoomReference, (v) => (s.zoomReference = v), (v) => `${v} px`),
   );
 
@@ -229,6 +230,7 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
         [
           ["Ctrl+Z / Ctrl+Y", "Undo / redo"],
           ["X", "Swap what the left button does (fill ↔ mark)"],
+          ["L", "Lock / unlock the puzzle's position"],
           ["T", "Enter trial (again: nested tier)"],
           ["A / R", "Accept / reject trial tier"],
           ["+ / − / 0", "Zoom in / out / fit"],

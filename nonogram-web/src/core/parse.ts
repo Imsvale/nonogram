@@ -171,7 +171,7 @@ export function importFromText(input: string): ImportResult {
     }
   }
 
-  // Native lines contain `;C:`/`;R:`; a link contains `nonogram/W/H/`.
+  // Native lines contain `;C:`/`;R:`; a link contains `W/H/DATA`.
   if (!/;\s*[CR]:/.test(text)) {
     const m = PUZZLINK_RE.exec(text);
     if (m) {

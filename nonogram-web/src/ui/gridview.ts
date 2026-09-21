@@ -285,6 +285,8 @@ export class GridView {
   }
 
   private paintAction(e: PointerEvent): PaintAction {
+    // No right button or Shift on a touch screen: a tap steps through the states instead.
+    if (e.pointerType === "touch") return "cycle";
     const alt = e.button === 2 || e.shiftKey;
     const primary = this.deps.getSettings().primaryMode;
     return alt ? (primary === "fill" ? "mark" : "fill") : primary;
@@ -493,10 +495,11 @@ export class GridView {
     const dy = pt.y - s.y;
     if (!s.moved && Math.hypot(dx, dy) < PAN_SLOP) return;
     s.moved = true;
+    const locked = this.deps.getSettings().lockFrame;
     if (s.scrollX) this.panX = s.px - dx;
-    else this.offX = s.ox + dx;
+    else if (!locked) this.offX = s.ox + dx;
     if (s.scrollY) this.panY = s.py - dy;
-    else this.offY = s.oy + dy;
+    else if (!locked) this.offY = s.oy + dy;
     this.requestRender();
   }
 

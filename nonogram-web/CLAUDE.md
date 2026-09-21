@@ -28,10 +28,12 @@ runs on only one side cover every clue (the GUI requires both sides).
 
 ## URLs
 
-`#nonogram/W/H/DATA[?name=…&answer=…]` — DATA is the puzz.link clue encoding (`specs/puzzlink.md`).
-Also accepted: `#s=<url-encoded native line>` and `?nonogram/W/H/DATA`. Pasted puzz.link URLs,
-native-format text and Puz-Pre v3 are accepted by the import dialog, paste and drag-and-drop.
-The address bar is always rewritten to the canonical share form when a puzzle opens.
+Canonical share link: `https://imsvale.github.io/nonogram/#W/H/DATA[?name=…&answer=…]` — DATA is the
+puzz.link clue encoding (`specs/puzzlink.md`). Also accepted: `#nonogram/W/H/DATA` (first version),
+`#s=<url-encoded native line>` (full fidelity, includes any solution/answer) and `?nonogram/W/H/DATA`.
+Pasted puzz.link URLs, links to this page, bare `W/H/DATA`, native-format text and Puz-Pre v3 are
+accepted by the import dialog, paste and drag-and-drop. The address bar is always rewritten to the
+canonical form when a puzzle opens.
 
 ## Gotchas
 
@@ -61,6 +63,10 @@ The address bar is always rewritten to the canonical share form when a puzzle op
 
 ## Where the look is defined
 
-Grid colours `src/state/settings.ts` · trial-tier colours and hover tints `src/ui/render.ts` ·
-page chrome (buttons, header, drawer) CSS variables at the top of `src/style.css` ·
-line thickness threshold `HEAVY_LINE_MIN_CELL` in `src/ui/geometry.ts` · zoom limits in `src/ui/gridview.ts`.
+**All grid colours: `src/state/colors.ts`** — default palettes `LIGHT` / `DARK` (unknown / filled /
+empty cells, clue and sum backgrounds, line colours), trial-tier colours, hover tint, warning amber,
+label inks. User overrides from Settings are stored separately and win over the palette defaults.
+Other defaults (crosshair colours, icons, assists): `defaultSettings()` in `src/state/settings.ts`.
+Page chrome (header, buttons, drawer): CSS variables at the top of `src/style.css` (its `--tier-1…5`
+mirror `TRIAL_FILLED`). Line-thickness threshold `HEAVY_LINE_MIN_CELL`: `src/ui/geometry.ts`.
+Zoom limits: `src/ui/gridview.ts`.

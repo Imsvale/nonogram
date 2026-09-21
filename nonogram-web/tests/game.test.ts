@@ -11,7 +11,7 @@ const plus: Puzzle = {
 };
 
 const state = (g: Game) => Array.from(g.grid).join("");
-const stroke = (g: Game, cells: Pos[], action: "fill" | "mark" = "fill", axisLock = false) => {
+const stroke = (g: Game, cells: Pos[], action: "fill" | "mark" | "cycle" = "fill", axisLock = false) => {
   g.startStroke(cells[0][0], cells[0][1], action, axisLock);
   for (const [r, c] of cells.slice(1)) g.strokeTo(r, c);
   return g.endStroke();
@@ -52,6 +52,19 @@ describe("painting", () => {
     // Dragging from a filled cell erases along the way.
     stroke(g, [[1, 0], [1, 1], [1, 2]]);
     expect(state(g)).toBe("000000000");
+  });
+
+  it("cycle (touch taps) steps unknown → filled → crossed → unknown", () => {
+    const g = new Game(plus);
+    stroke(g, [[0, 0]], "cycle");
+    expect(state(g)).toBe("100000000");
+    stroke(g, [[0, 0]], "cycle");
+    expect(state(g)).toBe("200000000");
+    stroke(g, [[0, 0]], "cycle");
+    expect(state(g)).toBe("000000000");
+    // A drag applies the first cell's next state along the whole stroke.
+    stroke(g, [[1, 0], [1, 1], [1, 2]], "cycle");
+    expect(state(g)).toBe("000111000");
   });
 
   it("a whole drag is a single undo step", () => {

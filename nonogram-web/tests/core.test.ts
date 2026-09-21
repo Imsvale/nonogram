@@ -143,7 +143,8 @@ describe("share links", () => {
 
   it("round-trips name (and optionally answer) through the URL hash", () => {
     const link = buildShareLink("https://imsvale.github.io/nonogram/", p);
-    expect(link).toContain("#nonogram/3/3/");
+    expect(link).toContain("#3/3/");
+    expect(link).not.toContain("nonogram/3/3");
     expect(link).not.toContain("answer");
     const u = new URL(link);
     const res = puzzleFromLocation({ hash: u.hash, search: u.search });
@@ -163,6 +164,20 @@ describe("share links", () => {
     expect(b.kind === "puzzle" && b.puzzle.width).toBe(2);
     expect(puzzleFromLocation({ hash: "", search: "" }).kind).toBe("none");
     expect(puzzleFromLocation({ hash: "#nonogram/3/3/zz", search: "" }).kind).toBe("error");
+  });
+
+  it("still reads the first-version link format (#nonogram/W/H/DATA)", () => {
+    const data = encodePuzzlinkData(p);
+    const legacy = puzzleFromLocation({ hash: `#nonogram/3/3/${data}?name=Old`, search: "" });
+    expect(legacy.kind === "puzzle" && legacy.puzzle.name).toBe("Old");
+    const now = puzzleFromLocation({ hash: `#3/3/${data}`, search: "" });
+    expect(now.kind === "puzzle" && now.puzzle.colClues).toEqual(p.colClues);
+    // Bare and pasted forms.
+    expect(importFromText(`3/3/${data}`).puzzles[0].rowClues).toEqual(p.rowClues);
+    expect(importFromText(`https://imsvale.github.io/nonogram/#3/3/${data}`).puzzles[0].width).toBe(3);
+    // A native line is never mistaken for a link, even if its name looks like one.
+    const native = importFromText("3/3/x;C:1|1/R:2").puzzles[0];
+    expect([native.name, native.width]).toEqual(["3/3/x", 2]);
   });
 
   it("imports a pasted share link or puzz.link URL", () => {

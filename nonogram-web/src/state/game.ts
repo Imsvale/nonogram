@@ -10,7 +10,11 @@ import {
 import { EMPTY, FILLED, UNKNOWN, newGrid, type Cell, type Grid, type Puzzle } from "../core/types";
 import { gridToString, puzzleId, specFor, stringToGrid, type ProgressEntry } from "./progress";
 
-export type PaintAction = "fill" | "mark";
+/**
+ * `fill` toggles Filled, `mark` toggles Empty, `cycle` steps Unknown → Filled →
+ * Empty → Unknown (for touch screens, where there is no right button).
+ */
+export type PaintAction = "fill" | "mark" | "cycle";
 export type Pos = [row: number, col: number];
 
 export interface TrialTier {
@@ -217,7 +221,19 @@ export class Game {
     if (this.stroke) this.cancelStroke();
     const cur = this.grid[row * this.puzzle.width + col];
     const target: Cell =
-      action === "mark" ? (cur === EMPTY ? UNKNOWN : EMPTY) : cur === FILLED ? UNKNOWN : FILLED;
+      action === "cycle"
+        ? cur === UNKNOWN
+          ? FILLED
+          : cur === FILLED
+            ? EMPTY
+            : UNKNOWN
+        : action === "mark"
+          ? cur === EMPTY
+            ? UNKNOWN
+            : EMPTY
+          : cur === FILLED
+            ? UNKNOWN
+            : FILLED;
 
     const tier = this.trial[this.trial.length - 1];
     if (tier && !tier.origin) tier.origin = [row, col];
