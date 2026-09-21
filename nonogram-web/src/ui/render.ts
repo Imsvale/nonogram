@@ -1,0 +1,595 @@
+import { clueTotal, minSpan } from "../core/lines";
+import { EMPTY, FILLED, type Grid, type Puzzle } from "../core/types";
+import type { Derived, Pos, TrialTier } from "../state/game";
+import type { Palette, ResolvedTheme, Settings, SubcellKind } from "../state/settings";
+import { contrastOn, hoverShade, luminance, mix, rgba } from "./color";
+import { computeHoverRuns, hoverLabelVisible, type HoverRun, type Layout } from "./geometry";
+import { drawIcon } from "./icons";
+
+// Trial-tier colours (from the desktop GUI): saturated for filled, pale for empty.
+const TRIAL_FILLED = ["#405294", "#73388c", "#2e7a61", "#8c612e", "#803347"];
+const TRIAL_EMPTY_LIGHT = ["#dbe8fc", "#f0e0fc", "#e0faed", "#fcf2d6", "#fce0e8"];
+
+export function trialFilled(tier: number): string {
+  return TRIAL_FILLED[(tier - 1) % TRIAL_FILLED.length];
+}
+export function trialEmpty(tier: number, theme: ResolvedTheme, emptyBase: string): string {
+  if (theme === "light") return TRIAL_EMPTY_LIGHT[(tier - 1) % TRIAL_EMPTY_LIGHT.length];
+  return mix(emptyBase, trialFilled(tier), 0.3);
+}
+
+export const WARN = { light: "#bf6100", dark: "#ffb347" };
+
+export interface HoverState {
+  cell: Pos | null;
+  /** Row/column the pointer is over in a clue strip (drives the crosshair). */
+  rowHead: number | null;
+  colHead: number | null;
+  clue: { isCol: boolean; line: number; idx: number } | null;
+  sumToggle: boolean;
+}
+
+export const NO_HOVER: HoverState = { cell: null, rowHead: null, colHead: null, clue: null, sumToggle: false };
+
+export interface RenderInput {
+  ctx: CanvasRenderingContext2D;
+  dpr: number;
+  layout: Layout;
+  puzzle: Puzzle;
+  grid: Grid;
+  tierMap: Uint8Array;
+  trial: readonly TrialTier[];
+  /** Only supplied when auto-dim is on. */
+  derived: Derived | null;
+  dimRows: ReadonlySet<string>;
+  dimCols: ReadonlySet<string>;
+  settings: Settings;
+  theme: ResolvedTheme;
+  palette: Palette;
+  hover: HoverState;
+}
+
+const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+
+export function render(inp: RenderInput): void {
+  const { ctx, dpr, layout: L, palette: pal } = inp;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = pal.canvasBg;
+  ctx.fillRect(0, 0, L.W, L.H);
+  ctx.textBaseline = "middle";
+
+  const x = new Draw(inp);
+  x.cells();
+  x.colClues();
+  x.rowClues();
+  x.sums();
+  x.frame();
+  x.minimap();
+}
+
+class Draw {
+  private ctx: CanvasRenderingContext2D;
+  private L: Layout;
+  private p: Puzzle;
+  private pal: Palette;
+  private s: Settings;
+  private w: number;
+  private h: number;
+  private C: number;
+  private c0: number;
+  private c1: number;
+  private r0: number;
+  private r1: number;
+  private xr: number | null = null;
+  private xc: number | null = null;
+
+  constructor(private inp: RenderInput) {
+    this.ctx = inp.ctx;
+    this.L = inp.layout;
+    this.p = inp.puzzle;
+    this.pal = inp.palette;
+    this.s = inp.settings;
+    this.w = this.p.width;
+    this.h = this.p.height;
+    this.C = this.L.m.C;
+    const { panX, panY, cw, ch } = this.L;
+    this.c0 = Math.max(0, Math.floor(panX / this.C));
+    this.c1 = Math.min(this.w - 1, Math.floor((panX + cw - 1) / this.C));
+    this.r0 = Math.max(0, Math.floor(panY / this.C));
+    this.r1 = Math.min(this.h - 1, Math.floor((panY + ch - 1) / this.C));
+
+    if (this.s.crosshair.enabled) {
+      const hv = inp.hover;
+      if (hv.cell) {
+        this.xr = hv.cell[0];
+        this.xc = hv.cell[1];
+      } else {
+        this.xr = hv.rowHead;
+        this.xc = hv.colHead;
+      }
+    }
+  }
+
+  private cx(c: number): number {
+    return this.L.ox + c * this.C - this.L.panX;
+  }
+  private cy(r: number): number {
+    return this.L.oy + r * this.C - this.L.panY;
+  }
+
+  private stateColor(state: number, tier: number): string {
+    if (tier > 0) {
+      if (state === FILLED) return trialFilled(tier);
+      if (state === EMPTY) return trialEmpty(tier, this.inp.theme, this.pal.empty);
+    }
+    return state === FILLED ? this.pal.filled : state === EMPTY ? this.pal.empty : this.pal.unknown;
+  }
+
+  /** Thickness in CSS px, rounded to whole device pixels (never below one). */
+  private thick(w: number): number {
+    const d = this.inp.dpr;
+    return Math.max(1, Math.round(w * d)) / d;
+  }
+  private snap(v: number): number {
+    const d = this.inp.dpr;
+    return Math.round(v * d) / d;
+  }
+
+  // Lines are snapped to device pixels: a 1px line centred on a pixel boundary
+  // smears over two pixels and reads as thicker and greyer than it should.
+  private vline(x: number, y0: number, y1: number, major: boolean): void {
+    const t = this.thick(major ? this.L.m.sep : 1);
+    this.ctx.fillStyle = major ? this.pal.borderMaj : this.pal.borderMin;
+    this.ctx.fillRect(this.snap(x - t / 2), y0, t, y1 - y0);
+  }
+  private hline(y: number, x0: number, x1: number, major: boolean): void {
+    const t = this.thick(major ? this.L.m.sep : 1);
+    this.ctx.fillStyle = major ? this.pal.borderMaj : this.pal.borderMin;
+    this.ctx.fillRect(x0, this.snap(y - t / 2), x1 - x0, t);
+  }
+
+  // ── Cells ─────────────────────────────────────────────────────────────────
+
+  cells(): void {
+    const { ctx, L, C, w, h, inp } = this;
+    const { grid, tierMap } = inp;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(L.ox, L.oy, L.cw, L.ch);
+    ctx.clip();
+
+    // 1. Backgrounds
+    for (let r = this.r0; r <= this.r1; r++) {
+      const y = this.cy(r);
+      for (let c = this.c0; c <= this.c1; c++) {
+        const i = r * w + c;
+        ctx.fillStyle = this.stateColor(grid[i], tierMap[i]);
+        ctx.fillRect(this.cx(c), y, C, C);
+      }
+    }
+
+    // 2. Crosshair overlays
+    if (this.xr !== null || this.xc !== null) {
+      const skip = this.s.crosshair.skipIntersection && this.xr !== null && this.xc !== null;
+      if (this.xr !== null && this.xr >= this.r0 && this.xr <= this.r1) {
+        ctx.fillStyle = rgba(this.s.crosshair.rowColor, this.s.crosshair.rowAlpha);
+        for (let c = this.c0; c <= this.c1; c++) {
+          if (skip && c === this.xc) continue;
+          ctx.fillRect(this.cx(c), this.cy(this.xr), C, C);
+        }
+      }
+      if (this.xc !== null && this.xc >= this.c0 && this.xc <= this.c1) {
+        ctx.fillStyle = rgba(this.s.crosshair.colColor, this.s.crosshair.colAlpha);
+        for (let r = this.r0; r <= this.r1; r++) {
+          if (skip && r === this.xr) continue;
+          ctx.fillRect(this.cx(this.xc), this.cy(r), C, C);
+        }
+      }
+    }
+
+    // 3. Hover-run tint
+    const hc = inp.hover.cell;
+    const runs = hc ? computeHoverRuns(grid, w, h, hc[0], hc[1]) : { h: null, v: null };
+    const tint = (r: number, c: number) => {
+      const bg = this.stateColor(grid[r * w + c], tierMap[r * w + c]);
+      ctx.fillStyle = luminance(bg) > 0.5 ? "rgba(0,0,60,0.12)" : "rgba(255,255,255,0.10)";
+      ctx.fillRect(this.cx(c), this.cy(r), C, C);
+    };
+    if (runs.h && runs.h.fixed >= this.r0 && runs.h.fixed <= this.r1) {
+      for (let c = Math.max(runs.h.start, this.c0); c <= Math.min(runs.h.end, this.c1); c++) tint(runs.h.fixed, c);
+    }
+    if (runs.v && runs.v.fixed >= this.c0 && runs.v.fixed <= this.c1) {
+      for (let r = Math.max(runs.v.start, this.r0); r <= Math.min(runs.v.end, this.r1); r++) tint(r, runs.v.fixed);
+    }
+
+    // 4. Grid lines
+    for (let c = this.c0; c <= this.c1 + 1; c++) {
+      this.vline(this.cx(c), L.oy, L.oy + L.ch, c % 5 === 0 || c === w);
+    }
+    for (let r = this.r0; r <= this.r1 + 1; r++) {
+      this.hline(this.cy(r), L.ox, L.ox + L.cw, r % 5 === 0 || r === h);
+    }
+
+    // 5. Icons and trial-origin markers
+    this.cellContent();
+
+    // 6. Run-length labels
+    if (runs.h || runs.v) this.runLabels(runs.h, runs.v, hc!);
+
+    ctx.restore();
+  }
+
+  private cellContent(): void {
+    const { ctx, C, w, inp } = this;
+    const { grid, tierMap, trial, settings } = inp;
+    const origin = new Map<number, number>();
+    trial.forEach((t, i) => {
+      if (t.origin) {
+        const k = t.origin[0] * w + t.origin[1];
+        if (!origin.has(k)) origin.set(k, i + 1);
+      }
+    });
+    const iconSize = C * 0.55;
+
+    for (let r = this.r0; r <= this.r1; r++) {
+      for (let c = this.c0; c <= this.c1; c++) {
+        const i = r * w + c;
+        const st = grid[i];
+        const tier = tierMap[i];
+        const bg = this.stateColor(st, tier);
+        const x = this.cx(c);
+        const y = this.cy(r);
+        const ot = origin.get(i);
+
+        if (ot !== undefined) {
+          if (st === EMPTY) {
+            if (settings.icons.empty !== "none") {
+              drawIcon(ctx, settings.icons.empty, x + C / 2, y + C / 2, iconSize, trialFilled(tier || ot));
+            }
+            ctx.fillStyle = "#4d4d73";
+            if (this.inp.theme === "dark") ctx.fillStyle = "#b9bfe0";
+            ctx.font = `${Math.max(8, C * 0.34)}px ${FONT}`;
+            ctx.textAlign = "right";
+            ctx.fillText(String(ot), x + C - 2, y + C - C * 0.2);
+          } else {
+            ctx.fillStyle = "#ffffff";
+            ctx.font = `${Math.max(9, C * 0.5)}px ${FONT}`;
+            ctx.textAlign = "center";
+            ctx.fillText(String(ot), x + C / 2, y + C / 2 + 0.5);
+          }
+        } else if (tier === 0) {
+          const kind = st === FILLED ? settings.icons.filled : st === EMPTY ? settings.icons.empty : "none";
+          if (kind !== "none") drawIcon(ctx, kind, x + C / 2, y + C / 2, iconSize, contrastOn(bg));
+        } else if (st === EMPTY && settings.icons.empty !== "none") {
+          drawIcon(ctx, settings.icons.empty, x + C / 2, y + C / 2, iconSize, trialFilled(tier));
+        }
+      }
+    }
+  }
+
+  private runLabels(hr: HoverRun | null, vr: HoverRun | null, hover: Pos): void {
+    const { ctx, C, w, h, s, inp } = this;
+    const rl = s.runLength;
+    const { grid, tierMap } = inp;
+    const size = Math.max(7, rl.numSize * (C / 26));
+    ctx.font = `${size}px ${FONT}`;
+
+    const cellsOf = (kind: SubcellKind) => {
+      const out: [number, number][] = [];
+      for (let sr = 0; sr < 3; sr++) for (let sc = 0; sc < 3; sc++) if (rl.subcells[sr][sc] === kind) out.push([sr, sc]);
+      return out;
+    };
+    const hSub = cellsOf("h");
+    const vSub = cellsOf("v");
+    const [hAdjRow] = hSub[0] ?? [2, 0];
+    const [, vAdjCol] = vSub[0] ?? [0, 2];
+
+    const pad = 2;
+    const put = (text: string, x: number, y: number, ax: 0 | 1 | 2, ay: 0 | 1 | 2, color: string) => {
+      ctx.fillStyle = color;
+      ctx.textAlign = ax === 0 ? "left" : ax === 1 ? "center" : "right";
+      ctx.textBaseline = ay === 0 ? "top" : ay === 1 ? "middle" : "bottom";
+      const px = ax === 0 ? x + pad : ax === 1 ? x + C / 2 : x + C - pad;
+      const py = ay === 0 ? y + pad : ay === 1 ? y + C / 2 : y + C - pad;
+      ctx.fillText(text, px, py);
+    };
+
+    const runFilled = (hr ?? vr)!.filled;
+    const runBg = runFilled ? this.pal.filled : this.pal.unknown;
+    const auto = contrastOn(runBg);
+    const hColor = rl.labelHColor ?? auto;
+    const vColor = rl.labelVColor ?? auto;
+
+    const hLen = hr ? hr.end - hr.start + 1 : 0;
+    const vLen = vr ? vr.end - vr.start + 1 : 0;
+    const ht = rl.hoverThreshold;
+
+    const labelCell = (r: number, c: number) => {
+      const x = this.cx(c);
+      const y = this.cy(r);
+      const bg = this.stateColor(grid[r * w + c], tierMap[r * w + c]);
+      const light = luminance(bg) > 0.5;
+      const adjColor = light ? "#0033b3" : "#8dccff";
+      const fourColor = light ? "#994d00" : "#ffd966";
+
+      // Labels inside the hovered runs.
+      if (hr && r === hr.fixed && c >= hr.start && c <= hr.end) {
+        const show =
+          (c === hr.start && rl.showStart && hLen >= rl.startThreshold) ||
+          (c === hr.end && rl.showEnd && hLen >= rl.endThreshold) ||
+          (c === hr.hover && rl.showHover && hoverLabelVisible(hr.start, hr.end, hr.hover, ht));
+        if (show) for (const [sr, sc] of hSub) put(String(hLen), x, y, sc as 0 | 1 | 2, sr as 0 | 1 | 2, hColor);
+      }
+      if (vr && c === vr.fixed && r >= vr.start && r <= vr.end) {
+        const show =
+          (r === vr.start && rl.showStart && vLen >= rl.startThreshold) ||
+          (r === vr.end && rl.showEnd && vLen >= rl.endThreshold) ||
+          (r === vr.hover && rl.showHover && hoverLabelVisible(vr.start, vr.end, vr.hover, ht));
+        if (show) for (const [sr, sc] of vSub) put(String(vLen), x, y, sc as 0 | 1 | 2, sr as 0 | 1 | 2, vColor);
+      }
+
+      // Adjacent-cell label: the run length, shown in a neighbour of the hovered cell.
+      if (rl.adjLabelEnabled) {
+        if (hr && r === hr.fixed) {
+          const target =
+            hr.hover === hr.start ? hr.hover + 1 : hr.hover === hr.end ? hr.hover - 1 : rl.adjLabelHPreferAfter ? hr.hover + 1 : hr.hover - 1;
+          if (target === c && target >= 0 && target < w) put(String(hLen), x, y, c > hr.hover ? 0 : 2, hAdjRow as 0 | 1 | 2, adjColor);
+        }
+        if (vr && c === vr.fixed) {
+          const target =
+            vr.hover === vr.start ? vr.hover + 1 : vr.hover === vr.end ? vr.hover - 1 : rl.adjLabelVPreferAfter ? vr.hover + 1 : vr.hover - 1;
+          if (target === r && target >= 0 && target < h) put(String(vLen), x, y, vAdjCol as 0 | 1 | 2, r > vr.hover ? 0 : 2, adjColor);
+        }
+      }
+
+      // Four-direction counts: cells on each side of the hovered cell.
+      if (rl.fourDirLabels) {
+        if (hr && r === hr.fixed) {
+          if (hr.hover > 0 && c + 1 === hr.hover && hr.hover - hr.start > 0) put(String(hr.hover - hr.start), x, y, 2, hAdjRow as 0 | 1 | 2, fourColor);
+          if (c === hr.hover + 1 && c < w && hr.end - hr.hover > 0) put(String(hr.end - hr.hover), x, y, 0, hAdjRow as 0 | 1 | 2, fourColor);
+        }
+        if (vr && c === vr.fixed) {
+          if (vr.hover > 0 && r + 1 === vr.hover && vr.hover - vr.start > 0) put(String(vr.hover - vr.start), x, y, vAdjCol as 0 | 1 | 2, 2, fourColor);
+          if (r === vr.hover + 1 && r < h && vr.end - vr.hover > 0) put(String(vr.end - vr.hover), x, y, vAdjCol as 0 | 1 | 2, 0, fourColor);
+        }
+      }
+    };
+
+    const [hovR, hovC] = hover;
+    for (let c = this.c0; c <= this.c1; c++) if (hovR >= this.r0 && hovR <= this.r1) labelCell(hovR, c);
+    for (let r = this.r0; r <= this.r1; r++) if (r !== hovR && hovC >= this.c0 && hovC <= this.c1) labelCell(r, hovC);
+    ctx.textBaseline = "middle";
+  }
+
+  // ── Clue strips ───────────────────────────────────────────────────────────
+
+  private clueInk(dim: boolean): string {
+    return dim ? this.pal.clueDim : this.pal.clueText;
+  }
+
+  colClues(): void {
+    const { ctx, L, p, pal, inp } = this;
+    const { m } = L;
+    const yTop = L.originY;
+    const yBottom = L.oy - L.m.sep;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(L.ox, yTop, L.cw, yBottom - yTop);
+    ctx.clip();
+    ctx.font = `bold ${m.fs}px ${FONT}`;
+    ctx.textAlign = "center";
+    for (let c = this.c0; c <= this.c1; c++) {
+      const x = this.cx(c);
+      ctx.fillStyle = pal.clueBg;
+      ctx.fillRect(x, yTop, this.C, yBottom - yTop);
+      if (this.xc === c) {
+        ctx.fillStyle = rgba(this.s.crosshair.colColor, this.s.crosshair.colAlpha);
+        ctx.fillRect(x, yTop, this.C, yBottom - yTop);
+      }
+      const clues = p.colClues[c];
+      for (let i = 0; i < clues.length; i++) {
+        const y = yBottom - (clues.length - i) * m.N;
+        const hv = inp.hover.clue;
+        if (hv && hv.isCol && hv.line === c && hv.idx === i) {
+          ctx.fillStyle = hoverShade(pal.clueBg);
+          ctx.fillRect(x, y, this.C, m.N);
+        }
+        const dim = !!inp.derived?.colFulfilled[c] || !!inp.derived?.colIndiv[c][i] || inp.dimCols.has(`${c},${i}`);
+        ctx.fillStyle = this.clueInk(dim);
+        ctx.fillText(String(clues[i]), x + this.C / 2, y + m.N / 2 + 0.5);
+      }
+    }
+    for (let c = this.c0; c <= this.c1 + 1; c++) this.vline(this.cx(c), yTop, yBottom, c % 5 === 0 || c === this.w);
+    ctx.restore();
+  }
+
+  rowClues(): void {
+    const { ctx, L, p, pal, inp } = this;
+    const { m } = L;
+    const xLeft = L.originX;
+    const xRight = L.ox - L.m.sep;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(xLeft, L.oy, xRight - xLeft, L.ch);
+    ctx.clip();
+    ctx.font = `bold ${m.fs}px ${FONT}`;
+    ctx.textAlign = "center";
+    for (let r = this.r0; r <= this.r1; r++) {
+      const y = this.cy(r);
+      ctx.fillStyle = pal.clueBg;
+      ctx.fillRect(xLeft, y, xRight - xLeft, this.C);
+      if (this.xr === r) {
+        ctx.fillStyle = rgba(this.s.crosshair.rowColor, this.s.crosshair.rowAlpha);
+        ctx.fillRect(xLeft, y, xRight - xLeft, this.C);
+      }
+      const clues = p.rowClues[r];
+      for (let i = 0; i < clues.length; i++) {
+        const x = xRight - (clues.length - i) * m.N;
+        const hv = inp.hover.clue;
+        if (hv && !hv.isCol && hv.line === r && hv.idx === i) {
+          ctx.fillStyle = hoverShade(pal.clueBg);
+          ctx.fillRect(x, y, m.N, this.C);
+        }
+        const dim = !!inp.derived?.rowFulfilled[r] || !!inp.derived?.rowIndiv[r][i] || inp.dimRows.has(`${r},${i}`);
+        ctx.fillStyle = this.clueInk(dim);
+        ctx.fillText(String(clues[i]), x + m.N / 2, y + this.C / 2 + 0.5);
+      }
+    }
+    for (let r = this.r0; r <= this.r1 + 1; r++) this.hline(this.cy(r), xLeft, xRight, r % 5 === 0 || r === this.h);
+    ctx.restore();
+  }
+
+  // ── Sums ──────────────────────────────────────────────────────────────────
+
+  private sumOf(clues: readonly number[]): number {
+    let s = 0;
+    for (const c of clues) s += c;
+    return this.s.assist.clueSumsWithGaps ? s + Math.max(0, clues.length - 1) : s;
+  }
+
+  /** A number in a sum cell; infeasible lines get an amber badge like the desktop GUI. */
+  private sumText(text: string, cx: number, cy: number, warn: boolean, align: "center" | "right" = "center"): void {
+    const { ctx, L } = this;
+    const warnInk = WARN[this.inp.theme];
+    ctx.font = `${L.m.fs}px ${FONT}`;
+    ctx.textAlign = align;
+    if (warn) {
+      const tw = ctx.measureText(text).width;
+      const bw = tw + 8;
+      const bh = L.m.fs + 6;
+      const bx = align === "center" ? cx - bw / 2 : cx - bw + 4;
+      ctx.fillStyle = rgba(warnInk, 0.16);
+      ctx.strokeStyle = rgba(warnInk, 0.7);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(bx, cy - bh / 2, bw, bh, 3);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.fillStyle = warn ? warnInk : this.pal.clueText;
+    ctx.fillText(text, cx, cy + 0.5);
+  }
+
+  sums(): void {
+    const { ctx, L, p, pal, inp } = this;
+    const { m } = L;
+    const rx = L.ox + L.cw + L.m.sep;
+    const by = L.oy + L.ch + L.m.sep;
+    const totalRow = clueTotal(p.rowClues);
+    const totalCol = clueTotal(p.colClues);
+    const mismatch = totalRow !== totalCol;
+
+    // Row sums (right strip)
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(rx, L.oy, m.sumW, L.ch);
+    ctx.clip();
+    ctx.fillStyle = pal.sumBg;
+    ctx.fillRect(rx, L.oy, m.sumW, L.ch);
+    for (let r = this.r0; r <= this.r1; r++) {
+      this.sumText(String(this.sumOf(p.rowClues[r])), rx + m.sumW / 2, this.cy(r) + this.C / 2, minSpan(p.rowClues[r]) > p.width);
+    }
+    for (let r = this.r0; r <= this.r1 + 1; r++) this.hline(this.cy(r), rx, rx + m.sumW, r % 5 === 0 || r === this.h);
+    ctx.restore();
+
+    // Column sums (bottom strip)
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(L.ox, by, L.cw, m.N);
+    ctx.clip();
+    ctx.fillStyle = pal.sumBg;
+    ctx.fillRect(L.ox, by, L.cw, m.N);
+    for (let c = this.c0; c <= this.c1; c++) {
+      this.sumText(String(this.sumOf(p.colClues[c])), this.cx(c) + this.C / 2, by + m.N / 2, minSpan(p.colClues[c]) > p.height);
+    }
+    for (let c = this.c0; c <= this.c1 + 1; c++) this.vline(this.cx(c), by, by + m.N, c % 5 === 0 || c === this.w);
+    ctx.restore();
+
+    // Grand totals: each sits beside the clue strip it totals.
+    ctx.fillStyle = pal.sumBg;
+    ctx.fillRect(rx, L.originY, m.sumW, L.oy - L.m.sep - L.originY);
+    this.sumText(String(totalCol), rx + m.sumW / 2, L.oy - L.m.sep - m.N / 2, mismatch);
+    ctx.fillStyle = pal.sumBg;
+    ctx.fillRect(L.originX, by, L.ox - L.m.sep - L.originX, m.N);
+    this.sumText(String(totalRow), L.ox - L.m.sep - 6, by + m.N / 2, mismatch, "right");
+
+    // Bottom-right: toggles "sums include gaps".
+    ctx.fillStyle = inp.hover.sumToggle ? mix(pal.sumBg, luminance(pal.sumBg) > 0.5 ? "#000000" : "#ffffff", 0.12) : pal.sumBg;
+    ctx.fillRect(rx, by, m.sumW, m.N);
+    ctx.fillStyle = rgba(pal.clueText, this.s.assist.clueSumsWithGaps ? 0.85 : 0.4);
+    ctx.font = `${Math.round(m.fs * 0.85)}px ${FONT}`;
+    ctx.textAlign = "center";
+    ctx.fillText(this.s.assist.clueSumsWithGaps ? "+g" : "Σ", rx + m.sumW / 2, by + m.N / 2 + 0.5);
+  }
+
+  // ── Frame & minimap ───────────────────────────────────────────────────────
+
+  frame(): void {
+    const { ctx, L, pal } = this;
+    const { m } = L;
+    const right = L.ox + L.cw + L.m.sep + m.sumW;
+    const bottom = L.oy + L.ch + L.m.sep + m.N;
+    ctx.fillStyle = pal.borderMaj;
+    ctx.fillRect(L.ox - L.m.sep, L.originY, L.m.sep, bottom - L.originY); // left of cells
+    ctx.fillRect(L.originX, L.oy - L.m.sep, right - L.originX, L.m.sep); // above cells
+    ctx.fillRect(L.ox + L.cw, L.originY, L.m.sep, bottom - L.originY); // right of cells
+    ctx.fillRect(L.originX, L.oy + L.ch, right - L.originX, L.m.sep); // below cells
+    // Outline
+    ctx.strokeStyle = pal.borderMaj;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(L.originX - 0.5, L.originY - 0.5, right - L.originX + 1, bottom - L.originY + 1);
+  }
+
+  minimap(): void {
+    const { ctx, L, p, pal, inp } = this;
+    const { m } = L;
+    const areaW = m.leftW - L.m.sep;
+    const areaH = m.topH - L.m.sep;
+    const x0 = L.originX;
+    const y0 = L.originY;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, y0, areaW, areaH);
+    ctx.clip();
+    ctx.fillStyle = pal.canvasBg;
+    ctx.fillRect(x0, y0, areaW, areaH);
+
+    const g = minimapGeometry(L, p);
+    const { cs, mw, mh } = g;
+    const px = x0 + g.px;
+    const py = y0 + g.py;
+    const { grid, tierMap } = inp;
+    for (let r = 0; r < this.h; r++) {
+      for (let c = 0; c < this.w; c++) {
+        const i = r * this.w + c;
+        ctx.fillStyle = this.stateColor(grid[i], tierMap[i]);
+        const xx = Math.round(px + c * cs);
+        const yy = Math.round(py + r * cs);
+        ctx.fillRect(xx, yy, Math.round(px + (c + 1) * cs) - xx, Math.round(py + (r + 1) * cs) - yy);
+      }
+    }
+
+    // Viewport indicator when the puzzle is scrolled/zoomed past the window.
+    if (L.cw < L.fullW || L.ch < L.fullH) {
+      const vx = px + (L.panX / L.fullW) * mw;
+      const vy = py + (L.panY / L.fullH) * mh;
+      const vw = (L.cw / L.fullW) * mw;
+      const vh = (L.ch / L.fullH) * mh;
+      ctx.strokeStyle = "#ff8c1a";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(vx, vy, vw, vh);
+    }
+    ctx.restore();
+  }
+}
+
+/** Exposed for tests / the app: where the minimap's grid sits inside its area. */
+export function minimapGeometry(L: Layout, p: Puzzle) {
+  const areaW = L.m.leftW - L.m.sep;
+  const areaH = L.m.topH - L.m.sep;
+  const cs = Math.max(1, Math.min(areaW / (p.width + 2), areaH / (p.height + 2)));
+  const mw = cs * p.width;
+  const mh = cs * p.height;
+  return { areaW, areaH, cs, mw, mh, px: (areaW - mw) / 2, py: (areaH - mh) / 2 };
+}
+
