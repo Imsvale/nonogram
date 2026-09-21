@@ -28,9 +28,9 @@ runs on only one side cover every clue (the GUI requires both sides).
 
 ## URLs
 
-Canonical share link: `https://imsvale.github.io/nonogram/#W/H/DATA[?name=…&answer=…]` — DATA is the
-puzz.link clue encoding (`specs/puzzlink.md`). Also accepted: `#nonogram/W/H/DATA` (first version),
-`#s=<url-encoded native line>` (full fidelity, includes any solution/answer) and `?nonogram/W/H/DATA`.
+Canonical share link: `https://imsvale.github.io/nonogram/#W/H/DATA[?name=…&a=…]` — DATA is the
+puzz.link clue encoding (`specs/puzzlink.md`). Also accepted: `#nonogram/W/H/DATA` (first version) and `?nonogram/W/H/DATA`.
+The answer travels as a scrambled `&a=` (see `src/core/obfuscate.ts`); a plain `&answer=` is still read.
 Pasted puzz.link URLs, links to this page, bare `W/H/DATA`, native-format text and Puz-Pre v3 are
 accepted by the import dialog, paste and drag-and-drop. The address bar is always rewritten to the
 canonical form when a puzzle opens.

@@ -9,7 +9,8 @@ import {
 } from "../src/core/lines";
 import { importFromText, parseNativeLine, parseNativeText, parsePzprv3 } from "../src/core/parse";
 import { decodePuzzlinkParts, encodePuzzlinkData, parsePuzzlinkUrl, puzzleToPuzzlinkUrl } from "../src/core/puzzlink";
-import { buildShareLink, puzzleFromLocation } from "../src/core/share";
+import { deobfuscate, obfuscate } from "../src/core/obfuscate";
+import { buildShareLink, puzzleFromLocation, puzzleHash } from "../src/core/share";
 import { EMPTY, FILLED, UNKNOWN, type Puzzle } from "../src/core/types";
 
 const cells = (s: string) => Uint8Array.from(s, (ch) => (ch === "#" ? FILLED : ch === "x" ? EMPTY : UNKNOWN));
@@ -156,12 +157,12 @@ describe("share links", () => {
     expect(res2.kind === "puzzle" && res2.puzzle.answer).toBe("A cross");
   });
 
-  it("accepts a puzz.link-style query and the #s= native form", () => {
+  it("accepts a puzz.link-style query; unknown fragments are not puzzles", () => {
     const data = encodePuzzlinkData(p);
     const a = puzzleFromLocation({ hash: "", search: `?nonogram/3/3/${data}` });
     expect(a.kind).toBe("puzzle");
-    const b = puzzleFromLocation({ hash: "#s=" + encodeURIComponent("t;C:1|1/R:2"), search: "" });
-    expect(b.kind === "puzzle" && b.puzzle.width).toBe(2);
+    // The former `#s=<native line>` form is gone: it is simply not a puzzle link any more.
+    expect(puzzleFromLocation({ hash: "#s=" + encodeURIComponent("t;C:1|1/R:2"), search: "" }).kind).toBe("none");
     expect(puzzleFromLocation({ hash: "", search: "" }).kind).toBe("none");
     expect(puzzleFromLocation({ hash: "#nonogram/3/3/zz", search: "" }).kind).toBe("error");
   });
@@ -232,5 +233,57 @@ describe("line logic", () => {
     expect(trivialInvalidReason(mk(3, 3, [[1], [1], [1]], [[3], [], []]))).toBeNull();
     expect(trivialInvalidReason(mk(3, 3, [[1], [1], [1]], [[3], [1], []]))).toMatch(/sums don't match/);
     expect(trivialInvalidReason(mk(2, 2, [[1, 1], []], [[2], []]))).toMatch(/col 1 requires at least 3/);
+  });
+});
+
+describe("answer obfuscation", () => {
+  const seed = "3/3/1g3g1g1g3g1g";
+
+  it("round-trips text, including non-ASCII", () => {
+    for (const t of ["Cat", "A cat in a hat", "Café ☕ — Ünï", "x"]) {
+      expect(deobfuscate(obfuscate(t, seed), seed)).toBe(t);
+    }
+  });
+
+  it("is not readable at a glance: not the text, not its plain base64, and puzzle-specific", () => {
+    const text = "Space invader";
+    const o = obfuscate(text, seed);
+    expect(o.toLowerCase()).not.toContain("invader");
+    expect(o).not.toContain(btoa(text).replace(/=+$/, ""));
+    expect(o).toMatch(/^[A-Za-z0-9_-]+$/); // safe in a URL without escaping
+    expect(obfuscate(text, "5/5/other")).not.toBe(o);
+  });
+
+  it("does not decode with the wrong puzzle data, and rejects garbage", () => {
+    const o = obfuscate("Space invader", seed);
+    expect(deobfuscate(o, "5/5/other")).not.toBe("Space invader");
+    expect(deobfuscate("!!!not base64!!!", seed)).toBeNull();
+  });
+
+  const p: Puzzle = { ...mk(3, 3, [[1], [3], [1]], [[1], [3], [1]]), name: "Plus", answer: "A secret cross" };
+
+  it("links carry the answer scrambled, and reading them recovers it", () => {
+    const link = buildShareLink("https://x/", p, { includeAnswer: true });
+    expect(link).toContain("&a=");
+    expect(link).not.toContain("answer=");
+    expect(decodeURIComponent(link).toLowerCase()).not.toContain("secret");
+    const u = new URL(link);
+    const res = puzzleFromLocation({ hash: u.hash, search: "" });
+    expect(res.kind === "puzzle" && res.puzzle.answer).toBe("A secret cross");
+    expect(buildShareLink("https://x/", p)).not.toContain("a=");
+  });
+
+  it("keeps the answer in the address-bar hash (so a reload doesn't lose it)", () => {
+    const res = puzzleFromLocation({ hash: puzzleHash(p), search: "" });
+    expect(res.kind === "puzzle" && res.puzzle.answer).toBe("A secret cross");
+  });
+
+  it("still reads the older plain answer=, and ignores a corrupted a=", () => {
+    const data = encodePuzzlinkData(p);
+    const old = puzzleFromLocation({ hash: `#3/3/${data}?answer=Plain%20one`, search: "" });
+    expect(old.kind === "puzzle" && old.puzzle.answer).toBe("Plain one");
+    const bad = puzzleFromLocation({ hash: `#3/3/${data}?a=%21%21%21`, search: "" });
+    expect(bad.kind === "puzzle" && bad.puzzle.answer).toBeUndefined();
+    expect(bad.kind).toBe("puzzle");
   });
 });

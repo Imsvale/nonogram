@@ -1,3 +1,4 @@
+import { deobfuscate } from "./obfuscate";
 import { decodePuzzlinkParts, PUZZLINK_RE } from "./puzzlink";
 import { EMPTY, FILLED, type Puzzle } from "./types";
 
@@ -179,8 +180,11 @@ export function importFromText(input: string): ImportResult {
         const p = decodePuzzlinkParts(Number(m[1]), Number(m[2]), m[3]);
         const name = /[?&]name=([^&#]*)/.exec(text);
         if (name) p.name = safeDecode(name[1]) || p.name;
-        const answer = /[?&]answer=([^&#]*)/.exec(text);
-        if (answer) p.answer = safeDecode(answer[1]) || undefined;
+        // Scrambled answer (`a=`, keyed by the link's own W/H/DATA); plain `answer=` is the older form.
+        const scrambled = /[?&]a=([^&#]*)/.exec(text);
+        const plain = /[?&]answer=([^&#]*)/.exec(text);
+        if (scrambled) p.answer = deobfuscate(scrambled[1], `${m[1]}/${m[2]}/${m[3]}`) || undefined;
+        else if (plain) p.answer = safeDecode(plain[1]) || undefined;
         return { puzzles: [p], errors: [] };
       } catch (e) {
         return { puzzles: [], errors: [(e as Error).message] };

@@ -428,8 +428,8 @@ export function startApp(root: HTMLElement): AppHandle {
     const fileBase = g.puzzle.name.replace(/[^\w.-]+/g, "_") || "puzzle";
 
     append(shareMenu, [
-      item("link", "Copy link to this puzzle", copy("Link", buildShareLink(base, g.puzzle))),
-      g.puzzle.answer ? item("link", "Copy link (includes the answer)", copy("Link", buildShareLink(base, g.puzzle, { includeAnswer: true }))) : null,
+      // The answer (if the puzzle has one) rides along scrambled: it's only a spoiler.
+      item("link", "Copy link to this puzzle", copy("Link", buildShareLink(base, g.puzzle, { includeAnswer: true }))),
       h("hr", {}),
       item("copy", "Copy puzz.link URL", copy("puzz.link URL", puzzleToPuzzlinkUrl(g.puzzle))),
       item("copy", "Copy puzzle text", copy("Puzzle text", puzzleToNative(g.puzzle))),
