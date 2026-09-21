@@ -374,7 +374,7 @@ textarea:focus {
 .bar {
   width: 56px;
   height: 6px;
-  border-radius: 2px;
+  border-radius: 3px;
   background: var(--panel-2);
   overflow: hidden;
 }
@@ -723,6 +723,26 @@ body.header-hidden #topbar {
 .pill .icon-btn:hover:not(:disabled) {
   background: var(--panel-2);
 }
+/* The timer pill is one big button. */
+button.pill {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+button.pill:hover {
+  background: var(--panel-2);
+}
+button.pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.timer-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
 .pill.timer .time {
   font-variant-numeric: tabular-nums;
   min-width: 4ch;
@@ -914,4 +934,35 @@ body.no-timer .pill.timer {
   background: var(--danger);
   border-color: transparent;
   color: #fff;
+}
+
+/* Segmented two-value pill (settings). */
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--panel);
+}
+.seg {
+  border: 0;
+  background: transparent;
+  padding: 5px 16px;
+  min-height: 28px;
+  cursor: pointer;
+}
+.seg + .seg {
+  border-left: 1px solid var(--line);
+}
+.seg:hover:not(.on) {
+  background: var(--panel-2);
+}
+.seg.on {
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.seg:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }

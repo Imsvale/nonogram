@@ -59,8 +59,8 @@ export function render(inp: RenderInput): void {
   x.colClues();
   x.rowClues();
   x.sums();
-  x.frame();
   x.minimap();
+  x.frame(); // last: the borders must never be painted over
 }
 
 class Draw {
@@ -208,16 +208,13 @@ class Draw {
     }
 
     // 4. Grid lines
-    // With the sum strips hidden nothing outside the cells closes the grid, so its
-    // last vertical / horizontal line is drawn inward (fully inside the clip).
-    const inward = !L.m.showSums;
-    for (let c = this.c0; c <= this.c1 + 1; c++) {
-      const edge = inward && c === w;
-      this.vline(edge ? this.cx(c) - this.thick(L.m.sep) / 2 : this.cx(c), L.oy, L.oy + L.ch, c % 5 === 0 || c === w);
+    // Outer edges (index 0 and w / h) belong to the frame, which isn't clipped, so its
+    // borders keep their exact thickness. Only inner lines are drawn here.
+    for (let c = Math.max(1, this.c0); c <= Math.min(w - 1, this.c1 + 1); c++) {
+      this.vline(this.cx(c), L.oy, L.oy + L.ch, c % 5 === 0);
     }
-    for (let r = this.r0; r <= this.r1 + 1; r++) {
-      const edge = inward && r === h;
-      this.hline(edge ? this.cy(r) - this.thick(L.m.sep) / 2 : this.cy(r), L.ox, L.ox + L.cw, r % 5 === 0 || r === h);
+    for (let r = Math.max(1, this.r0); r <= Math.min(h - 1, this.r1 + 1); r++) {
+      this.hline(this.cy(r), L.ox, L.ox + L.cw, r % 5 === 0);
     }
 
     // 5. Icons and trial-origin markers
@@ -411,7 +408,10 @@ class Draw {
         ctx.fillText(String(clues[i]), x + this.C / 2, y + m.N / 2 + 0.5);
       }
     }
-    for (let c = this.c0; c <= this.c1 + 1; c++) this.vline(this.cx(c), yTop, yBottom, c % 5 === 0 || c === this.w);
+    for (let c = this.c0; c <= this.c1 + 1; c++) {
+      if (c === 0 || c === this.w) continue; // borders: drawn once, by the frame
+      this.vline(this.cx(c), yTop, yBottom, c % 5 === 0);
+    }
     ctx.restore();
   }
 
@@ -447,7 +447,10 @@ class Draw {
         ctx.fillText(String(clues[i]), x + m.N / 2, y + this.C / 2 + 0.5);
       }
     }
-    for (let r = this.r0; r <= this.r1 + 1; r++) this.hline(this.cy(r), xLeft, xRight, r % 5 === 0 || r === this.h);
+    for (let r = this.r0; r <= this.r1 + 1; r++) {
+      if (r === 0 || r === this.h) continue; // borders: drawn once, by the frame
+      this.hline(this.cy(r), xLeft, xRight, r % 5 === 0);
+    }
     ctx.restore();
   }
 
@@ -502,7 +505,10 @@ class Draw {
     for (let r = this.r0; r <= this.r1; r++) {
       this.sumText(String(this.sumOf(p.rowClues[r])), rx + m.sumW / 2, this.cy(r) + this.C / 2, minSpan(p.rowClues[r]) > p.width);
     }
-    for (let r = this.r0; r <= this.r1 + 1; r++) this.hline(this.cy(r), rx, rx + m.sumW, r % 5 === 0 || r === this.h);
+    for (let r = this.r0; r <= this.r1 + 1; r++) {
+      if (r === 0 || r === this.h) continue;
+      this.hline(this.cy(r), rx, rx + m.sumW, r % 5 === 0);
+    }
     ctx.restore();
 
     // Column sums (bottom strip)
@@ -515,7 +521,10 @@ class Draw {
     for (let c = this.c0; c <= this.c1; c++) {
       this.sumText(String(this.sumOf(p.colClues[c])), this.cx(c) + this.C / 2, by + m.N / 2, minSpan(p.colClues[c]) > p.height);
     }
-    for (let c = this.c0; c <= this.c1 + 1; c++) this.vline(this.cx(c), by, by + m.N, c % 5 === 0 || c === this.w);
+    for (let c = this.c0; c <= this.c1 + 1; c++) {
+      if (c === 0 || c === this.w) continue;
+      this.vline(this.cx(c), by, by + m.N, c % 5 === 0);
+    }
     ctx.restore();
 
     // Grand totals: each sits beside the clue strip it totals.
@@ -542,24 +551,25 @@ class Draw {
     const { m } = L;
     const right = L.ox + L.cw + m.rightW;
     const bottom = L.oy + L.ch + m.bottomH;
+    // Same thickness as the 5-cell grid lines, so a border never reads heavier than they do.
+    const t = this.thick(m.sep);
     ctx.fillStyle = pal.borderMaj;
-    ctx.fillRect(L.ox - m.sep, L.originY, m.sep, bottom - L.originY); // left of cells
-    ctx.fillRect(L.originX, L.oy - m.sep, right - L.originX, m.sep); // above cells
+    ctx.fillRect(this.snap(L.ox - t), L.originY, t, bottom - L.originY); // left of cells
+    ctx.fillRect(L.originX, this.snap(L.oy - t), right - L.originX, t); // above cells
     if (m.showSums) {
-      ctx.fillRect(L.ox + L.cw, L.originY, m.sep, bottom - L.originY); // right of cells
-      ctx.fillRect(L.originX, L.oy + L.ch, right - L.originX, m.sep); // below cells
-    }
-    // Thin outline around the whole frame. Without the sum strips the right and
-    // bottom edges are the grid's own (heavy) outer lines, so they get no outline.
-    ctx.fillRect(L.originX - 1, L.originY - 1, right - L.originX + 2, 1);
-    ctx.fillRect(L.originX - 1, L.originY - 1, 1, bottom - L.originY + 2);
-    if (m.showSums) {
+      ctx.fillRect(this.snap(L.ox + L.cw), L.originY, t, bottom - L.originY); // right of cells
+      ctx.fillRect(L.originX, this.snap(L.oy + L.ch), right - L.originX, t); // below cells
+      // Thin outline around the whole frame.
+      ctx.fillRect(L.originX - 1, L.originY - 1, right - L.originX + 2, 1);
+      ctx.fillRect(L.originX - 1, L.originY - 1, 1, bottom - L.originY + 2);
       ctx.fillRect(right, L.originY - 1, 1, bottom - L.originY + 2);
       ctx.fillRect(L.originX - 1, bottom, right - L.originX + 2, 1);
     } else {
-      // Continue the grid's inward edge across the clue strips so the frame is closed.
-      ctx.fillRect(L.originX, bottom - m.sep, L.ox - L.originX, m.sep); // under the row clues
-      ctx.fillRect(right - m.sep, L.originY, m.sep, L.oy - L.originY); // right of the column clues
+      // No sum strips: the grid's own edge closes the frame, drawn just inside it.
+      ctx.fillRect(this.snap(right - t), L.originY, t, bottom - L.originY); // right edge, clue strips included
+      ctx.fillRect(L.originX, this.snap(bottom - t), right - L.originX, t); // bottom edge, clue strips included
+      ctx.fillRect(L.originX - 1, L.originY - 1, right - L.originX + 1, 1); // outline: top…
+      ctx.fillRect(L.originX - 1, L.originY - 1, 1, bottom - L.originY + 1); // …and left only
     }
   }
 

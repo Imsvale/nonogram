@@ -44,15 +44,18 @@ export function startApp(root: HTMLElement): AppHandle {
   const nameEl = h("span", { class: "name" });
   const answerEl = h("span", { class: "answer" });
   const sizeEl = h("span", { class: "size" });
-  const timeEl = h("span", { class: "time", title: "Elapsed time" }, "0:00");
-  const playBtn = iconButton("play", "Start / pause timer", () => {
+  const timeEl = h("span", { class: "time" }, "0:00");
+  // The whole pill is the pause / resume button (time + a play/pause glyph).
+  const timerIcon = h("span", { class: "timer-icon" });
+  const timerBtn = h("button", { class: "pill timer", type: "button" }, timeEl, timerIcon);
+  timerBtn.addEventListener("click", () => {
     if (!game) return;
     game.timerRunning ? game.pauseTimer() : game.startTimer();
   });
   const RESTART_TIP = "Restart: blank the grid, un-dim every clue, clear the undo history and reset the timer";
   const restartBtn = h("button", { id: "restartBtn", class: "btn", type: "button", title: RESTART_TIP }, icon("reset", 16), h("span", {}, "Restart"));
-  const zoomOut = iconButton("minus", "Zoom out (−, or scroll down)", () => gridView.zoomOut());
-  const zoomIn = iconButton("plus", "Zoom in (+, or scroll up)", () => gridView.zoomIn());
+  const zoomOut = iconButton("minus", "Zoom out (−)", () => gridView.zoomOut());
+  const zoomIn = iconButton("plus", "Zoom in (+)", () => gridView.zoomIn());
   const zoomFit = iconButton("fit", "Fit the puzzle to the window (0)", () => gridView.fit());
   const zoomReadout = h("button", { class: "zoom-readout", type: "button" });
   const shareMenu = h("div", { class: "menu", hidden: true, role: "menu" });
@@ -65,7 +68,7 @@ export function startApp(root: HTMLElement): AppHandle {
   const topbar = h(
     "header",
     { id: "topbar" },
-    h("div", { class: "hd-left" }, homeBtn, h("div", { class: "pill timer" }, timeEl, playBtn), restartBtn, warnEl),
+    h("div", { class: "hd-left" }, homeBtn, timerBtn, restartBtn, warnEl),
     h("div", { class: "title" }, nameEl, sizeEl, answerEl),
     h(
       "div",
@@ -329,9 +332,10 @@ export function startApp(root: HTMLElement): AppHandle {
     answerEl.textContent = g.puzzle.answer && g.everSolved ? `“${g.puzzle.answer}”` : "";
     sizeEl.textContent = `${g.puzzle.width}×${g.puzzle.height}`;
     const playing = g.timerRunning;
-    clear(playBtn);
-    playBtn.append(icon(playing ? "pause" : "play", 18));
-    playBtn.title = playing ? "Pause timer" : "Start timer";
+    clear(timerIcon);
+    timerIcon.append(icon(playing ? "pause" : "play", 18));
+    timerBtn.title = playing ? "Pause timer" : "Start timer";
+    timerBtn.setAttribute("aria-label", timerBtn.title);
     refreshTimer();
     refreshPause();
   }
@@ -375,6 +379,9 @@ export function startApp(root: HTMLElement): AppHandle {
     trialAccept.disabled = tiers === 0;
     tierEl.textContent = tiers ? `Tier ${tiers}` : "";
     tierEl.style.color = tiers ? `var(--tier-${((tiers - 1) % 5) + 1})` : "";
+    const wheel = settings.wheelMode === "zoom" ? "mouse wheel" : "Ctrl + mouse wheel";
+    zoomOut.title = `Zoom out (−, or ${wheel} down)`;
+    zoomIn.title = `Zoom in (+, or ${wheel} up)`;
     const cell = gridView.cellSize;
     const ref = settings.zoomReference;
     zoomReadout.textContent = `${Math.round((cell / ref) * 100)}%`;

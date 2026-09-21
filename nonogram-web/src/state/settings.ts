@@ -71,6 +71,11 @@ export interface Settings {
   showTimer: boolean;
   /** What the left mouse button (or a tap) does; the right button / Shift does the other. */
   primaryMode: "fill" | "mark";
+  /**
+   * What the mouse wheel does: `zoom` (default; panning is by dragging) or `scroll` the
+   * grid (Shift: sideways). In `scroll` mode Ctrl + wheel zooms.
+   */
+  wheelMode: "zoom" | "scroll";
   /** Cell size in px that counts as "100%" zoom. */
   zoomReference: number;
   /** Keep the puzzle frame where it is; dragging then only scrolls the grid inside it. */
@@ -127,6 +132,7 @@ export function defaultSettings(): Settings {
     fullscreenKey: "f",
     showTimer: true,
     primaryMode: "fill",
+    wheelMode: "zoom",
     zoomReference: 26,
     lockFrame: false,
     headerHidden: false,

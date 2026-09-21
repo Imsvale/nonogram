@@ -557,10 +557,21 @@ export class GridView {
     e.preventDefault();
     const pt = this.local(e);
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.H : 1;
+    const zoomKey = e.ctrlKey || e.metaKey; // a trackpad pinch also arrives as ctrl + wheel
+
+    if (this.deps.getSettings().wheelMode === "scroll" && !zoomKey) {
+      // Scroll the cells under the frozen clues; Shift turns vertical into sideways.
+      let dx = e.deltaX * unit;
+      let dy = e.deltaY * unit;
+      if (e.shiftKey && dx === 0) [dx, dy] = [dy, 0];
+      this.panBy(dx, dy);
+      return;
+    }
+
     const dy = e.deltaY * unit;
     if (dy === 0) return;
-    // The wheel zooms (panning is by dragging). A mouse notch is exactly one zoom
-    // step, like the +/- buttons; the many small deltas of a trackpad zoom smoothly.
+    // A mouse notch is exactly one zoom step, like the +/- buttons; the many small
+    // deltas of a trackpad pinch zoom smoothly.
     if (e.deltaMode !== 0 || Math.abs(dy) >= 50) this.zoomBy(dy < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, pt.x, pt.y);
     else this.zoomBy(Math.exp(-dy / 100), pt.x, pt.y);
   }

@@ -97,6 +97,27 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     return h("label", { class: "row" }, h("span", { class: "grow" }, label), sel);
   };
 
+  /** Two (or a few) exclusive choices as a segmented pill; labels stay short. */
+  const segRow = <T extends string>(label: string, options: [T, string][], get: () => T, set: (v: T) => void) => {
+    const group = h("div", { class: "segmented", role: "group", "aria-label": label });
+    const buttons = options.map(([value, text]) => {
+      const b = h("button", { type: "button", class: "seg" }, text);
+      b.addEventListener("click", () => {
+        set(value);
+        changed();
+      });
+      group.append(b);
+      return [value, b] as const;
+    });
+    refreshers.push(() => {
+      for (const [value, b] of buttons) {
+        b.classList.toggle("on", get() === value);
+        b.setAttribute("aria-pressed", String(get() === value));
+      }
+    });
+    return h("div", { class: "row" }, h("span", { class: "grow" }, label), group);
+  };
+
   const SYMBOL_NAMES: Record<IconKind, string> = {
     none: "Blank",
     circle: "Circle",
@@ -182,6 +203,7 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
   const appearance = section(
     "Appearance",
     selectRow<ThemeChoice>("Theme", [["system", "Match system"], ["light", "Light"], ["dark", "Dark"]], () => s.theme, (v) => (s.theme = v)),
+    check("Hide timer", () => !s.showTimer, (v) => (s.showTimer = !v)),
     colorRow("Unknown cell", () => s.colors.unknown, (v) => (s.colors.unknown = v), () => paletteFor(s, deps.getTheme()).unknown),
     colorRow("Filled cell", () => s.colors.filled, (v) => (s.colors.filled = v), () => paletteFor(s, deps.getTheme()).filled),
     colorRow("Empty (crossed) cell", () => s.colors.empty, (v) => (s.colors.empty = v), () => paletteFor(s, deps.getTheme()).empty),
@@ -193,8 +215,10 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
 
   const painting = section(
     "Mouse & zoom",
-    selectRow<"fill" | "mark">("Left button / tap", [["fill", "Fills cells"], ["mark", "Marks cells empty"]], () => s.primaryMode, (v) => (s.primaryMode = v)),
+    segRow<"fill" | "mark">("Left button / tap", [["fill", "Fill"], ["mark", "Mark"]], () => s.primaryMode, (v) => (s.primaryMode = v)),
     h("p", { class: "note" }, "The right button (or holding Shift) does the other one. Press X to swap. On a touch screen a tap cycles a cell: unknown → filled → crossed → unknown."),
+    segRow<"zoom" | "scroll">("Mouse wheel", [["zoom", "Zoom"], ["scroll", "Scroll"]], () => s.wheelMode, (v) => (s.wheelMode = v)),
+    h("p", { class: "note" }, "Scroll moves the grid up and down (Shift: sideways) and needs Ctrl to zoom."),
     check("Lock the puzzle's position", () => s.lockFrame, (v) => (s.lockFrame = v), "Dragging then only scrolls the grid inside the frame; the frame stays where it is. (L)"),
     range("100% zoom is a cell size of", 12, 60, 1, () => s.zoomReference, (v) => (s.zoomReference = v), (v) => `${v} px`),
   );
@@ -207,7 +231,6 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     check("Show clue sums", () => s.assist.showSums, (v) => (s.assist.showSums = v), "The totals column on the right and row along the bottom."),
     check("Line sums include gaps", () => s.assist.clueSumsWithGaps, (v) => (s.assist.clueSumsWithGaps = v), "Shows the minimum span each line needs.", () => s.assist.showSums),
     check("Axis-lock dragging", () => s.assist.axisLock, (v) => (s.assist.axisLock = v), "Drags paint a straight line, previewed until you release."),
-    check("Show the timer", () => s.showTimer, (v) => (s.showTimer = v), "Starts when a puzzle opens. Pausing it hides the puzzle."),
   );
 
   const xOn = () => s.crosshair.enabled;
@@ -294,7 +317,7 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
           ["T", "Enter trial (again: nested tier)"],
           ["A / R", "Accept / reject trial tier"],
           ["+ / − / 0", "Zoom in / out / fit"],
-          ["Wheel", "Zoom"],
+          ["Mouse wheel", "Zoom, or scroll the grid (see Mouse & zoom); Ctrl always zooms, Shift scrolls sideways"],
           ["Drag outside the grid", "Pan (clue strips, sums, blank space)"],
           ["Space + drag", "Pan from inside the grid"],
 ["Right-click / Shift", "Do the other action (mark ↔ fill)"],
