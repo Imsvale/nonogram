@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SAMPLES } from "../src/core/samples";
-import { computeHoverRuns, computeLayout, fitCellSize, hitTest, hoverLabelVisible, viewportOk } from "../src/ui/geometry";
+import { computeHoverRuns, computeLayout, fitCellSize, FOOTER_RESERVE, hitTest, hoverLabelVisible, MARGIN, MARGIN_TOP, viewportOk } from "../src/ui/geometry";
 import { FILLED, UNKNOWN } from "../src/core/types";
 
 const p = SAMPLES[1]; // Heart 10×10
@@ -65,5 +65,31 @@ describe("hover run-length label rule", () => {
     expect(hoverLabelVisible(4, 5, 4, 2)).toBe(false);
     // Threshold 0 always shows.
     expect(hoverLabelVisible(3, 3, 3, 0)).toBe(true);
+  });
+});
+
+describe("frame positioning", () => {
+  it("centres by default, leaves room for the footer, and clamps movement to the window", () => {
+    const L = computeLayout(p, 30, 900, 700, 0, 0);
+    expect(Math.abs(L.originX + L.frameW / 2 - 450)).toBeLessThanOrEqual(1);
+    expect(L.footerTop).toBeGreaterThanOrEqual(L.originY + L.frameH);
+    expect(L.footerTop + FOOTER_RESERVE).toBeLessThanOrEqual(700 + 1);
+
+    const far = computeLayout(p, 30, 900, 700, 0, 0, 5000, 5000);
+    expect(far.originX + far.frameW).toBeLessThanOrEqual(900 - MARGIN);
+    expect(far.originY + far.frameH + FOOTER_RESERVE).toBeLessThanOrEqual(700 - MARGIN + 1);
+    const near = computeLayout(p, 30, 900, 700, 0, 0, -5000, -5000);
+    expect(near.originX).toBe(MARGIN);
+    expect(near.originY).toBe(MARGIN_TOP);
+    // The reported offset is the clamped one, so callers can store it.
+    expect(near.offX).toBeLessThan(0);
+    expect(computeLayout(p, 30, 900, 700, 0, 0, near.offX, near.offY).originX).toBe(near.originX);
+  });
+
+  it("has no room to move when the puzzle fills the window on that axis", () => {
+    const a = computeLayout(p, 90, 500, 500, 0, 0, 0, 0);
+    const b = computeLayout(p, 90, 500, 500, 0, 0, 300, 300);
+    expect(a.fullW).toBeGreaterThan(a.cw); // scrollable
+    expect(b.originX - a.originX).toBeLessThanOrEqual(2 * MARGIN);
   });
 });

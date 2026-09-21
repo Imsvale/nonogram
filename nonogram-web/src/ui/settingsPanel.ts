@@ -1,5 +1,5 @@
 import {
-  FOCUS_KEYS,
+  FULLSCREEN_KEYS,
   ICON_KINDS,
   paletteFor,
   type IconKind,
@@ -141,6 +141,13 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     colorRow("Line-sum background", () => s.colors.sumBg, (v) => (s.colors.sumBg = v), () => paletteFor(s, deps.getTheme()).sumBg),
   );
 
+  const painting = section(
+    "Mouse & zoom",
+    selectRow<"fill" | "mark">("Left button / tap", [["fill", "Fills cells"], ["mark", "Marks cells empty"]], () => s.primaryMode, (v) => (s.primaryMode = v)),
+    h("p", { class: "note" }, "The right button (or holding Shift) does the other one. Press X to swap."),
+    range("100% zoom is a cell size of", 12, 60, 1, () => s.zoomReference, (v) => (s.zoomReference = v), (v) => `${v} px`),
+  );
+
   const assist = section(
     "Assistance",
     check("Dim fulfilled clues", () => s.assist.autoDim, (v) => (s.assist.autoDim = v), "Grey out clues that the grid already satisfies."),
@@ -214,14 +221,14 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
 
   const keys = section(
     "Keyboard",
-    selectRow("Focus-mode key (hides the header)", FOCUS_KEYS.map((k) => [k, k.length === 1 ? k.toUpperCase() : k] as [string, string]), () => s.focusKey, (v) => (s.focusKey = v)),
+    selectRow("Fullscreen key", FULLSCREEN_KEYS.map((k) => [k, k.length === 1 ? k.toUpperCase() : k] as [string, string]), () => s.fullscreenKey, (v) => (s.fullscreenKey = v)),
     h(
       "dl",
       { class: "keys" },
       ...(
         [
           ["Ctrl+Z / Ctrl+Y", "Undo / redo"],
-          ["X", "Swap fill ↔ mark"],
+          ["X", "Swap what the left button does (fill ↔ mark)"],
           ["T", "Enter trial (again: nested tier)"],
           ["A / R", "Accept / reject trial tier"],
           ["+ / − / 0", "Zoom in / out / fit"],
@@ -230,8 +237,7 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
           ["Space + drag", "Pan from inside the grid"],
 ["Right-click / Shift", "Do the other action (mark ↔ fill)"],
           ["Click a clue", "Dim / undim it"],
-          ["F11", "Browser fullscreen (the browser's own)"],
-          ["Esc", "Leave focus mode"],
+          ["Fullscreen key / F11", "Toggle the browser's fullscreen"],
         ] as const
       ).flatMap(([k, d]) => [h("dt", {}, k), h("dd", {}, d)]),
     ),
@@ -246,6 +252,7 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
   const el = h(
     "div",
     { class: "settings-body" },
+    painting,
     appearance,
     assist,
     crosshair,

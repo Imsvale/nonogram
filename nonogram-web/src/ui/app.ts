@@ -9,8 +9,8 @@ import { Game } from "../state/game";
 import { deleteProgress, listRecent, loadProgress, progressFraction, resumeCandidate, saveProgress, setLastOpen } from "../state/progress";
 import { defaultSettings, loadSettings, resolveTheme, saveSettings, saveSettingsNow, type ResolvedTheme, type Settings } from "../state/settings";
 import { append, clear, copyText, downloadText, formatTime, h, icon } from "./dom";
-import { HEAVY_LINE_MIN_CELL } from "./geometry";
-import { GridView, MAX_CELL, MIN_CELL } from "./gridview";
+import { HEAVY_LINE_MIN_CELL, type Layout } from "./geometry";
+import { GridView } from "./gridview";
 import { buildSettingsPanel } from "./settingsPanel";
 
 const APP_NAME = "Nonogram";
@@ -28,7 +28,6 @@ export function startApp(root: HTMLElement): AppHandle {
   let unsubGame: (() => void) | null = null;
   let wasSolved = false;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
-  let focusMode = false;
 
   // ── Static DOM ───────────────────────────────────────────────────────────
 
@@ -41,7 +40,7 @@ export function startApp(root: HTMLElement): AppHandle {
   const warnEl = h("span", { class: "warn-pill", hidden: true });
   const toastEl = h("div", { id: "toast", role: "status", "aria-live": "polite" });
 
-  // Header
+  // Header: title, size, timer, zoom — then the actions.
   const nameEl = h("span", { class: "name" });
   const answerEl = h("span", { class: "answer" });
   const sizeEl = h("span", { class: "size" });
@@ -51,53 +50,48 @@ export function startApp(root: HTMLElement): AppHandle {
     game.timerRunning ? game.pauseTimer() : game.startTimer();
   });
   const resetTimerBtn = iconButton("reset", "Reset timer", () => game?.resetTimer());
-  const statusEl = h("span", { class: "status" });
+  const zoomOut = iconButton("minus", "Zoom out (−, or scroll down)", () => gridView.zoomOut());
+  const zoomIn = iconButton("plus", "Zoom in (+, or scroll up)", () => gridView.zoomIn());
+  const zoomFit = iconButton("fit", "Fit the puzzle to the window (0)", () => gridView.fit());
+  const zoomReadout = h("button", { class: "zoom-readout", type: "button" });
   const shareMenu = h("div", { class: "menu", hidden: true, role: "menu" });
   const shareBtn = h("button", { class: "btn", type: "button", "aria-haspopup": "menu" }, icon("share", 16), h("span", {}, "Share"), icon("chevron", 14));
   const importBtn = h("button", { class: "btn", type: "button", title: "Open a puzzle from a link, text or file" }, icon("import", 16), h("span", {}, "Open"));
   const settingsBtn = iconButton("sliders", "Settings", () => toggleSettings());
-  const focusBtn = iconButton("focus", "Focus mode: hide the header (F11 for browser fullscreen)", () => setFocusMode(!focusMode));
   const homeBtn = h("button", { class: "brand", type: "button", title: "Start page" }, icon("fit", 20), h("span", {}, APP_NAME));
 
+  // Three columns so the title is truly centred whatever the side groups' widths.
   const topbar = h(
     "header",
     { id: "topbar" },
-    homeBtn,
-    h("div", { class: "title" }, nameEl, answerEl, sizeEl),
-    h("div", { class: "timer" }, timeEl, playBtn, resetTimerBtn),
-    statusEl,
-    warnEl,
-    h("div", { class: "spacer" }),
-    importBtn,
-    h("div", { class: "menu-wrap" }, shareBtn, shareMenu),
-    settingsBtn,
-    focusBtn,
+    h("div", { class: "hd-left" }, homeBtn, h("div", { class: "pill timer" }, timeEl, playBtn, resetTimerBtn), warnEl),
+    h("div", { class: "title" }, nameEl, sizeEl, answerEl),
+    h(
+      "div",
+      { class: "hd-right" },
+      h("div", { class: "pill zoom" }, zoomOut, zoomReadout, zoomIn, zoomFit),
+      importBtn,
+      h("div", { class: "menu-wrap" }, shareBtn, shareMenu),
+      settingsBtn,
+    ),
   );
 
-  // Controls
-  const clearBtn = h("button", { class: "btn", type: "button", title: "Clear the whole grid (undoable)" }, icon("trash", 16), h("span", { class: "lbl" }, "Clear"));
-  const undoBtn = h("button", { class: "btn", type: "button", title: "Undo (Ctrl+Z)" }, icon("undo", 16), h("span", { class: "lbl" }, "Undo"));
-  const redoBtn = h("button", { class: "btn", type: "button", title: "Redo (Ctrl+Y)" }, icon("redo", 16), h("span", { class: "lbl" }, "Redo"));
-  const fillBtn = h("button", { class: "seg", type: "button", title: "Left click / tap fills; right click or Shift marks (X to swap)" }, icon("fill", 15), h("span", {}, "Fill"));
-  const markBtn = h("button", { class: "seg", type: "button", title: "Left click / tap marks empty; right click or Shift fills (X to swap)" }, icon("mark", 15), h("span", {}, "Mark"));
-  const zoomOut = iconButton("minus", "Zoom out (−)", () => gridView.zoomOut());
-  const zoomFit = iconButton("fit", "Fit puzzle to window (0)", () => gridView.fit());
-  const zoomIn = iconButton("plus", "Zoom in (+)", () => gridView.zoomIn());
-  const zoomText = h("span", { class: "zoom-now" });
-  const zoomRange = h("span", { class: "zoom-range" });
-  const zoomReadout = h("span", { class: "zoom-readout" }, zoomText, zoomRange);
-  const tierEl = h("span", { class: "tier" });
-  const trialReject = h("button", { class: "btn reject", type: "button", title: "Reject: discard this trial tier (R)" }, icon("x", 16));
-  const trialEnter = h("button", { class: "btn", type: "button", title: "Start a trial: guess, and keep or discard it later (T)" }, "Trial");
-  const trialAccept = h("button", { class: "btn accept", type: "button", title: "Accept: keep this trial tier's work (A)" }, icon("check", 16));
+  // A small tab under the header's right end: hides / shows the header.
+  const headerTab = h("button", { id: "headerTab", type: "button" }, icon("chevron", 14));
 
-  const controls = h(
-    "footer",
-    { id: "controls" },
+  // Footer: sits centred under the puzzle frame (positioned from the layout).
+  const clearBtn = h("button", { class: "btn sm", type: "button", title: "Clear the whole grid (undoable)" }, icon("trash", 15), h("span", { class: "lbl" }, "Clear"));
+  const undoBtn = h("button", { class: "btn sm icon-only", type: "button", title: "Undo (Ctrl+Z)", "aria-label": "Undo" }, icon("undo", 16));
+  const redoBtn = h("button", { class: "btn sm icon-only", type: "button", title: "Redo (Ctrl+Y)", "aria-label": "Redo" }, icon("redo", 16));
+  const tierEl = h("span", { class: "tier" });
+  const trialReject = h("button", { class: "btn sm reject icon-only", type: "button", title: "Reject: discard this trial tier (R)", "aria-label": "Reject trial" }, icon("x", 15));
+  const trialEnter = h("button", { class: "btn sm", type: "button", title: "Start a trial: guess, and keep or discard it later (T)" }, "Trial");
+  const trialAccept = h("button", { class: "btn sm accept icon-only", type: "button", title: "Accept: keep this trial tier's work (A)", "aria-label": "Accept trial" }, icon("check", 15));
+
+  const footer = h(
+    "div",
+    { id: "footer" },
     h("div", { class: "group" }, clearBtn, undoBtn, redoBtn),
-    h("div", { class: "group seg-group", role: "group", "aria-label": "Paint mode" }, fillBtn, markBtn),
-    h("div", { class: "group" }, zoomOut, zoomFit, zoomIn, zoomReadout),
-    h("div", { class: "spacer" }),
     h("div", { class: "group trial" }, tierEl, trialReject, trialEnter, trialAccept),
   );
 
@@ -122,8 +116,8 @@ export function startApp(root: HTMLElement): AppHandle {
   const importDialog = h("dialog", { id: "importDialog" });
   const dropVeil = h("div", { id: "dropVeil" }, "Drop a puzzle file or link to open it");
 
-  const stage = h("main", { id: "stage" }, canvasHost, landing, notice);
-  root.append(topbar, stage, controls, settingsDrawer, importDialog, toastEl, dropVeil);
+  const stage = h("main", { id: "stage" }, canvasHost, landing, notice, footer, headerTab);
+  root.append(topbar, stage, settingsDrawer, importDialog, toastEl, dropVeil);
 
   // ── Grid view ────────────────────────────────────────────────────────────
 
@@ -138,6 +132,15 @@ export function startApp(root: HTMLElement): AppHandle {
   });
   gridView.onUserChange = () => scheduleSave();
   gridView.onViewChange = () => refreshControls();
+  gridView.onLayout = positionFooter;
+
+  /** Centre the footer under the puzzle frame, keeping it inside the window. */
+  function positionFooter(L: Layout): void {
+    if (!game) return;
+    const fw = footer.offsetWidth;
+    const left = Math.min(Math.max(4, L.originX + L.frameW / 2 - fw / 2), Math.max(4, L.W - fw - 4));
+    footer.style.transform = `translate(${Math.round(left)}px, ${Math.round(L.footerTop)}px)`;
+  }
 
   // ── Settings ─────────────────────────────────────────────────────────────
 
@@ -167,6 +170,7 @@ export function startApp(root: HTMLElement): AppHandle {
       game.assist.autoCrossEdges = settings.assist.autoCrossEdges;
     }
     gridView.requestRender();
+    refreshControls();
   }
 
   function applyTheme(): void {
@@ -188,6 +192,8 @@ export function startApp(root: HTMLElement): AppHandle {
     const open = force ?? !!settingsDrawer.hidden;
     settingsDrawer.hidden = !open;
     document.body.classList.toggle("drawer-open", open);
+    // A control inside a just-closed drawer must not keep swallowing keyboard shortcuts.
+    if (!open && settingsDrawer.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
     if (open) settingsPanel.refresh();
   }
 
@@ -239,7 +245,6 @@ export function startApp(root: HTMLElement): AppHandle {
     root.classList.add("no-puzzle");
     canvasHost.hidden = true;
     landing.hidden = false;
-    setFocusMode(false);
     hideNotice();
     showWarning(null);
     buildLanding(error);
@@ -305,14 +310,6 @@ export function startApp(root: HTMLElement): AppHandle {
     nameEl.textContent = g.puzzle.name;
     answerEl.textContent = g.puzzle.answer && g.everSolved ? `“${g.puzzle.answer}”` : "";
     sizeEl.textContent = `${g.puzzle.width}×${g.puzzle.height}`;
-    statusEl.className = "status " + (g.solvedNow ? "solved" : "");
-    clear(statusEl);
-    if (g.solvedNow) append(statusEl, [icon("check", 15), "Solved"]);
-    else {
-      let known = 0;
-      for (const c of g.grid) if (c !== 0) known++;
-      statusEl.textContent = known ? `${Math.round((100 * known) / g.grid.length)}% marked` : "Not yet solved";
-    }
     const playing = g.timerRunning;
     clear(playBtn);
     playBtn.append(icon(playing ? "pause" : "play", 18));
@@ -337,20 +334,13 @@ export function startApp(root: HTMLElement): AppHandle {
     trialAccept.disabled = tiers === 0;
     tierEl.textContent = tiers ? `Tier ${tiers}` : "";
     tierEl.style.color = tiers ? `var(--tier-${((tiers - 1) % 5) + 1})` : "";
-    fillBtn.classList.toggle("on", gridView.primaryMode === "fill");
-    markBtn.classList.toggle("on", gridView.primaryMode === "mark");
-    fillBtn.setAttribute("aria-pressed", String(gridView.primaryMode === "fill"));
-    markBtn.setAttribute("aria-pressed", String(gridView.primaryMode === "mark"));
     const cell = gridView.cellSize;
-    const max = gridView.maxCellSize;
-    zoomText.textContent = `${cell} px`;
-    zoomRange.textContent = `${MIN_CELL}–${max}`;
+    const ref = settings.zoomReference;
+    zoomReadout.textContent = `${Math.round((cell / ref) * 100)}%`;
     zoomReadout.title =
-      `Cell size: ${cell} px. Range ${MIN_CELL}–${MAX_CELL} px` +
-      (max < MAX_CELL ? ` (up to ${max} px for this puzzle and window)` : "") +
-      `.
-Grid lines are 1 px below ${HEAVY_LINE_MIN_CELL} px; the 5-cell lines and frame get heavier from ${HEAVY_LINE_MIN_CELL} px.`;
-    zoomFit.title = "Fit puzzle to window (0)";
+      `Zoom ${Math.round((cell / ref) * 100)}%: cells are ${cell} px (100% = ${ref} px, change it in Settings).
+` +
+      `Click to return to 100%. Grid lines are 1 px below ${HEAVY_LINE_MIN_CELL} px cells.`;
   }
 
   // ── Notices & toasts ─────────────────────────────────────────────────────
@@ -396,8 +386,8 @@ Grid lines are 1 px below ${HEAVY_LINE_MIN_CELL} px; the 5-cell lines and frame 
   clearBtn.addEventListener("click", () => game?.clear());
   undoBtn.addEventListener("click", () => game?.undo());
   redoBtn.addEventListener("click", () => game?.redo());
-  fillBtn.addEventListener("click", () => setMode("fill"));
-  markBtn.addEventListener("click", () => setMode("mark"));
+  zoomReadout.addEventListener("click", () => gridView.setCellSize(settings.zoomReference));
+  headerTab.addEventListener("click", () => setHeaderHidden(!settings.headerHidden));
   trialEnter.addEventListener("click", () => game?.enterTrial());
   trialAccept.addEventListener("click", () => game?.acceptTrial());
   trialReject.addEventListener("click", () => game?.rejectTrial());
@@ -408,9 +398,11 @@ Grid lines are 1 px below ${HEAVY_LINE_MIN_CELL} px; the 5-cell lines and frame 
   });
   importBtn.addEventListener("click", () => openImport());
 
-  function setMode(m: "fill" | "mark"): void {
-    gridView.primaryMode = m;
-    refreshControls();
+  function swapPaintMode(): void {
+    settings.primaryMode = settings.primaryMode === "fill" ? "mark" : "fill";
+    settingsChanged();
+    settingsPanel.refresh();
+    toast(`Left button now ${settings.primaryMode === "fill" ? "fills" : "marks"}`);
   }
 
   // ── Share / export menu ──────────────────────────────────────────────────
@@ -668,21 +660,23 @@ Grid lines are 1 px below ${HEAVY_LINE_MIN_CELL} px; the 5-cell lines and frame 
     landing.append(box);
   }
 
-  // ── Focus mode ───────────────────────────────────────────────────────────
+  // ── Fullscreen & header visibility ───────────────────────────────────────
 
-  // Focus mode only hides the header. Fullscreen is the browser's own (F11);
-  // we deliberately don't call the Fullscreen API, so the two can't fight.
-  function setFocusMode(on: boolean): void {
-    if (on && !game) return;
-    focusMode = on;
-    document.body.classList.toggle("focus", on);
-    focusBtn.classList.toggle("on", on);
-    gridView.requestRender();
+  // Fullscreen is the browser's own; F just asks for it (Esc / F11 leave it as usual).
+  function toggleFullscreen(): void {
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    else document.documentElement.requestFullscreen?.().catch(() => {});
   }
-  const exitFocus = h("button", { id: "exitFocus", type: "button", title: "Leave focus mode (Esc)" }, icon("focus", 18));
-  exitFocus.addEventListener("click", () => setFocusMode(false));
-  // Inside the stage (not the viewport) so it stays clear of the docked settings drawer.
-  stage.append(exitFocus);
+
+  function setHeaderHidden(hidden: boolean): void {
+    settings.headerHidden = hidden;
+    document.body.classList.toggle("header-hidden", hidden);
+    headerTab.title = hidden ? "Show the header" : "Hide the header";
+    headerTab.setAttribute("aria-label", headerTab.title);
+    headerTab.setAttribute("aria-expanded", String(!hidden));
+    saveSettings(settings);
+  }
+  setHeaderHidden(settings.headerHidden);
 
   // ── Keyboard ─────────────────────────────────────────────────────────────
 
@@ -694,7 +688,6 @@ Grid lines are 1 px below ${HEAVY_LINE_MIN_CELL} px; the 5-cell lines and frame 
     if (e.key === "Escape") {
       if (!shareMenu.hidden) closeShare();
       else if (!settingsDrawer.hidden) toggleSettings(false);
-      else if (focusMode) setFocusMode(false);
       return;
     }
     if (!game) return;
@@ -713,14 +706,14 @@ Grid lines are 1 px below ${HEAVY_LINE_MIN_CELL} px; the 5-cell lines and frame 
     }
     if (e.altKey) return;
 
-    if (key === settings.focusKey.toLowerCase() || key === settings.focusKey) {
+    if (key === settings.fullscreenKey.toLowerCase() || key === settings.fullscreenKey) {
       e.preventDefault();
-      setFocusMode(!focusMode);
+      toggleFullscreen();
       return;
     }
     switch (key) {
       case "x":
-        setMode(gridView.primaryMode === "fill" ? "mark" : "fill");
+        swapPaintMode();
         break;
       case "t":
         game.enterTrial();

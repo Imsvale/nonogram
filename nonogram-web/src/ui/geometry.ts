@@ -5,6 +5,12 @@ import { EMPTY, FILLED, type Grid, type Puzzle } from "../core/types";
 export const HEAVY_LINE_MIN_CELL = 22;
 /** Breathing room around the puzzle frame. */
 export const MARGIN = 6;
+/** Extra room above the frame, so the header show/hide tab never covers the puzzle. */
+export const MARGIN_TOP = 20;
+/** Vertical space kept under the frame for the footer (buttons + gaps). */
+export const FOOTER_RESERVE = 44;
+/** Gap between the frame's bottom edge and the footer. */
+export const FOOTER_GAP = 8;
 
 export interface Metrics {
   /** Cell size in CSS px. */
@@ -42,9 +48,17 @@ export interface Layout {
   m: Metrics;
   W: number;
   H: number;
-  /** Top-left of the framed puzzle. */
+  /** Top-left of the framed puzzle (clue strips included). */
   originX: number;
   originY: number;
+  /** Size of the whole frame: clue strips + cells + sums. */
+  frameW: number;
+  frameH: number;
+  /** Where the footer's top edge goes: just under the frame. */
+  footerTop: number;
+  /** How far the frame has been moved from its centred position (clamped to the window). */
+  offX: number;
+  offY: number;
   /** Top-left / size of the scrolling cell viewport, in canvas px. */
   ox: number;
   oy: number;
@@ -60,24 +74,45 @@ export function clampPan(v: number, full: number, view: number): number {
   return Math.min(Math.max(0, full - view), Math.max(0, v));
 }
 
-export function computeLayout(p: Puzzle, C: number, W: number, H: number, panX: number, panY: number): Layout {
+const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(lo, hi), Math.max(lo, v));
+
+/**
+ * `panX/panY` scroll the cells under the frozen clue strips; `offX/offY` move
+ * the whole frame around the window (clamped so it stays fully on screen).
+ * The two are independent: the frame only has room to move on an axis where
+ * the puzzle isn't already filling the window, i.e. where it isn't scrollable.
+ */
+export function computeLayout(p: Puzzle, C: number, W: number, H: number, panX = 0, panY = 0, offX = 0, offY = 0): Layout {
   const m = computeMetrics(p, C);
   const fullW = p.width * C;
   const fullH = p.height * C;
   const availW = Math.max(40, W - 2 * MARGIN - m.leftW - m.sep - m.sumW);
-  const availH = Math.max(40, H - 2 * MARGIN - m.topH - m.sep - m.N);
+  const availH = Math.max(40, H - MARGIN_TOP - MARGIN - FOOTER_RESERVE - m.topH - m.sep - m.N);
   const cw = Math.min(fullW, availW);
   const ch = Math.min(fullH, availH);
-  const totalW = m.leftW + cw + m.sep + m.sumW;
-  const totalH = m.topH + ch + m.sep + m.N;
-  const originX = Math.max(MARGIN, Math.floor((W - totalW) / 2));
-  const originY = Math.max(MARGIN, Math.floor((H - totalH) / 2));
+  const frameW = m.leftW + cw + m.sep + m.sumW;
+  const frameH = m.topH + ch + m.sep + m.N;
+
+  const minX = MARGIN;
+  const maxX = W - MARGIN - frameW;
+  const minY = MARGIN_TOP;
+  const maxY = H - MARGIN - FOOTER_RESERVE - frameH;
+  const baseX = clamp(Math.floor((W - frameW) / 2), minX, maxX);
+  const baseY = clamp(Math.floor((H - FOOTER_RESERVE - frameH) / 2), minY, maxY);
+  const originX = clamp(baseX + offX, minX, maxX);
+  const originY = clamp(baseY + offY, minY, maxY);
+
   return {
     m,
     W,
     H,
     originX,
     originY,
+    frameW,
+    frameH,
+    footerTop: originY + frameH + FOOTER_GAP,
+    offX: originX - baseX,
+    offY: originY - baseY,
     ox: originX + m.leftW,
     oy: originY + m.topH,
     cw,
@@ -100,7 +135,7 @@ export function fitCellSize(p: Puzzle, W: number, H: number, min = 10, max = 36)
   for (let C = max; C > min; C--) {
     const m = computeMetrics(p, C);
     const tw = m.leftW + p.width * C + m.sep + m.sumW + 2 * MARGIN;
-    const th = m.topH + p.height * C + m.sep + m.N + 2 * MARGIN;
+    const th = m.topH + p.height * C + m.sep + m.N + MARGIN_TOP + MARGIN + FOOTER_RESERVE;
     if (tw <= W && th <= H) return C;
   }
   return min;

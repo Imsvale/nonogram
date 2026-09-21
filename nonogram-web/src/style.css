@@ -91,7 +91,6 @@ small {
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 
 .btn,
-.seg,
 .icon-btn,
 .brand {
   display: inline-flex;
@@ -108,7 +107,6 @@ small {
   user-select: none;
 }
 .btn:hover:not(:disabled),
-.seg:hover,
 .icon-btn:hover:not(:disabled),
 .brand:hover {
   background: var(--panel-2);
@@ -119,7 +117,6 @@ small {
   cursor: default;
 }
 .btn:focus-visible,
-.seg:focus-visible,
 .icon-btn:focus-visible,
 .brand:focus-visible,
 .list-open:focus-visible,
@@ -174,103 +171,8 @@ button.mini {
   background: transparent;
   padding: 4px 8px;
 }
-.seg-group {
-  gap: 0;
-}
-.seg {
-  border-radius: 0;
-  margin-left: -1px;
-}
-.seg:first-child {
-  border-radius: 8px 0 0 8px;
-  margin-left: 0;
-}
-.seg:last-child {
-  border-radius: 0 8px 8px 0;
-}
-.seg.on {
-  background: var(--accent);
-  color: var(--accent-text);
-  border-color: var(--accent);
-  position: relative;
-}
-
-/* ── Header ──────────────────────────────────────────────────────────────── */
-
-#topbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--line);
-  background: var(--bg);
-}
-#topbar .title {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-#topbar .name {
-  font-weight: 650;
-  font-size: 16px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 34ch;
-}
-#topbar .answer {
-  color: var(--ok);
-  font-weight: 600;
-}
-#topbar .size {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.timer {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-.timer .time {
-  font-variant-numeric: tabular-nums;
-  min-width: 3.4ch;
-  text-align: right;
-  margin-right: 2px;
-}
-.timer .icon-btn {
-  width: 30px;
-  min-height: 30px;
-  border-color: transparent;
-  background: transparent;
-}
-.status {
-  color: var(--muted);
-  white-space: nowrap;
-  min-width: 11ch;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-}
-.status.solved {
-  color: var(--ok);
-  font-weight: 600;
-}
 .spacer {
   flex: 1 1 0;
-}
-.no-puzzle #topbar .title,
-.no-puzzle #topbar .timer,
-.no-puzzle #topbar .status,
-.no-puzzle #topbar .menu-wrap,
-.no-puzzle #topbar #focus,
-.no-puzzle #controls {
-  display: none;
-}
-.no-puzzle #topbar .icon-btn[title^="Focus"] {
-  display: none;
 }
 
 .menu-wrap {
@@ -371,26 +273,6 @@ button.mini {
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   outline: none;
-}
-
-/* ── Controls bar ────────────────────────────────────────────────────────── */
-
-#controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--line);
-  background: var(--bg);
-}
-#controls .group {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-#controls .seg-group {
-  gap: 0;
 }
 .trial .tier {
   font-weight: 700;
@@ -745,75 +627,6 @@ dialog::backdrop {
 #dropVeil.show {
   display: flex;
 }
-#exitFocus {
-  display: none;
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 6;
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  cursor: pointer;
-  opacity: 0.35;
-  align-items: center;
-  justify-content: center;
-}
-#exitFocus:hover {
-  opacity: 1;
-}
-body.focus #topbar {
-  display: none;
-}
-body.focus #exitFocus {
-  display: inline-flex;
-}
-
-/* ── Small screens ───────────────────────────────────────────────────────── */
-
-@media (max-width: 720px) {
-  #controls .lbl {
-    display: none;
-  }
-  #topbar .btn span {
-    display: none;
-  }
-  #topbar .btn {
-    padding: 6px 9px;
-  }
-  #topbar .brand span {
-    display: inline;
-  }
-  #topbar .name {
-    max-width: 22ch;
-  }
-  /* Keep the header height constant while playing; the solved banner covers this. */
-  #topbar .status,
-  #topbar .warn-pill {
-    display: none;
-  }
-  #controls {
-    gap: 6px 10px;
-  }
-}
-
-/* ── Zoom readout, resume card ───────────────────────────────────────────── */
-
-.zoom-readout {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  margin-left: 2px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  cursor: help;
-}
-.zoom-readout .zoom-range {
-  color: var(--muted);
-  font-size: 12px;
-}
 .card.resume {
   border-color: var(--accent);
 }
@@ -821,8 +634,204 @@ body.focus #exitFocus {
   font-weight: 650;
   font-size: 16px;
 }
-@media (max-width: 720px) {
-  .zoom-readout .zoom-range {
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+#topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  min-height: 50px;
+}
+#topbar .hd-left,
+#topbar .hd-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+#topbar .hd-right {
+  justify-content: flex-end;
+}
+body.header-hidden #topbar {
+  display: none;
+}
+#topbar .title {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+}
+#topbar .name {
+  font-weight: 650;
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 30ch;
+}
+#topbar .size {
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+#topbar .answer {
+  color: var(--ok);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Grouped controls: timer and zoom share one pill each. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  padding: 0 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.pill .icon-btn {
+  width: 28px;
+  min-height: 28px;
+  height: 28px;
+  border-color: transparent;
+  background: transparent;
+  border-radius: 7px;
+}
+.pill .icon-btn:hover:not(:disabled) {
+  background: var(--panel-2);
+}
+.pill.timer .time {
+  font-variant-numeric: tabular-nums;
+  min-width: 4ch;
+  text-align: right;
+  padding: 0 4px 0 8px;
+}
+.pill.zoom .zoom-readout {
+  min-width: 5.2ch;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  padding: 0 4px;
+}
+.pill.zoom .zoom-readout:hover {
+  background: var(--panel-2);
+}
+.pill.zoom .zoom-readout:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.no-puzzle #topbar .title,
+.no-puzzle #topbar .pill,
+.no-puzzle #topbar .menu-wrap,
+.no-puzzle #footer,
+.no-puzzle #headerTab {
+  display: none;
+}
+
+/* Tab under the header's right end: hides / shows the header. */
+#headerTab {
+  position: absolute;
+  top: 0;
+  right: 14px;
+  z-index: 8;
+  width: 46px;
+  height: 16px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 9px 9px;
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0.75;
+}
+#headerTab:hover {
+  opacity: 1;
+  color: var(--text);
+}
+#headerTab:focus-visible {
+  outline: 2px solid var(--accent);
+}
+/* Caret points up (= hide) while the header is showing, down (= show) when hidden. */
+#headerTab svg {
+  transform: rotate(180deg);
+}
+body.header-hidden #headerTab svg {
+  transform: none;
+}
+
+/* ── Footer: centred under the puzzle, positioned from JS ────────────────── */
+
+#footer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  white-space: nowrap;
+}
+#footer .group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.btn.sm {
+  min-height: 28px;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+.btn.sm.icon-only {
+  width: 32px;
+  padding: 0;
+}
+
+@media (max-width: 900px) {
+  #topbar {
+    gap: 6px;
+    padding: 6px 8px;
+  }
+  #topbar .btn span,
+  .brand span {
+    display: none;
+  }
+  #topbar .btn {
+    padding: 6px 9px;
+  }
+  #topbar .name {
+    max-width: 16ch;
+  }
+  .pill.zoom .icon-btn:last-child {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  #footer .lbl {
+    display: none;
+  }
+  #topbar .size,
+  .warn-pill {
     display: none;
   }
 }

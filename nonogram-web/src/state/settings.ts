@@ -53,11 +53,17 @@ export interface Settings {
     colAlpha: number;
   };
   runLength: RunLengthSettings;
-  focusKey: string;
+  /** Key that toggles the browser's fullscreen. */
+  fullscreenKey: string;
   autoStartTimer: boolean;
+  /** What the left mouse button (or a tap) does; the right button / Shift does the other. */
+  primaryMode: "fill" | "mark";
+  /** Cell size in px that counts as "100%" zoom. */
+  zoomReference: number;
+  headerHidden: boolean;
 }
 
-export const FOCUS_KEYS = ["f", "g", "h", "z", "F9", "F10", "F12"] as const;
+export const FULLSCREEN_KEYS = ["f", "g", "h", "z", "F9", "F10", "F12"] as const;
 
 export function defaultSettings(): Settings {
   return {
@@ -99,8 +105,11 @@ export function defaultSettings(): Settings {
       labelHColor: null,
       labelVColor: null,
     },
-    focusKey: "f",
+    fullscreenKey: "f",
     autoStartTimer: false,
+    primaryMode: "fill",
+    zoomReference: 26,
+    headerHidden: false,
   };
 }
 

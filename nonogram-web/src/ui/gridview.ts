@@ -49,15 +49,29 @@ export class GridView {
   private panY = 0;
   /** While true, the cell size tracks the window (until the user zooms). */
   autoFit = true;
-  primaryMode: PaintAction = "fill";
   spaceHeld = false;
+  /** Where the whole frame has been dragged to, relative to centred (see computeLayout). */
+  private offX = 0;
+  private offY = 0;
 
   private hover: HoverState = NO_HOVER;
   private hoverKey = "";
   private pointers = new Map<number, Pt & { type: string }>();
   private drag: "none" | "stroke" | "pan" | "minimap" = "none";
   /** `click` runs on release if the pointer never moved (a clue that was clicked rather than dragged). */
-  private panStart: { px: number; py: number; x: number; y: number; moved: boolean; click: (() => void) | null } | null = null;
+  private panStart: {
+    px: number;
+    py: number;
+    ox: number;
+    oy: number;
+    x: number;
+    y: number;
+    /** Per axis: true = scroll the cells inside the frame, false = move the frame itself. */
+    scrollX: boolean;
+    scrollY: boolean;
+    moved: boolean;
+    click: (() => void) | null;
+  } | null = null;
   private gesture: { d0: number; C0: number; wx: number; wy: number } | null = null;
   private rafId = 0;
   private autoScrollId = 0;
@@ -67,6 +81,8 @@ export class GridView {
   onUserChange: () => void = () => {};
   /** Fired when the cell size changes (for the zoom readout). */
   onViewChange: () => void = () => {};
+  /** Fired after each layout is computed, so the footer can follow the frame. */
+  onLayout: (L: Layout) => void = () => {};
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -108,6 +124,7 @@ export class GridView {
     this.drag = "none";
     this.pointers.clear();
     this.panX = this.panY = 0;
+    this.offX = this.offY = 0;
     this.autoFit = true;
     if (game) {
       this.unsub = game.subscribe(() => this.requestRender());
@@ -123,9 +140,11 @@ export class GridView {
 
   layout(): Layout | null {
     if (!this.game) return null;
-    const L = computeLayout(this.game.puzzle, this.C, this.W, this.H, this.panX, this.panY);
+    const L = computeLayout(this.game.puzzle, this.C, this.W, this.H, this.panX, this.panY, this.offX, this.offY);
     this.panX = L.panX;
     this.panY = L.panY;
+    this.offX = L.offX;
+    this.offY = L.offY;
     return L;
   }
 
@@ -164,6 +183,7 @@ export class GridView {
     const settings = this.deps.getSettings();
     const theme = this.deps.getTheme();
     const L = this.layout()!;
+    this.onLayout(L);
     render({
       ctx: this.ctx,
       dpr: this.dpr,
@@ -189,8 +209,16 @@ export class GridView {
     this.autoFit = true;
     this.C = fitCellSize(this.game.puzzle, this.W, this.H);
     this.panX = this.panY = 0;
+    this.offX = this.offY = 0;
     this.requestRender();
     this.onViewChange();
+  }
+
+  /** Zoom to an exact cell size (e.g. back to the 100% reference), keeping the view centre fixed. */
+  setCellSize(px: number): void {
+    const target = Math.round(px);
+    if (!this.game || target === this.C) return;
+    this.zoomBy(target / this.C);
   }
 
   /** Largest cell size the current puzzle + window allow (the frozen clue strips limit it). */
@@ -236,7 +264,7 @@ export class GridView {
   private setCellSizeKeeping(next: number, wx: number, wy: number, px: number, py: number): void {
     if (!this.game) return;
     this.C = next;
-    const L1 = computeLayout(this.game.puzzle, next, this.W, this.H, 0, 0);
+    const L1 = computeLayout(this.game.puzzle, next, this.W, this.H, 0, 0, this.offX, this.offY);
     this.panX = wx * next - (px - L1.ox);
     this.panY = wy * next - (py - L1.oy);
     this.requestRender();
@@ -258,7 +286,7 @@ export class GridView {
 
   private paintAction(e: PointerEvent): PaintAction {
     const alt = e.button === 2 || e.shiftKey;
-    const primary = this.primaryMode;
+    const primary = this.deps.getSettings().primaryMode;
     return alt ? (primary === "fill" ? "mark" : "fill") : primary;
   }
 
@@ -347,15 +375,7 @@ export class GridView {
         return;
       }
       case "pan":
-        if (this.panStart) {
-          const dx = pt.x - this.panStart.x;
-          const dy = pt.y - this.panStart.y;
-          if (!this.panStart.moved && Math.hypot(dx, dy) < PAN_SLOP) return;
-          this.panStart.moved = true;
-          this.panX = this.panStart.px - dx;
-          this.panY = this.panStart.py - dy;
-          this.requestRender();
-        }
+        this.dragPanTo(pt);
         return;
       case "minimap": {
         const L = this.layout()!;
@@ -446,10 +466,38 @@ export class GridView {
   // ── Panning, minimap, edge auto-scroll ────────────────────────────────────
 
   private beginPanDrag(pt: Pt, click: (() => void) | null): void {
+    const L = this.layout();
     this.drag = "pan";
-    // Space / middle-button pans start moving immediately; clue presses wait for a small slop.
-    this.panStart = { px: this.panX, py: this.panY, x: pt.x, y: pt.y, moved: click === null, click };
+    // Each axis either scrolls the cells (if the puzzle overflows the window there)
+    // or moves the whole frame around the window (if there is slack).
+    this.panStart = {
+      px: this.panX,
+      py: this.panY,
+      ox: this.offX,
+      oy: this.offY,
+      x: pt.x,
+      y: pt.y,
+      scrollX: !!L && L.fullW > L.cw,
+      scrollY: !!L && L.fullH > L.ch,
+      // Space / middle-button pans start moving immediately; clue presses wait for a small slop.
+      moved: click === null,
+      click,
+    };
     this.updateCursor();
+  }
+
+  private dragPanTo(pt: Pt): void {
+    const s = this.panStart;
+    if (!s) return;
+    const dx = pt.x - s.x;
+    const dy = pt.y - s.y;
+    if (!s.moved && Math.hypot(dx, dy) < PAN_SLOP) return;
+    s.moved = true;
+    if (s.scrollX) this.panX = s.px - dx;
+    else this.offX = s.ox + dx;
+    if (s.scrollY) this.panY = s.py - dy;
+    else this.offY = s.oy + dy;
+    this.requestRender();
   }
 
   /** Centre the viewport on a point given in minimap-area coordinates. */

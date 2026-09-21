@@ -42,6 +42,13 @@ The address bar is always rewritten to the canonical share form when a puzzle op
 - puzzle-nonograms.com URL import from the desktop app is not ported: browsers block that
   cross-origin fetch (CORS).
 - `window.__nonogram` exposes layout/game/settings for browser tests.
+- Two independent pans: the cells scroll under the frozen clue strips (`panX/panY`), and the whole
+  frame can be moved around the window (`offX/offY`, clamped on-screen). A drag applies to whichever
+  applies per axis: scroll where the puzzle overflows the window, move the frame where it doesn't.
+- The footer is not a page footer: `GridView.onLayout` positions it under the puzzle frame, and
+  `FOOTER_RESERVE` in `geometry.ts` keeps room for it.
+- Fullscreen is the browser's own (F key → Fullscreen API). There is no in-app "focus mode"; the
+  header hides via the tab under it (`settings.headerHidden`).
 
 ## Persistence (localStorage, this browser only)
 
