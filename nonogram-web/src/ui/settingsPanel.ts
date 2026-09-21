@@ -31,14 +31,19 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
 
   // ── Control builders ────────────────────────────────────────────────────
 
-  const check = (label: string, get: () => boolean, set: (v: boolean) => void, hint?: string) => {
+  const check = (label: string, get: () => boolean, set: (v: boolean) => void, hint?: string, enabled: () => boolean = () => true) => {
     const input = h("input", { type: "checkbox" });
     input.addEventListener("change", () => {
       set(input.checked);
       changed();
     });
-    refreshers.push(() => (input.checked = get()));
-    return h("label", { class: "row check" }, input, h("span", { class: "grow" }, label, hint ? h("small", {}, hint) : null));
+    const row = h("label", { class: "row check" }, input, h("span", { class: "grow" }, label, hint ? h("small", {}, hint) : null));
+    refreshers.push(() => {
+      input.checked = get();
+      input.disabled = !enabled();
+      row.classList.toggle("disabled", !enabled());
+    });
+    return row;
   };
 
   const range = (label: string, min: number, max: number, step: number, get: () => number, set: (v: number) => void, fmt: (v: number) => string = String) => {
@@ -154,7 +159,8 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     check("Dim fulfilled clues", () => s.assist.autoDim, (v) => (s.assist.autoDim = v), "Grey out clues that the grid already satisfies."),
     check("Auto-fill empty", () => s.assist.autoFillEmpty, (v) => (s.assist.autoFillEmpty = v), "Cross out the rest of a line once its clues are met."),
     check("Auto-cross from edges", () => s.assist.autoCrossEdges, (v) => (s.assist.autoCrossEdges = v), "Cross out cells that lie between edge-confirmed runs."),
-    check("Line sums include gaps", () => s.assist.clueSumsWithGaps, (v) => (s.assist.clueSumsWithGaps = v), "Shows the minimum span each line needs."),
+    check("Show clue sums", () => s.assist.showSums, (v) => (s.assist.showSums = v), "The totals column on the right and row along the bottom."),
+    check("Line sums include gaps", () => s.assist.clueSumsWithGaps, (v) => (s.assist.clueSumsWithGaps = v), "Shows the minimum span each line needs.", () => s.assist.showSums),
     check("Axis-lock dragging", () => s.assist.axisLock, (v) => (s.assist.axisLock = v), "Drags paint a straight line, previewed until you release."),
     check("Start timer on first move", () => s.autoStartTimer, (v) => (s.autoStartTimer = v)),
   );

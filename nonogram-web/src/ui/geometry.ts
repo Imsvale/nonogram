@@ -20,6 +20,12 @@ export interface Metrics {
   /** Thickness of one clue slot (the short side of a clue cell). */
   N: number;
   sumW: number;
+  /** Whether the line-sum strips (right column, bottom row, totals) are shown at all. */
+  showSums: boolean;
+  /** Space the right-hand sum column takes, separator included; 0 when sums are hidden. */
+  rightW: number;
+  /** Space the bottom sum row takes, separator included; 0 when sums are hidden. */
+  bottomH: number;
   /** Thickness of the heavy separators between clue strips, grid and sums (and 5-cell lines). */
   sep: number;
   /** Width of the row-clue strip including its separator. */
@@ -30,7 +36,7 @@ export interface Metrics {
   maxCd: number;
 }
 
-export function computeMetrics(p: Puzzle, C: number): Metrics {
+export function computeMetrics(p: Puzzle, C: number, showSums = true): Metrics {
   // Clue text follows the cell size but stops growing: zooming in must not let
   // the (frozen) clue strips take over the window.
   const fs = Math.min(18, Math.max(9, Math.round(C * 0.5)));
@@ -41,7 +47,20 @@ export function computeMetrics(p: Puzzle, C: number): Metrics {
   const digits = String(total).length;
   const sumW = Math.max(N, Math.round(digits * fs * 0.62 + 10));
   const sep = C >= HEAVY_LINE_MIN_CELL ? 2 : 1;
-  return { C, fs, N, sumW, sep, leftW: maxRd * N + sep, topH: maxCd * N + sep, maxRd, maxCd };
+  return {
+    C,
+    fs,
+    N,
+    sumW,
+    showSums,
+    rightW: showSums ? sep + sumW : 0,
+    bottomH: showSums ? sep + N : 0,
+    sep,
+    leftW: maxRd * N + sep,
+    topH: maxCd * N + sep,
+    maxRd,
+    maxCd,
+  };
 }
 
 export interface Layout {
@@ -82,16 +101,16 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(lo, hi), 
  * The two are independent: the frame only has room to move on an axis where
  * the puzzle isn't already filling the window, i.e. where it isn't scrollable.
  */
-export function computeLayout(p: Puzzle, C: number, W: number, H: number, panX = 0, panY = 0, offX = 0, offY = 0): Layout {
-  const m = computeMetrics(p, C);
+export function computeLayout(p: Puzzle, C: number, W: number, H: number, panX = 0, panY = 0, offX = 0, offY = 0, showSums = true): Layout {
+  const m = computeMetrics(p, C, showSums);
   const fullW = p.width * C;
   const fullH = p.height * C;
-  const availW = Math.max(40, W - 2 * MARGIN - m.leftW - m.sep - m.sumW);
-  const availH = Math.max(40, H - MARGIN_TOP - MARGIN - FOOTER_RESERVE - m.topH - m.sep - m.N);
+  const availW = Math.max(40, W - 2 * MARGIN - m.leftW - m.rightW);
+  const availH = Math.max(40, H - MARGIN_TOP - MARGIN - FOOTER_RESERVE - m.topH - m.bottomH);
   const cw = Math.min(fullW, availW);
   const ch = Math.min(fullH, availH);
-  const frameW = m.leftW + cw + m.sep + m.sumW;
-  const frameH = m.topH + ch + m.sep + m.N;
+  const frameW = m.leftW + cw + m.rightW;
+  const frameH = m.topH + ch + m.bottomH;
 
   const minX = MARGIN;
   const maxX = W - MARGIN - frameW;
@@ -125,17 +144,17 @@ export function computeLayout(p: Puzzle, C: number, W: number, H: number, panX =
 }
 
 /** Whether cell size `C` still leaves a usable scrolling area next to the frozen clue strips. */
-export function viewportOk(p: Puzzle, C: number, W: number, H: number): boolean {
-  const L = computeLayout(p, C, W, H, 0, 0);
+export function viewportOk(p: Puzzle, C: number, W: number, H: number, showSums = true): boolean {
+  const L = computeLayout(p, C, W, H, 0, 0, 0, 0, showSums);
   return L.cw >= Math.min(L.fullW, W * 0.35) && L.ch >= Math.min(L.fullH, H * 0.35);
 }
 
 /** Largest cell size (within [min, max]) at which the whole puzzle fits in W×H. */
-export function fitCellSize(p: Puzzle, W: number, H: number, min = 10, max = 36): number {
+export function fitCellSize(p: Puzzle, W: number, H: number, min = 10, max = 36, showSums = true): number {
   for (let C = max; C > min; C--) {
-    const m = computeMetrics(p, C);
-    const tw = m.leftW + p.width * C + m.sep + m.sumW + 2 * MARGIN;
-    const th = m.topH + p.height * C + m.sep + m.N + MARGIN_TOP + MARGIN + FOOTER_RESERVE;
+    const m = computeMetrics(p, C, showSums);
+    const tw = m.leftW + p.width * C + m.rightW + 2 * MARGIN;
+    const th = m.topH + p.height * C + m.bottomH + MARGIN_TOP + MARGIN + FOOTER_RESERVE;
     if (tw <= W && th <= H) return C;
   }
   return min;
@@ -178,7 +197,7 @@ export function hitTest(L: Layout, p: Puzzle, x: number, y: number): Hit {
   }
   const bx = ox + cw + sep;
   const by = oy + ch + sep;
-  if (x >= bx && x < bx + m.sumW && y >= by && y < by + N) return { kind: "sumToggle" };
+  if (m.showSums && x >= bx && x < bx + m.sumW && y >= by && y < by + N) return { kind: "sumToggle" };
   return { kind: "none" };
 }
 

@@ -93,3 +93,30 @@ describe("frame positioning", () => {
     expect(b.originX - a.originX).toBeLessThanOrEqual(2 * MARGIN);
   });
 });
+
+describe("clue sums shown / hidden", () => {
+  it("hiding the sums removes the right column and bottom row from the frame", () => {
+    const on = computeLayout(p, 30, 900, 700, 0, 0, 0, 0, true);
+    const off = computeLayout(p, 30, 900, 700, 0, 0, 0, 0, false);
+    expect(on.m.rightW).toBe(on.m.sep + on.m.sumW);
+    expect(on.m.bottomH).toBe(on.m.sep + on.m.N);
+    expect([off.m.rightW, off.m.bottomH]).toEqual([0, 0]);
+    expect(off.frameW).toBe(on.frameW - on.m.rightW);
+    expect(off.frameH).toBe(on.frameH - on.m.bottomH);
+    // Cells and clue strips are unchanged.
+    expect([off.cw, off.ch, off.ox - off.originX]).toEqual([on.cw, on.ch, on.ox - on.originX]);
+  });
+
+  it("the sums toggle corner is not clickable while hidden", () => {
+    const on = computeLayout(p, 30, 900, 700, 0, 0, 0, 0, true);
+    const x = on.ox + on.cw + on.m.sep + 2;
+    const y = on.oy + on.ch + on.m.sep + 2;
+    expect(hitTest(on, p, x, y).kind).toBe("sumToggle");
+    const off = computeLayout(p, 30, 900, 700, 0, 0, 0, 0, false);
+    expect(hitTest(off, p, off.ox + off.cw + 4, off.oy + off.ch + 4).kind).toBe("none");
+  });
+
+  it("fits at least as large without the sums", () => {
+    expect(fitCellSize(p, 500, 420, 10, 36, false)).toBeGreaterThanOrEqual(fitCellSize(p, 500, 420, 10, 36, true));
+  });
+});

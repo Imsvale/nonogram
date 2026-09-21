@@ -835,3 +835,12 @@ body.header-hidden #headerTab svg {
     display: none;
   }
 }
+
+/* A setting that doesn't apply right now (e.g. "include gaps" while sums are hidden). */
+.settings-body .row.disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.settings-body .row.disabled input {
+  cursor: default;
+}

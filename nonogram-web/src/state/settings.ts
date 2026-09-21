@@ -43,6 +43,8 @@ export interface Settings {
     autoDim: boolean;
     autoFillEmpty: boolean;
     autoCrossEdges: boolean;
+    /** Show the line-sum strips (right column, bottom row and their totals). */
+    showSums: boolean;
     clueSumsWithGaps: boolean;
     axisLock: boolean;
   };
@@ -78,6 +80,7 @@ export function defaultSettings(): Settings {
       autoDim: false,
       autoFillEmpty: false,
       autoCrossEdges: false,
+      showSums: false,
       clueSumsWithGaps: false,
       axisLock: false,
     },

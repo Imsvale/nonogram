@@ -199,11 +199,16 @@ class Draw {
     }
 
     // 4. Grid lines
+    // With the sum strips hidden nothing outside the cells closes the grid, so its
+    // last vertical / horizontal line is drawn inward (fully inside the clip).
+    const inward = !L.m.showSums;
     for (let c = this.c0; c <= this.c1 + 1; c++) {
-      this.vline(this.cx(c), L.oy, L.oy + L.ch, c % 5 === 0 || c === w);
+      const edge = inward && c === w;
+      this.vline(edge ? this.cx(c) - this.thick(L.m.sep) / 2 : this.cx(c), L.oy, L.oy + L.ch, c % 5 === 0 || c === w);
     }
     for (let r = this.r0; r <= this.r1 + 1; r++) {
-      this.hline(this.cy(r), L.ox, L.ox + L.cw, r % 5 === 0 || r === h);
+      const edge = inward && r === h;
+      this.hline(edge ? this.cy(r) - this.thick(L.m.sep) / 2 : this.cy(r), L.ox, L.ox + L.cw, r % 5 === 0 || r === h);
     }
 
     // 5. Icons and trial-origin markers
@@ -466,6 +471,7 @@ class Draw {
   }
 
   sums(): void {
+    if (!this.L.m.showSums) return;
     const { ctx, L, p, pal, inp } = this;
     const { m } = L;
     const rx = L.ox + L.cw + L.m.sep;
@@ -522,17 +528,27 @@ class Draw {
   frame(): void {
     const { ctx, L, pal } = this;
     const { m } = L;
-    const right = L.ox + L.cw + L.m.sep + m.sumW;
-    const bottom = L.oy + L.ch + L.m.sep + m.N;
+    const right = L.ox + L.cw + m.rightW;
+    const bottom = L.oy + L.ch + m.bottomH;
     ctx.fillStyle = pal.borderMaj;
-    ctx.fillRect(L.ox - L.m.sep, L.originY, L.m.sep, bottom - L.originY); // left of cells
-    ctx.fillRect(L.originX, L.oy - L.m.sep, right - L.originX, L.m.sep); // above cells
-    ctx.fillRect(L.ox + L.cw, L.originY, L.m.sep, bottom - L.originY); // right of cells
-    ctx.fillRect(L.originX, L.oy + L.ch, right - L.originX, L.m.sep); // below cells
-    // Outline
-    ctx.strokeStyle = pal.borderMaj;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(L.originX - 0.5, L.originY - 0.5, right - L.originX + 1, bottom - L.originY + 1);
+    ctx.fillRect(L.ox - m.sep, L.originY, m.sep, bottom - L.originY); // left of cells
+    ctx.fillRect(L.originX, L.oy - m.sep, right - L.originX, m.sep); // above cells
+    if (m.showSums) {
+      ctx.fillRect(L.ox + L.cw, L.originY, m.sep, bottom - L.originY); // right of cells
+      ctx.fillRect(L.originX, L.oy + L.ch, right - L.originX, m.sep); // below cells
+    }
+    // Thin outline around the whole frame. Without the sum strips the right and
+    // bottom edges are the grid's own (heavy) outer lines, so they get no outline.
+    ctx.fillRect(L.originX - 1, L.originY - 1, right - L.originX + 2, 1);
+    ctx.fillRect(L.originX - 1, L.originY - 1, 1, bottom - L.originY + 2);
+    if (m.showSums) {
+      ctx.fillRect(right, L.originY - 1, 1, bottom - L.originY + 2);
+      ctx.fillRect(L.originX - 1, bottom, right - L.originX + 2, 1);
+    } else {
+      // Continue the grid's inward edge across the clue strips so the frame is closed.
+      ctx.fillRect(L.originX, bottom - m.sep, L.ox - L.originX, m.sep); // under the row clues
+      ctx.fillRect(right - m.sep, L.originY, m.sep, L.oy - L.originY); // right of the column clues
+    }
   }
 
   minimap(): void {

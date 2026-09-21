@@ -50,6 +50,10 @@ export class GridView {
   /** While true, the cell size tracks the window (until the user zooms). */
   autoFit = true;
   spaceHeld = false;
+  private lastSums: boolean | null = null;
+  private get showSums(): boolean {
+    return this.deps.getSettings().assist.showSums;
+  }
   /** Where the whole frame has been dragged to, relative to centred (see computeLayout). */
   private offX = 0;
   private offY = 0;
@@ -128,7 +132,7 @@ export class GridView {
     this.autoFit = true;
     if (game) {
       this.unsub = game.subscribe(() => this.requestRender());
-      this.C = fitCellSize(game.puzzle, this.W, this.H);
+      this.C = fitCellSize(game.puzzle, this.W, this.H, undefined, undefined, this.showSums);
     }
     this.requestRender();
     this.onViewChange();
@@ -140,7 +144,13 @@ export class GridView {
 
   layout(): Layout | null {
     if (!this.game) return null;
-    const L = computeLayout(this.game.puzzle, this.C, this.W, this.H, this.panX, this.panY, this.offX, this.offY);
+    // Showing/hiding the sums changes the frame's size: re-fit if the view is tracking the window.
+    const sums = this.showSums;
+    if (this.lastSums !== null && this.lastSums !== sums && this.autoFit) {
+      this.C = fitCellSize(this.game.puzzle, this.W, this.H, undefined, undefined, sums);
+    }
+    this.lastSums = sums;
+    const L = computeLayout(this.game.puzzle, this.C, this.W, this.H, this.panX, this.panY, this.offX, this.offY, sums);
     this.panX = L.panX;
     this.panY = L.panY;
     this.offX = L.offX;
@@ -165,7 +175,7 @@ export class GridView {
     this.canvas.height = Math.round(this.H * this.dpr);
     this.canvas.style.width = `${this.W}px`;
     this.canvas.style.height = `${this.H}px`;
-    if (this.game && this.autoFit) this.C = fitCellSize(this.game.puzzle, this.W, this.H);
+    if (this.game && this.autoFit) this.C = fitCellSize(this.game.puzzle, this.W, this.H, undefined, undefined, this.showSums);
     this.requestRender();
     this.onViewChange();
   }
@@ -207,7 +217,7 @@ export class GridView {
   fit(): void {
     if (!this.game) return;
     this.autoFit = true;
-    this.C = fitCellSize(this.game.puzzle, this.W, this.H);
+    this.C = fitCellSize(this.game.puzzle, this.W, this.H, undefined, undefined, this.showSums);
     this.panX = this.panY = 0;
     this.offX = this.offY = 0;
     this.requestRender();
@@ -225,7 +235,7 @@ export class GridView {
   get maxCellSize(): number {
     if (!this.game) return MAX_CELL;
     let c = MAX_CELL;
-    while (c > this.C && !viewportOk(this.game.puzzle, c, this.W, this.H)) c--;
+    while (c > this.C && !viewportOk(this.game.puzzle, c, this.W, this.H, this.showSums)) c--;
     return c;
   }
 
@@ -257,14 +267,14 @@ export class GridView {
     next = Math.min(MAX_CELL, Math.max(MIN_CELL, next));
     if (!this.game) return next;
     // Only zoom-in is restricted; never trap the user at a size they can't leave.
-    while (next > this.C && !viewportOk(this.game.puzzle, next, this.W, this.H)) next--;
+    while (next > this.C && !viewportOk(this.game.puzzle, next, this.W, this.H, this.showSums)) next--;
     return next;
   }
 
   private setCellSizeKeeping(next: number, wx: number, wy: number, px: number, py: number): void {
     if (!this.game) return;
     this.C = next;
-    const L1 = computeLayout(this.game.puzzle, next, this.W, this.H, 0, 0, this.offX, this.offY);
+    const L1 = computeLayout(this.game.puzzle, next, this.W, this.H, 0, 0, this.offX, this.offY, this.showSums);
     this.panX = wx * next - (px - L1.ox);
     this.panY = wy * next - (py - L1.oy);
     this.requestRender();
