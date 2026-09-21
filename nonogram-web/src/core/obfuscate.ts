@@ -3,7 +3,7 @@
  *
  * This is NOT encryption: anyone with the source, or the patience, can undo it.
  * The aim is only that the answer can't be read at a glance in the address bar,
- * a chat preview or a screenshot. So it isn't plain text, isn't recognisable
+ * a chat preview or a screenshot. So it isn't plain text, isn't recognizable
  * base64 of the text, and looks different for every puzzle: the text is XORed
  * with a keystream seeded from the puzzle's own clue data (`W/H/DATA`).
  */

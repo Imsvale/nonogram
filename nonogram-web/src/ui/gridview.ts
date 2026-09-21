@@ -54,7 +54,7 @@ export class GridView {
   private get showSums(): boolean {
     return this.deps.getSettings().assist.showSums;
   }
-  /** Where the whole frame has been dragged to, relative to centred (see computeLayout). */
+  /** Where the whole frame has been dragged to, relative to centered (see computeLayout). */
   private offX = 0;
   private offY = 0;
 
@@ -224,7 +224,7 @@ export class GridView {
     this.onViewChange();
   }
 
-  /** Zoom to an exact cell size (e.g. back to the 100% reference), keeping the view centre fixed. */
+  /** Zoom to an exact cell size (e.g. back to the 100% reference), keeping the view center fixed. */
   setCellSize(px: number): void {
     const target = Math.round(px);
     if (!this.game || target === this.C) return;
@@ -246,7 +246,7 @@ export class GridView {
     this.zoomBy(1 / ZOOM_STEP);
   }
 
-  /** Multiply the cell size, keeping the point (sx, sy) — default: view centre — fixed. */
+  /** Multiply the cell size, keeping the point (sx, sy) — default: view center — fixed. */
   zoomBy(factor: number, sx?: number, sy?: number): void {
     const L = this.layout();
     if (!this.game || !L) return;
@@ -329,7 +329,6 @@ export class GridView {
     switch (hit.kind) {
       case "cell": {
         const settings = this.deps.getSettings();
-        if (settings.autoStartTimer && !game.timerRunning && !game.solvedNow) game.startTimer();
         game.startStroke(hit.r, hit.c, this.paintAction(e), settings.assist.axisLock);
         this.drag = "stroke";
         this.setHover(this.hoverFor(hit));
@@ -461,7 +460,7 @@ export class GridView {
     if (this.drag === "pan") cursor = "grabbing";
     else if (this.spaceHeld) cursor = "grab";
     else if (hit) {
-      if (hit.kind === "cell") cursor = "cell";
+      if (hit.kind === "cell") cursor = "default";
       else if (hit.kind === "colClue" || hit.kind === "rowClue" || hit.kind === "minimap" || hit.kind === "sumToggle") cursor = "pointer";
       else if (hit.kind === "colHead" || hit.kind === "rowHead" || hit.kind === "none") cursor = "grab";
     }
@@ -513,7 +512,7 @@ export class GridView {
     this.requestRender();
   }
 
-  /** Centre the viewport on a point given in minimap-area coordinates. */
+  /** Center the viewport on a point given in minimap-area coordinates. */
   private minimapJump(mx: number, my: number): void {
     const L = this.layout();
     if (!L || !this.game) return;

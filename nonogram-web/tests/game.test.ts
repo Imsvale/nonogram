@@ -121,15 +121,6 @@ describe("painting", () => {
     expect(state(g)).toBe("100000000");
     expect(g.stroke).toBeNull();
   });
-
-  it("clear is undoable", () => {
-    const g = new Game(plus);
-    stroke(g, [[0, 0], [0, 1]]);
-    g.clear();
-    expect(state(g)).toBe("000000000");
-    g.undo();
-    expect(state(g)).toBe("110000000");
-  });
 });
 
 describe("assistance", () => {
@@ -249,5 +240,70 @@ describe("persistence", () => {
     expect(saved.spec).toContain("C:1|3|1");
     expect(saved.spec).not.toMatch(/;[01]{9}$/);
     expect(FILLED).toBe(1);
+  });
+});
+
+describe("timer", () => {
+  it("reset goes back to zero and keeps running if it was running", () => {
+    const g = new Game(plus);
+    g.startTimer();
+    g.resetTimer();
+    expect(g.timerRunning).toBe(true);
+    expect(g.timerElapsedMs()).toBeLessThan(50);
+    g.pauseTimer();
+    g.resetTimer();
+    expect(g.timerRunning).toBe(false);
+    expect(g.timerElapsedMs()).toBe(0);
+  });
+
+  it("a listener never sees 'timer stopped but not solved' at the moment of solving", () => {
+    const g = new Game(plus);
+    g.startTimer();
+    stroke(g, [[0, 1]]);
+    stroke(g, [[1, 0], [1, 1], [1, 2]]);
+    const seen: string[] = [];
+    g.subscribe(() => seen.push(`${g.timerRunning ? "running" : "stopped"}/${g.solvedNow ? "solved" : "open"}`));
+    stroke(g, [[2, 1]]);
+    expect(seen).not.toContain("stopped/open");
+    expect(seen).toContain("stopped/solved");
+  });
+});
+
+describe("restart", () => {
+  it("blanks the grid, closes trials, un-dims clues, drops the undo history and zeroes the timer", () => {
+    const g = new Game(plus);
+    stroke(g, [[0, 1]]);
+    g.enterTrial();
+    stroke(g, [[1, 0], [1, 1]]);
+    g.toggleDim(true, 1, 0);
+    g.toggleDim(false, 2, 0);
+    g.startTimer();
+    g.restart();
+    expect(state(g)).toBe("000000000");
+    expect(g.trial).toHaveLength(0);
+    expect(g.dimCols.size + g.dimRows.size).toBe(0);
+    expect(g.timerElapsedMs()).toBeLessThan(50);
+    expect(g.timerRunning).toBe(true); // was running, stays running
+    expect(g.canUndo).toBe(false);
+    expect(g.canRedo).toBe(false);
+  });
+
+  it("also drops the redo history", () => {
+    const g = new Game(plus);
+    stroke(g, [[0, 1]]);
+    g.undo();
+    expect(g.canRedo).toBe(true);
+    g.restart();
+    expect(g.canRedo).toBe(false);
+    expect(state(g)).toBe("000000000");
+  });
+
+  it("keeps a stopped timer stopped and works on an empty grid", () => {
+    const g = new Game(plus);
+    g.toggleDim(true, 0, 0);
+    g.restart();
+    expect(g.undoStack).toHaveLength(0);
+    expect(g.dimCols.size).toBe(0);
+    expect(g.timerRunning).toBe(false);
   });
 });

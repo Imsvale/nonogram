@@ -8,6 +8,7 @@ import {
   type SubcellKind,
   type ThemeChoice,
 } from "../state/settings";
+import { contrastOn } from "./color";
 import { h } from "./dom";
 import { drawIcon } from "./icons";
 
@@ -46,7 +47,7 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     return row;
   };
 
-  const range = (label: string, min: number, max: number, step: number, get: () => number, set: (v: number) => void, fmt: (v: number) => string = String) => {
+  const range = (label: string, min: number, max: number, step: number, get: () => number, set: (v: number) => void, fmt: (v: number) => string = String, enabled: () => boolean = () => true) => {
     const input = h("input", { type: "range", min, max, step });
     const out = h("output", {});
     input.addEventListener("input", () => {
@@ -54,14 +55,17 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
       out.textContent = fmt(get());
       deps.onChange();
     });
+    const row = h("label", { class: "row range" }, h("span", { class: "grow" }, label), input, out);
     refreshers.push(() => {
       input.value = String(get());
       out.textContent = fmt(get());
+      input.disabled = !enabled();
+      row.classList.toggle("disabled", !enabled());
     });
-    return h("label", { class: "row range" }, h("span", { class: "grow" }, label), input, out);
+    return row;
   };
 
-  const colorRow = (label: string, get: () => string | null, set: (v: string | null) => void, fallback: () => string, resettable = true) => {
+  const colorRow = (label: string, get: () => string | null, set: (v: string | null) => void, fallback: () => string, resettable = true, enabled: () => boolean = () => true) => {
     const input = h("input", { type: "color" });
     const reset = h("button", { class: "mini", type: "button", title: "Use the theme default" }, "Reset");
     input.addEventListener("input", () => {
@@ -73,11 +77,14 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
       set(null);
       changed();
     });
+    const row = h("div", { class: "row" }, h("span", { class: "grow" }, label), reset, input);
     refreshers.push(() => {
       input.value = get() ?? fallback();
       reset.hidden = !resettable || get() === null;
+      input.disabled = !enabled();
+      row.classList.toggle("disabled", !enabled());
     });
-    return h("div", { class: "row" }, h("span", { class: "grow" }, label), reset, input);
+    return row;
   };
 
   const selectRow = <T extends string>(label: string, options: [T, string][], get: () => T, set: (v: T) => void) => {
@@ -90,13 +97,33 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     return h("label", { class: "row" }, h("span", { class: "grow" }, label), sel);
   };
 
-  const iconPicker = (label: string, target: "filled" | "empty", get: () => IconKind, set: (v: IconKind) => void) => {
+  const SYMBOL_NAMES: Record<IconKind, string> = {
+    none: "Blank",
+    circle: "Circle",
+    square: "Square",
+    diamond: "Diamond",
+    check: "Checkmark",
+    x: "X",
+    dash: "Dash",
+    dot: "Dot",
+  };
+
+  /** A row of symbol buttons with the symbol's color picker on the same line. */
+  const iconPicker = (
+    label: string,
+    target: "filled" | "empty",
+    get: () => IconKind,
+    set: (v: IconKind) => void,
+    getColor: () => string | null,
+    setColor: (v: string | null) => void,
+  ) => {
     const wrap = h("div", { class: "icon-picker" });
+    const autoInk = () => contrastOn(paletteFor(s, deps.getTheme())[target]);
     const buttons: [IconKind, HTMLButtonElement][] = ICON_KINDS.map((kind) => {
       const cv = h("canvas", { width: 44, height: 44 });
       cv.style.width = "22px";
       cv.style.height = "22px";
-      const b = h("button", { type: "button", class: "icon-opt", title: kind === "none" ? "No marker" : kind }, cv);
+      const b = h("button", { type: "button", class: "icon-opt", title: SYMBOL_NAMES[kind], "aria-label": SYMBOL_NAMES[kind] }, cv);
       b.addEventListener("click", () => {
         set(kind);
         changed();
@@ -104,14 +131,32 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
       wrap.append(b);
       return [kind, b];
     });
+
+    const color = h("input", { type: "color", title: "Symbol color" });
+    const auto = h("button", { class: "mini", type: "button", title: "Back to automatic (contrasts with the cell)" }, "Reset");
+    color.addEventListener("input", () => {
+      setColor(color.value);
+      deps.onChange();
+      auto.hidden = false;
+      paint();
+    });
+    auto.addEventListener("click", () => {
+      setColor(null);
+      changed();
+    });
+    wrap.append(h("span", { class: "icon-color" }, auto, color));
+
     const paint = () => {
       const pal = paletteFor(s, deps.getTheme());
+      const ink = getColor();
+      color.value = ink ?? autoInk();
+      auto.hidden = ink === null;
       for (const [kind, b] of buttons) {
         const cv = b.firstElementChild as HTMLCanvasElement;
         const ctx = cv.getContext("2d")!;
         ctx.setTransform(2, 0, 0, 2, 0, 0);
         ctx.clearRect(0, 0, 22, 22);
-        const bg = target === "filled" ? pal.filled : pal.empty;
+        const bg = pal[target];
         ctx.fillStyle = bg;
         ctx.fillRect(1, 1, 20, 20);
         const lum = (parseInt(bg.slice(1, 3), 16) * 0.299 + parseInt(bg.slice(3, 5), 16) * 0.587 + parseInt(bg.slice(5, 7), 16) * 0.114) / 255;
@@ -119,7 +164,7 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
           ctx.strokeStyle = lum > 0.5 ? "#999" : "#888";
           ctx.setLineDash([2, 2]);
           ctx.strokeRect(4, 4, 14, 14);
-        } else drawIcon(ctx, kind, 11, 11, 14, lum > 0.5 ? "#262626" : "#ffffff");
+        } else drawIcon(ctx, kind, 11, 11, 14, ink ?? (lum > 0.5 ? "#262626" : "#ffffff"));
         b.classList.toggle("on", get() === kind);
       }
     };
@@ -140,8 +185,8 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     colorRow("Unknown cell", () => s.colors.unknown, (v) => (s.colors.unknown = v), () => paletteFor(s, deps.getTheme()).unknown),
     colorRow("Filled cell", () => s.colors.filled, (v) => (s.colors.filled = v), () => paletteFor(s, deps.getTheme()).filled),
     colorRow("Empty (crossed) cell", () => s.colors.empty, (v) => (s.colors.empty = v), () => paletteFor(s, deps.getTheme()).empty),
-    iconPicker("Filled marker", "filled", () => s.icons.filled, (v) => (s.icons.filled = v)),
-    iconPicker("Empty marker", "empty", () => s.icons.empty, (v) => (s.icons.empty = v)),
+    iconPicker("Filled symbol and color", "filled", () => s.icons.filled, (v) => (s.icons.filled = v), () => s.iconColors.filled, (v) => (s.iconColors.filled = v)),
+    iconPicker("Empty symbol and color", "empty", () => s.icons.empty, (v) => (s.icons.empty = v), () => s.iconColors.empty, (v) => (s.iconColors.empty = v)),
     colorRow("Clue background", () => s.colors.clueBg, (v) => (s.colors.clueBg = v), () => paletteFor(s, deps.getTheme()).clueBg),
     colorRow("Line-sum background", () => s.colors.sumBg, (v) => (s.colors.sumBg = v), () => paletteFor(s, deps.getTheme()).sumBg),
   );
@@ -156,23 +201,32 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
 
   const assist = section(
     "Assistance",
-    check("Dim fulfilled clues", () => s.assist.autoDim, (v) => (s.assist.autoDim = v), "Grey out clues that the grid already satisfies."),
+    check("Dim fulfilled clues", () => s.assist.autoDim, (v) => (s.assist.autoDim = v), "Gray out clues that the grid already satisfies."),
     check("Auto-fill empty", () => s.assist.autoFillEmpty, (v) => (s.assist.autoFillEmpty = v), "Cross out the rest of a line once its clues are met."),
     check("Auto-cross from edges", () => s.assist.autoCrossEdges, (v) => (s.assist.autoCrossEdges = v), "Cross out cells that lie between edge-confirmed runs."),
     check("Show clue sums", () => s.assist.showSums, (v) => (s.assist.showSums = v), "The totals column on the right and row along the bottom."),
     check("Line sums include gaps", () => s.assist.clueSumsWithGaps, (v) => (s.assist.clueSumsWithGaps = v), "Shows the minimum span each line needs.", () => s.assist.showSums),
     check("Axis-lock dragging", () => s.assist.axisLock, (v) => (s.assist.axisLock = v), "Drags paint a straight line, previewed until you release."),
-    check("Start timer on first move", () => s.autoStartTimer, (v) => (s.autoStartTimer = v)),
+    check("Show the timer", () => s.showTimer, (v) => (s.showTimer = v), "Starts when a puzzle opens. Pausing it hides the puzzle."),
   );
 
+  const xOn = () => s.crosshair.enabled;
   const crosshair = section(
     "Crosshair highlight",
-    check("Highlight hovered row & column", () => s.crosshair.enabled, (v) => (s.crosshair.enabled = v)),
-    check("Skip the hovered cell", () => s.crosshair.skipIntersection, (v) => (s.crosshair.skipIntersection = v)),
-    colorRow("Row colour", () => s.crosshair.rowColor, (v) => v && (s.crosshair.rowColor = v), () => s.crosshair.rowColor, false),
-    range("Row opacity", 0.05, 0.6, 0.01, () => s.crosshair.rowAlpha, (v) => (s.crosshair.rowAlpha = v), (v) => `${Math.round(v * 100)}%`),
-    colorRow("Column colour", () => s.crosshair.colColor, (v) => v && (s.crosshair.colColor = v), () => s.crosshair.colColor, false),
-    range("Column opacity", 0.05, 0.6, 0.01, () => s.crosshair.colAlpha, (v) => (s.crosshair.colAlpha = v), (v) => `${Math.round(v * 100)}%`),
+    check("Highlight the hovered row & column", () => s.crosshair.enabled, (v) => (s.crosshair.enabled = v)),
+    check("Also highlight their clues", () => s.crosshair.headers, (v) => (s.crosshair.headers = v), undefined, xOn),
+    check("Skip the hovered cell", () => s.crosshair.skipIntersection, (v) => (s.crosshair.skipIntersection = v), undefined, xOn),
+    colorRow("Row color", () => s.crosshair.rowColor, (v) => v && (s.crosshair.rowColor = v), () => s.crosshair.rowColor, false, xOn),
+    range("Row opacity", 0.05, 0.6, 0.01, () => s.crosshair.rowAlpha, (v) => (s.crosshair.rowAlpha = v), (v) => `${Math.round(v * 100)}%`, xOn),
+    colorRow("Column color", () => s.crosshair.colColor, (v) => v && (s.crosshair.colColor = v), () => s.crosshair.colColor, false, xOn),
+    range("Column opacity", 0.05, 0.6, 0.01, () => s.crosshair.colAlpha, (v) => (s.crosshair.colAlpha = v), (v) => `${Math.round(v * 100)}%`, xOn),
+    check(
+      "Highlight blank runs under the pointer",
+      () => s.runLength.highlightEmptyRuns,
+      (v) => (s.runLength.highlightEmptyRuns = v),
+      "Instead of the crosshair: only used while it is switched off.",
+      () => !s.crosshair.enabled,
+    ),
   );
 
   const rl = s.runLength;
@@ -210,7 +264,7 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     range("…if at least", 1, 20, 1, () => rl.endThreshold, (v) => (rl.endThreshold = v)),
     check("Show under the pointer", () => rl.showHover, (v) => (rl.showHover = v), "For long runs whose ends are off-screen."),
     range("…when at least this far from either end", 0, 10, 1, () => rl.hoverThreshold, (v) => (rl.hoverThreshold = v)),
-    check("Label the neighbouring cell", () => rl.adjLabelEnabled, (v) => {
+    check("Label the neighboring cell", () => rl.adjLabelEnabled, (v) => {
       rl.adjLabelEnabled = v;
       if (v) rl.fourDirLabels = false;
     }, "Puts the run length just beside the pointer instead of on it."),
@@ -222,8 +276,8 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     }, "Cells to the left / right / above / below the pointer, within its run."),
     h("div", { class: "row stack" }, h("span", {}, "Label placement (click: empty → H → V)"), subcellGrid),
     range("Label size", 6, 16, 1, () => rl.numSize, (v) => (rl.numSize = v), (v) => `${v}px`),
-    colorRow("Horizontal label colour", () => rl.labelHColor, (v) => (rl.labelHColor = v), () => "#66b8ff"),
-    colorRow("Vertical label colour", () => rl.labelVColor, (v) => (rl.labelVColor = v), () => "#66b8ff"),
+    colorRow("Horizontal label color", () => rl.labelHColor, (v) => (rl.labelHColor = v), () => "#66b8ff"),
+    colorRow("Vertical label color", () => rl.labelVColor, (v) => (rl.labelVColor = v), () => "#66b8ff"),
   );
 
   const keys = section(

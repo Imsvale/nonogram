@@ -131,8 +131,8 @@ class Draw {
     return Math.round(v * d) / d;
   }
 
-  // Lines are snapped to device pixels: a 1px line centred on a pixel boundary
-  // smears over two pixels and reads as thicker and greyer than it should.
+  // Lines are snapped to device pixels: a 1px line centered on a pixel boundary
+  // smears over two pixels and reads as thicker and grayer than it should.
   private vline(x: number, y0: number, y1: number, major: boolean): void {
     const t = this.thick(major ? this.L.m.sep : 1);
     this.ctx.fillStyle = major ? this.pal.borderMaj : this.pal.borderMin;
@@ -164,22 +164,28 @@ class Draw {
       }
     }
 
-    // 2. Crosshair overlays
+    // 2. Crosshair overlays. The hovered cell sits on both the row and the column,
+    // so it gets ONE layer (not row + column stacked, which would read twice as strong).
     if (this.xr !== null || this.xc !== null) {
-      const skip = this.s.crosshair.skipIntersection && this.xr !== null && this.xc !== null;
+      const ch = this.s.crosshair;
+      const both = this.xr !== null && this.xc !== null;
       if (this.xr !== null && this.xr >= this.r0 && this.xr <= this.r1) {
-        ctx.fillStyle = rgba(this.s.crosshair.rowColor, this.s.crosshair.rowAlpha);
+        ctx.fillStyle = rgba(ch.rowColor, ch.rowAlpha);
         for (let c = this.c0; c <= this.c1; c++) {
-          if (skip && c === this.xc) continue;
+          if (both && c === this.xc) continue;
           ctx.fillRect(this.cx(c), this.cy(this.xr), C, C);
         }
       }
       if (this.xc !== null && this.xc >= this.c0 && this.xc <= this.c1) {
-        ctx.fillStyle = rgba(this.s.crosshair.colColor, this.s.crosshair.colAlpha);
+        ctx.fillStyle = rgba(ch.colColor, ch.colAlpha);
         for (let r = this.r0; r <= this.r1; r++) {
-          if (skip && r === this.xr) continue;
+          if (both && r === this.xr) continue;
           ctx.fillRect(this.cx(this.xc), this.cy(r), C, C);
         }
+      }
+      if (both && !ch.skipIntersection && this.xr! >= this.r0 && this.xr! <= this.r1 && this.xc! >= this.c0 && this.xc! <= this.c1) {
+        ctx.fillStyle = rgba(mix(ch.rowColor, ch.colColor, 0.5), Math.max(ch.rowAlpha, ch.colAlpha));
+        ctx.fillRect(this.cx(this.xc!), this.cy(this.xr!), C, C);
       }
     }
 
@@ -191,10 +197,13 @@ class Draw {
       ctx.fillStyle = luminance(bg) > 0.5 ? HOVER_RUN_TINT.onLight : HOVER_RUN_TINT.onDark;
       ctx.fillRect(this.cx(c), this.cy(r), C, C);
     };
-    if (runs.h && runs.h.fixed >= this.r0 && runs.h.fixed <= this.r1) {
+    // The blank-run tint would compete with the crosshair (same row and column), so the
+    // crosshair wins; filled runs keep their tint regardless.
+    const blankTint = !this.s.crosshair.enabled && this.s.runLength.highlightEmptyRuns;
+    if (runs.h && (runs.h.filled || blankTint) && runs.h.fixed >= this.r0 && runs.h.fixed <= this.r1) {
       for (let c = Math.max(runs.h.start, this.c0); c <= Math.min(runs.h.end, this.c1); c++) tint(runs.h.fixed, c);
     }
-    if (runs.v && runs.v.fixed >= this.c0 && runs.v.fixed <= this.c1) {
+    if (runs.v && (runs.v.filled || blankTint) && runs.v.fixed >= this.c0 && runs.v.fixed <= this.c1) {
       for (let r = Math.max(runs.v.start, this.r0); r <= Math.min(runs.v.end, this.r1); r++) tint(r, runs.v.fixed);
     }
 
@@ -259,7 +268,10 @@ class Draw {
           }
         } else if (tier === 0) {
           const kind = st === FILLED ? settings.icons.filled : st === EMPTY ? settings.icons.empty : "none";
-          if (kind !== "none") drawIcon(ctx, kind, x + C / 2, y + C / 2, iconSize, contrastOn(bg));
+          if (kind !== "none") {
+            const custom = st === FILLED ? settings.iconColors.filled : settings.iconColors.empty;
+            drawIcon(ctx, kind, x + C / 2, y + C / 2, iconSize, custom ?? contrastOn(bg));
+          }
         } else if (st === EMPTY && settings.icons.empty !== "none") {
           drawIcon(ctx, settings.icons.empty, x + C / 2, y + C / 2, iconSize, trialFilled(tier));
         }
@@ -328,7 +340,7 @@ class Draw {
         if (show) for (const [sr, sc] of vSub) put(String(vLen), x, y, sc as 0 | 1 | 2, sr as 0 | 1 | 2, vColor);
       }
 
-      // Adjacent-cell label: the run length, shown in a neighbour of the hovered cell.
+      // Adjacent-cell label: the run length, shown in a neighbor of the hovered cell.
       if (rl.adjLabelEnabled) {
         if (hr && r === hr.fixed) {
           const target =
@@ -382,7 +394,7 @@ class Draw {
       const x = this.cx(c);
       ctx.fillStyle = pal.clueBg;
       ctx.fillRect(x, yTop, this.C, yBottom - yTop);
-      if (this.xc === c) {
+      if (this.xc === c && this.s.crosshair.headers) {
         ctx.fillStyle = rgba(this.s.crosshair.colColor, this.s.crosshair.colAlpha);
         ctx.fillRect(x, yTop, this.C, yBottom - yTop);
       }
@@ -418,7 +430,7 @@ class Draw {
       const y = this.cy(r);
       ctx.fillStyle = pal.clueBg;
       ctx.fillRect(xLeft, y, xRight - xLeft, this.C);
-      if (this.xr === r) {
+      if (this.xr === r && this.s.crosshair.headers) {
         ctx.fillStyle = rgba(this.s.crosshair.rowColor, this.s.crosshair.rowAlpha);
         ctx.fillRect(xLeft, y, xRight - xLeft, this.C);
       }

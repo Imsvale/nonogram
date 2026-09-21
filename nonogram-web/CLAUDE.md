@@ -63,10 +63,10 @@ canonical form when a puzzle opens.
 
 ## Where the look is defined
 
-**All grid colours: `src/state/colors.ts`** — default palettes `LIGHT` / `DARK` (unknown / filled /
-empty cells, clue and sum backgrounds, line colours), trial-tier colours, hover tint, warning amber,
+**All grid colors: `src/state/colors.ts`** — default palettes `LIGHT` / `DARK` (unknown / filled /
+empty cells, clue and sum backgrounds, line colors), trial-tier colors, hover tint, warning amber,
 label inks. User overrides from Settings are stored separately and win over the palette defaults.
-Other defaults (crosshair colours, icons, assists): `defaultSettings()` in `src/state/settings.ts`.
+Other defaults (crosshair colors, icons, assists): `defaultSettings()` in `src/state/settings.ts`.
 Page chrome (header, buttons, drawer): CSS variables at the top of `src/style.css` (its `--tier-1…5`
 mirror `TRIAL_FILLED`). Line-thickness threshold `HEAVY_LINE_MIN_CELL`: `src/ui/geometry.ts`.
 Zoom limits: `src/ui/gridview.ts`.

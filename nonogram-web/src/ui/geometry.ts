@@ -75,7 +75,7 @@ export interface Layout {
   frameH: number;
   /** Where the footer's top edge goes: just under the frame. */
   footerTop: number;
-  /** How far the frame has been moved from its centred position (clamped to the window). */
+  /** How far the frame has been moved from its centered position (clamped to the window). */
   offX: number;
   offY: number;
   /** Top-left / size of the scrolling cell viewport, in canvas px. */

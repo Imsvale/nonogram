@@ -49,7 +49,8 @@ export function startApp(root: HTMLElement): AppHandle {
     if (!game) return;
     game.timerRunning ? game.pauseTimer() : game.startTimer();
   });
-  const resetTimerBtn = iconButton("reset", "Reset timer", () => game?.resetTimer());
+  const RESTART_TIP = "Restart: blank the grid, un-dim every clue, clear the undo history and reset the timer";
+  const restartBtn = h("button", { id: "restartBtn", class: "btn", type: "button", title: RESTART_TIP }, icon("reset", 16), h("span", {}, "Restart"));
   const zoomOut = iconButton("minus", "Zoom out (−, or scroll down)", () => gridView.zoomOut());
   const zoomIn = iconButton("plus", "Zoom in (+, or scroll up)", () => gridView.zoomIn());
   const zoomFit = iconButton("fit", "Fit the puzzle to the window (0)", () => gridView.fit());
@@ -60,11 +61,11 @@ export function startApp(root: HTMLElement): AppHandle {
   const settingsBtn = iconButton("sliders", "Settings", () => toggleSettings());
   const homeBtn = h("button", { class: "brand", type: "button", title: "Start page" }, icon("fit", 20), h("span", {}, APP_NAME));
 
-  // Three columns so the title is truly centred whatever the side groups' widths.
+  // Three columns so the title is truly centered whatever the side groups' widths.
   const topbar = h(
     "header",
     { id: "topbar" },
-    h("div", { class: "hd-left" }, homeBtn, h("div", { class: "pill timer" }, timeEl, playBtn, resetTimerBtn), warnEl),
+    h("div", { class: "hd-left" }, homeBtn, h("div", { class: "pill timer" }, timeEl, playBtn), restartBtn, warnEl),
     h("div", { class: "title" }, nameEl, sizeEl, answerEl),
     h(
       "div",
@@ -79,8 +80,7 @@ export function startApp(root: HTMLElement): AppHandle {
   // A small tab under the header's right end: hides / shows the header.
   const headerTab = h("button", { id: "headerTab", type: "button" }, icon("chevron", 14));
 
-  // Footer: sits centred under the puzzle frame (positioned from the layout).
-  const clearBtn = h("button", { class: "btn sm", type: "button", title: "Clear the whole grid (undoable)" }, icon("trash", 15), h("span", { class: "lbl" }, "Clear"));
+  // Footer: sits centered under the puzzle frame (positioned from the layout).
   const undoBtn = h("button", { class: "btn sm icon-only", type: "button", title: "Undo (Ctrl+Z)", "aria-label": "Undo" }, icon("undo", 16));
   const redoBtn = h("button", { class: "btn sm icon-only", type: "button", title: "Redo (Ctrl+Y)", "aria-label": "Redo" }, icon("redo", 16));
   const tierEl = h("span", { class: "tier" });
@@ -91,8 +91,17 @@ export function startApp(root: HTMLElement): AppHandle {
   const footer = h(
     "div",
     { id: "footer" },
-    h("div", { class: "group" }, clearBtn, undoBtn, redoBtn),
+    h("div", { class: "group" }, undoBtn, redoBtn),
     h("div", { class: "group trial" }, tierEl, trialReject, trialEnter, trialAccept),
+  );
+
+  // Shown while the timer is paused: blurs the puzzle so a pause can't be used to think for free.
+  const pauseTime = h("div", { class: "pause-time" });
+  const resumeBtn = h("button", { class: "resume-btn", type: "button" }, icon("play", 40), h("span", {}, "Resume"));
+  const pauseOverlay = h(
+    "div",
+    { id: "pauseOverlay", hidden: true, role: "dialog", "aria-label": "Paused" },
+    h("div", { class: "pause-card" }, h("div", { class: "pause-title" }, "Paused"), resumeBtn, pauseTime),
   );
 
   // Settings drawer
@@ -116,7 +125,7 @@ export function startApp(root: HTMLElement): AppHandle {
   const importDialog = h("dialog", { id: "importDialog" });
   const dropVeil = h("div", { id: "dropVeil" }, "Drop a puzzle file or link to open it");
 
-  const stage = h("main", { id: "stage" }, canvasHost, landing, notice, footer, headerTab);
+  const stage = h("main", { id: "stage" }, canvasHost, landing, notice, footer, pauseOverlay, headerTab);
   root.append(topbar, stage, settingsDrawer, importDialog, toastEl, dropVeil);
 
   // ── Grid view ────────────────────────────────────────────────────────────
@@ -134,7 +143,7 @@ export function startApp(root: HTMLElement): AppHandle {
   gridView.onViewChange = () => refreshControls();
   gridView.onLayout = positionFooter;
 
-  /** Centre the footer under the puzzle frame, keeping it inside the window. */
+  /** Center the footer under the puzzle frame, keeping it inside the window. */
   function positionFooter(L: Layout): void {
     if (!game) return;
     const fw = footer.offsetWidth;
@@ -171,6 +180,12 @@ export function startApp(root: HTMLElement): AppHandle {
     }
     gridView.requestRender();
     refreshControls();
+    applyTimerVisibility();
+    refreshPause();
+  }
+
+  function applyTimerVisibility(): void {
+    document.body.classList.toggle("no-timer", !settings.showTimer);
   }
 
   function applyTheme(): void {
@@ -187,6 +202,7 @@ export function startApp(root: HTMLElement): AppHandle {
     }
   });
   applyTheme();
+  applyTimerVisibility();
 
   function toggleSettings(force?: boolean): void {
     const open = force ?? !!settingsDrawer.hidden;
@@ -212,6 +228,7 @@ export function startApp(root: HTMLElement): AppHandle {
     game = g;
     wasSolved = g.solvedNow;
     unsubGame = g.subscribe(onGameChange);
+    if (settings.showTimer && !g.solvedNow) g.startTimer();
 
     if (how !== "none") {
       const target = window.location.pathname + puzzleHash(puzzle);
@@ -240,6 +257,7 @@ export function startApp(root: HTMLElement): AppHandle {
     unsubGame?.();
     unsubGame = null;
     game = null;
+    pauseOverlay.hidden = true;
     gridView.setGame(null);
     document.title = `${APP_NAME} — solve nonograms in your browser`;
     root.classList.add("no-puzzle");
@@ -314,20 +332,43 @@ export function startApp(root: HTMLElement): AppHandle {
     clear(playBtn);
     playBtn.append(icon(playing ? "pause" : "play", 18));
     playBtn.title = playing ? "Pause timer" : "Start timer";
+    refreshTimer();
+    refreshPause();
   }
 
+  /** Paused = the timer is stopped on an unsolved puzzle (only possible with the timer shown). */
+  function isPaused(): boolean {
+    return !!game && settings.showTimer && !game.timerRunning && !game.solvedNow;
+  }
+
+  function refreshPause(): void {
+    const paused = isPaused();
+    if (paused && pauseOverlay.hidden) {
+      pauseOverlay.hidden = false;
+      resumeBtn.focus(); // so Enter / Space resume
+    } else if (!paused && !pauseOverlay.hidden) {
+      pauseOverlay.hidden = true;
+    }
+  }
+  resumeBtn.addEventListener("click", () => game?.startTimer());
+
   function refreshTimer(): void {
-    if (game) timeEl.textContent = formatTime(game.timerElapsedMs());
+    if (game) {
+      timeEl.textContent = formatTime(game.timerElapsedMs());
+      pauseTime.textContent = timeEl.textContent;
+    }
   }
   setInterval(() => {
     if (game?.timerRunning) refreshTimer();
   }, 250);
+  setInterval(() => {
+    if (game?.timerRunning) flushSave();
+  }, 15000);
 
   function refreshControls(): void {
     const g = game;
     undoBtn.disabled = !g?.canUndo;
     redoBtn.disabled = !g?.canRedo;
-    clearBtn.disabled = !g;
     const tiers = g?.trial.length ?? 0;
     trialEnter.textContent = tiers === 0 ? "Trial" : "+1";
     trialReject.disabled = tiers === 0;
@@ -363,7 +404,7 @@ export function startApp(root: HTMLElement): AppHandle {
     if (!game) return;
     const g = game;
     const t = formatTime(g.timerElapsedMs());
-    const msg = g.timerElapsedMs() > 0 ? `Solved in ${t}!` : "Solved!";
+    const msg = settings.showTimer && g.timerElapsedMs() > 0 ? `Solved in ${t}!` : "Solved!";
     const close = h("button", { class: "icon-btn", type: "button", title: "Dismiss", "aria-label": "Dismiss" }, icon("x", 14));
     close.addEventListener("click", hideNotice);
     clear(notice);
@@ -383,7 +424,31 @@ export function startApp(root: HTMLElement): AppHandle {
 
   // ── Buttons ──────────────────────────────────────────────────────────────
 
-  clearBtn.addEventListener("click", () => game?.clear());
+  // Restart throws everything away (grid, undo history, dimming, timer) and sits in the header,
+  // so it takes two clicks.
+  let restartArmed: ReturnType<typeof setTimeout> | undefined;
+  function disarmRestart(): void {
+    clearTimeout(restartArmed);
+    restartArmed = undefined;
+    restartBtn.classList.remove("armed");
+    restartBtn.title = RESTART_TIP;
+    (restartBtn.querySelector("span") as HTMLElement).textContent = "Restart";
+  }
+  restartBtn.addEventListener("click", () => {
+    if (!game) return;
+    if (restartArmed === undefined) {
+      restartBtn.classList.add("armed");
+      restartBtn.title = "Click again to restart this puzzle";
+      (restartBtn.querySelector("span") as HTMLElement).textContent = "Sure?";
+      restartArmed = setTimeout(disarmRestart, 3000);
+      return;
+    }
+    disarmRestart();
+    game.restart();
+    if (settings.showTimer && !game.timerRunning) game.startTimer();
+    toast("Puzzle restarted");
+  });
+  restartBtn.addEventListener("blur", disarmRestart);
   undoBtn.addEventListener("click", () => game?.undo());
   redoBtn.addEventListener("click", () => game?.redo());
   zoomReadout.addEventListener("click", () => gridView.setCellSize(settings.zoomReference));
@@ -524,7 +589,7 @@ export function startApp(root: HTMLElement): AppHandle {
       if (!importDialog.open) openImport(text);
       importChoices.hidden = true;
       importError.hidden = false;
-      importError.textContent = res.errors.slice(0, 4).join("\n") || "Nothing recognisable to open.";
+      importError.textContent = res.errors.slice(0, 4).join("\n") || "Nothing recognizable to open.";
     }
     return false;
   }
@@ -693,6 +758,14 @@ export function startApp(root: HTMLElement): AppHandle {
     if (!game) return;
     const mod = e.ctrlKey || e.metaKey;
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+
+    if (isPaused()) {
+      if (!mod && (key === settings.fullscreenKey.toLowerCase() || key === settings.fullscreenKey)) {
+        e.preventDefault();
+        toggleFullscreen();
+      }
+      return; // Enter / Space still activate the focused Resume button
+    }
 
     if (mod && !e.altKey) {
       if (key === "z") {

@@ -1,12 +1,12 @@
 /**
- * Every colour the puzzle grid uses, in one place.
+ * Every color the puzzle grid uses, in one place.
  *
  * - `LIGHT` / `DARK`: the default grid palette per theme. The user can override
- *   the cell, clue and sum colours in Settings (those overrides are stored as
+ *   the cell, clue and sum colors in Settings (those overrides are stored as
  *   `settings.colors` and win over these defaults).
- * - Trial-tier colours, hover tints, label and marker inks: fixed here.
+ * - Trial-tier colors, hover tints, label and marker inks: fixed here.
  * - Not here: page chrome (header, buttons, drawer) is in `src/style.css`
- *   (CSS variables at the top). The footer's "Tier N" label colours are the
+ *   (CSS variables at the top). The footer's "Tier N" label colors are the
  *   `--tier-1…5` variables there; keep them in step with `TRIAL_FILLED` below.
  */
 
@@ -78,7 +78,7 @@ export const HOVER_RUN_TINT = { onLight: "rgba(0,0,60,0.12)", onDark: "rgba(255,
 /** The number marking where a trial tier started. */
 export const TRIAL_ORIGIN_INK = { onEmptyLight: "#4d4d73", onEmptyDark: "#b9bfe0", onFilled: "#ffffff" };
 
-/** Neighbour-cell run length and four-direction counts, by cell brightness. */
+/** Neighbor-cell run length and four-direction counts, by cell brightness. */
 export const RUN_LABEL_INK = {
   adjOnLight: "#0033b3",
   adjOnDark: "#8dccff",

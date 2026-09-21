@@ -24,7 +24,7 @@ export function luminance(hex: string): number {
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
 }
 
-/** Legible ink colour for text/icons drawn on `bg`. */
+/** Legible ink color for text/icons drawn on `bg`. */
 export function contrastOn(bg: string): string {
   return luminance(bg) > 0.5 ? "#262626" : "#ffffff";
 }
@@ -36,7 +36,7 @@ export function mix(a: string, b: string, t: number): string {
   return rgbToHex([ar + (br - ar) * t, ag + (bg - ag) * t, ab + (bb - ab) * t]);
 }
 
-/** Nudge toward black (light colours) or white (dark colours) — used for hover states. */
+/** Nudge toward black (light colors) or white (dark colors) — used for hover states. */
 export function hoverShade(hex: string, amount = 0.07): string {
   return luminance(hex) > 0.5 ? mix(hex, "#000000", amount * 1.6) : mix(hex, "#ffffff", amount * 1.6);
 }

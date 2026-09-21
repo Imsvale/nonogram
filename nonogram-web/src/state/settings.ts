@@ -20,10 +20,12 @@ export interface RunLengthSettings {
   adjLabelHPreferAfter: boolean;
   adjLabelVPreferAfter: boolean;
   fourDirLabels: boolean;
+  /** Tint the run of blank cells under the pointer; only used while the crosshair is off. */
+  highlightEmptyRuns: boolean;
   /** 3×3 grid; each subcell hosts the horizontal run length, the vertical one, or nothing. */
   subcells: SubcellKind[][];
   numSize: number;
-  /** `null` = automatic (contrast against the run colour). */
+  /** `null` = automatic (contrast against the run color). */
   labelHColor: string | null;
   labelVColor: string | null;
 }
@@ -39,6 +41,8 @@ export interface Settings {
     sumBg: string | null;
   };
   icons: { filled: IconKind; empty: IconKind };
+  /** Marker colors; `null` = automatic (contrasts with the cell). */
+  iconColors: { filled: string | null; empty: string | null };
   assist: {
     autoDim: boolean;
     autoFillEmpty: boolean;
@@ -49,7 +53,11 @@ export interface Settings {
     axisLock: boolean;
   };
   crosshair: {
+    /** Highlight the row and column under the pointer. */
     enabled: boolean;
+    /** ...and also the clue strips of that row and column. */
+    headers: boolean;
+    /** Leave the hovered cell itself unhighlighted. */
     skipIntersection: boolean;
     rowColor: string;
     rowAlpha: number;
@@ -59,7 +67,8 @@ export interface Settings {
   runLength: RunLengthSettings;
   /** Key that toggles the browser's fullscreen. */
   fullscreenKey: string;
-  autoStartTimer: boolean;
+  /** Show the timer (it runs from the moment a puzzle opens; pausing hides the puzzle). */
+  showTimer: boolean;
   /** What the left mouse button (or a tap) does; the right button / Shift does the other. */
   primaryMode: "fill" | "mark";
   /** Cell size in px that counts as "100%" zoom. */
@@ -75,7 +84,8 @@ export function defaultSettings(): Settings {
   return {
     theme: "system",
     colors: { unknown: null, filled: null, empty: null, clueBg: null, sumBg: null },
-    icons: { filled: "none", empty: "none" },
+    icons: { filled: "none", empty: "x" },
+    iconColors: { filled: null, empty: null },
     assist: {
       autoDim: false,
       autoFillEmpty: false,
@@ -85,7 +95,8 @@ export function defaultSettings(): Settings {
       axisLock: false,
     },
     crosshair: {
-      enabled: false,
+      enabled: true,
+      headers: true,
       skipIntersection: false,
       rowColor: "#66b8ff",
       rowAlpha: 0.18,
@@ -103,6 +114,7 @@ export function defaultSettings(): Settings {
       adjLabelHPreferAfter: true,
       adjLabelVPreferAfter: true,
       fourDirLabels: false,
+      highlightEmptyRuns: true,
       subcells: [
         ["e", "e", "v"],
         ["e", "e", "e"],
@@ -113,7 +125,7 @@ export function defaultSettings(): Settings {
       labelVColor: null,
     },
     fullscreenKey: "f",
-    autoStartTimer: false,
+    showTimer: true,
     primaryMode: "fill",
     zoomReference: 26,
     lockFrame: false,
@@ -121,7 +133,7 @@ export function defaultSettings(): Settings {
   };
 }
 
-// Palettes (LIGHT / DARK) and every other colour the grid uses live in ./colors.ts.
+// Palettes (LIGHT / DARK) and every other color the grid uses live in ./colors.ts.
 
 export function resolveTheme(choice: ThemeChoice): ResolvedTheme {
   if (choice !== "system") return choice;

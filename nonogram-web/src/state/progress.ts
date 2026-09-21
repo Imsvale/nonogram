@@ -105,7 +105,7 @@ export function listRecent(): { entry: ProgressEntry; puzzle: Puzzle }[] {
   return out.sort((a, b) => b.entry.updated - a.entry.updated);
 }
 
-/** Serialise the spec, dropping the solution (it is spoiler-sized and unused here). */
+/** Serialize the spec, dropping the solution (it is spoiler-sized and unused here). */
 export function specFor(p: Puzzle): string {
   return puzzleToNative({ ...p, solution: undefined });
 }

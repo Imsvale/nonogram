@@ -83,6 +83,9 @@ small {
   flex-direction: column;
   height: 100vh;
   height: 100dvh;
+  /* The header/footer compact modes follow the app's own width, which shrinks
+     when the settings drawer is docked, not just the window's. */
+  container: app / inline-size;
 }
 #stage {
   flex: 1 1 0;
@@ -371,7 +374,7 @@ textarea:focus {
 .bar {
   width: 56px;
   height: 6px;
-  border-radius: 3px;
+  border-radius: 2px;
   background: var(--panel-2);
   overflow: hidden;
 }
@@ -492,11 +495,19 @@ textarea:focus {
 .icon-picker {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+}
+.icon-picker .icon-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
 }
 .icon-opt {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -736,6 +747,7 @@ body.header-hidden #topbar {
 }
 
 .no-puzzle #topbar .title,
+.no-puzzle #restartBtn,
 .no-puzzle #topbar .pill,
 .no-puzzle #topbar .menu-wrap,
 .no-puzzle #footer,
@@ -778,7 +790,7 @@ body.header-hidden #headerTab svg {
   transform: none;
 }
 
-/* ── Footer: centred under the puzzle, positioned from JS ────────────────── */
+/* ── Footer: centered under the puzzle, positioned from JS ────────────────── */
 
 #footer {
   position: absolute;
@@ -807,7 +819,7 @@ body.header-hidden #headerTab svg {
   padding: 0;
 }
 
-@media (max-width: 900px) {
+@container app (max-width: 900px) {
   #topbar {
     gap: 6px;
     padding: 6px 8px;
@@ -826,10 +838,7 @@ body.header-hidden #headerTab svg {
     display: none;
   }
 }
-@media (max-width: 640px) {
-  #footer .lbl {
-    display: none;
-  }
+@container app (max-width: 640px) {
   #topbar .size,
   .warn-pill {
     display: none;
@@ -843,4 +852,66 @@ body.header-hidden #headerTab svg {
 }
 .settings-body .row.disabled input {
   cursor: default;
+}
+
+/* ── Timer: hidden option, and the pause overlay ─────────────────────────── */
+
+body.no-timer .pill.timer {
+  display: none;
+}
+
+#pauseOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 7; /* over the puzzle and footer, under the header tab */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  -webkit-backdrop-filter: blur(22px);
+  backdrop-filter: blur(22px);
+}
+.pause-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.pause-title {
+  font-size: 15px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.resume-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 44px 20px 34px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 26px;
+  font-weight: 650;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.resume-btn:hover {
+  filter: brightness(1.08);
+}
+.resume-btn:focus-visible {
+  outline: 3px solid var(--text);
+  outline-offset: 3px;
+}
+.pause-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+/* Restart: armed after the first click, until confirmed, blurred or 3 s pass. */
+#restartBtn.armed {
+  background: var(--danger);
+  border-color: transparent;
+  color: #fff;
 }

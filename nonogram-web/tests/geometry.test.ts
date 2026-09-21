@@ -21,7 +21,7 @@ describe("layout & hit testing", () => {
     expect(hitTest(L, p, 1, 1).kind).toBe("none");
   });
 
-  it("clamps pan and honours it in hit tests", () => {
+  it("clamps pan and honors it in hit tests", () => {
     const L = computeLayout(p, 60, 500, 400, 10_000, 10_000);
     expect(L.panX).toBe(L.fullW - L.cw);
     const h = hitTest(L, p, L.ox + 1, L.oy + 1);
@@ -69,7 +69,7 @@ describe("hover run-length label rule", () => {
 });
 
 describe("frame positioning", () => {
-  it("centres by default, leaves room for the footer, and clamps movement to the window", () => {
+  it("centers by default, leaves room for the footer, and clamps movement to the window", () => {
     const L = computeLayout(p, 30, 900, 700, 0, 0);
     expect(Math.abs(L.originX + L.frameW / 2 - 450)).toBeLessThanOrEqual(1);
     expect(L.footerTop).toBeGreaterThanOrEqual(L.originY + L.frameH);

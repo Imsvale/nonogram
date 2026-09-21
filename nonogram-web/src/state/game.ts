@@ -316,14 +316,6 @@ export class Game {
     this.afterBulkChange();
   }
 
-  clear(): void {
-    if (this.grid.every((c) => c === UNKNOWN)) return;
-    this.pushUndo(this.grid);
-    this.grid = newGrid(this.puzzle);
-    this.trial = [];
-    this.afterBulkChange();
-  }
-
   private afterBulkChange(): void {
     this.checkSolved();
     this.bump();
@@ -364,11 +356,13 @@ export class Game {
 
   private checkSolved(): void {
     const now = this.solvable && isPuzzleSolved(this.puzzle, this.grid);
-    if (now && !this.solvedNow) {
+    const was = this.solvedNow;
+    // Set first: pausing notifies listeners, who must already see "solved" (not "paused").
+    this.solvedNow = now;
+    if (now && !was) {
       this.everSolved = true;
       this.pauseTimer();
     }
-    this.solvedNow = now;
   }
 
   timerElapsedMs(): number {
@@ -390,9 +384,26 @@ export class Game {
       this.bump();
     }
   }
+  /** Back to zero; keeps running if it was running. */
+  /**
+   * Start over: blank grid, no open trial tiers, every clue un-dimmed, undo/redo
+   * history dropped, timer back to zero (still running if it was). Not undoable.
+   */
+  restart(): void {
+    this.grid = newGrid(this.puzzle);
+    this.trial = [];
+    this.dimRows.clear();
+    this.dimCols.clear();
+    this.undoStack = [];
+    this.redoStack = [];
+    this.elapsedBase = 0;
+    this.startedAt = this.startedAt !== null ? Date.now() : null;
+    this.afterBulkChange();
+  }
+
   resetTimer(): void {
     this.elapsedBase = 0;
-    this.startedAt = null;
+    this.startedAt = this.startedAt !== null ? Date.now() : null;
     this.bump();
   }
 

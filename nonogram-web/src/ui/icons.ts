@@ -1,6 +1,6 @@
 import type { IconKind } from "../state/settings";
 
-/** Draw a cell marker centred on (cx, cy); `size` is the icon's bounding box. */
+/** Draw a cell marker centered on (cx, cy); `size` is the icon's bounding box. */
 export function drawIcon(ctx: CanvasRenderingContext2D, kind: IconKind, cx: number, cy: number, size: number, color: string): void {
   if (kind === "none") return;
   ctx.save();
