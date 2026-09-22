@@ -966,3 +966,216 @@ body.no-timer .pill.timer {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+
+/* Hue/saturation label-color picker (Run-length indicators). */
+.hue-preview {
+  display: inline-flex;
+  gap: 4px;
+}
+.hue-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+.hue-swatch.on-light {
+  background: #ffffff;
+}
+.hue-swatch.on-dark {
+  background: #14151a;
+}
+
+/* ── Custom color picker ─────────────────────────────────────────────────── */
+
+.swatch-btn {
+  width: 34px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.swatch-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.swatch-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.swatch-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.color-popup {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: max-content;
+  padding: 14px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.color-popup:focus {
+  outline: none;
+}
+.cp-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.cp-square-wrap,
+.cp-strip-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.cp-square {
+  display: block;
+  cursor: crosshair;
+}
+.cp-strip {
+  display: block;
+  cursor: ns-resize;
+}
+.cp-square-marker,
+.cp-strip-marker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+.cp-square-marker {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  transform: translate(-50%, -50%);
+}
+.cp-strip-marker {
+  left: -3px;
+  right: -3px;
+  width: auto;
+  height: 3px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  transform: translateY(-50%);
+}
+.cp-swatches {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  width: 64px;
+}
+.cp-swatch-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+/* New/Current as one joined block (a single outline, split top/bottom) rather than two
+   separate boxes — matches the reference picker and reads as "before vs. after" more clearly.
+   Sized to its own content (each half its original 34px), not stretched to the square's height. */
+.cp-swatch-pair {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.cp-swatch {
+  width: 100%;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  cursor: default;
+}
+.cp-swatch:first-child {
+  border-bottom: 1px solid var(--line);
+}
+button.cp-swatch {
+  cursor: pointer;
+}
+
+.cp-fields {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+.cp-field-gap {
+  grid-column: 1 / -1;
+  height: 2px;
+}
+.cp-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cp-field input[type="radio"] {
+  accent-color: var(--accent);
+  margin: 0;
+}
+.cp-field-label {
+  width: 0.9em;
+  color: var(--muted);
+  font-size: 12px;
+}
+.cp-num {
+  width: 52px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 3px 5px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.cp-unit {
+  color: var(--muted);
+  font-size: 12px;
+  width: 1em;
+}
+.cp-hex-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+.cp-hex {
+  width: 74px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 4px 8px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-transform: lowercase;
+}
+.cp-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}

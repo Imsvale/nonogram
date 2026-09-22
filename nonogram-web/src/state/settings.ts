@@ -25,9 +25,14 @@ export interface RunLengthSettings {
   /** 3×3 grid; each subcell hosts the horizontal run length, the vertical one, or nothing. */
   subcells: SubcellKind[][];
   numSize: number;
-  /** `null` = automatic (contrast against the run color). */
-  labelHColor: string | null;
-  labelVColor: string | null;
+  /**
+   * Where the auto ink (and the custom hue/saturation inks below) switch from dark to
+   * light, by the background's luminance (0..1).
+   */
+  labelContrastThreshold: number;
+  /** `null` = automatic black/white; otherwise a hue/saturation (lightness is picked for contrast). */
+  labelHColor: { hue: number; sat: number } | null;
+  labelVColor: { hue: number; sat: number } | null;
 }
 
 export interface Settings {
@@ -126,6 +131,7 @@ export function defaultSettings(): Settings {
         ["h", "e", "e"],
       ],
       numSize: 9,
+      labelContrastThreshold: 0.5,
       labelHColor: null,
       labelVColor: null,
     },
@@ -178,9 +184,15 @@ function mergeInto(dst: Record<string, unknown>, src: Record<string, unknown>): 
         dst[k] = s;
       }
     } else if (d === null || s === null) {
-      if (s === null || typeof s === "string") dst[k] = s;
+      // Object here covers labelHColor/labelVColor ({hue,sat} | null): validated below,
+      // since a merge this generic can't check the object's own shape.
+      if (s === null || typeof s === "string" || isObject(s)) dst[k] = s;
     } else if (typeof d === typeof s) dst[k] = s;
   }
+}
+
+function isHueSat(v: unknown): v is { hue: number; sat: number } {
+  return isObject(v) && typeof v.hue === "number" && typeof v.sat === "number" && Number.isFinite(v.hue) && Number.isFinite(v.sat);
 }
 
 export function loadSettings(): Settings {
@@ -194,6 +206,10 @@ export function loadSettings(): Settings {
   } catch {
     /* storage unavailable or corrupt — use defaults */
   }
+  // These changed shape from a hex string to {hue,sat}; anything that isn't a valid
+  // {hue,sat} (an old string, or garbage) resets to automatic rather than breaking.
+  if (!isHueSat(s.runLength.labelHColor)) s.runLength.labelHColor = null;
+  if (!isHueSat(s.runLength.labelVColor)) s.runLength.labelVColor = null;
   return s;
 }
 

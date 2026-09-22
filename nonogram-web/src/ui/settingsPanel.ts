@@ -8,7 +8,8 @@ import {
   type SubcellKind,
   type ThemeChoice,
 } from "../state/settings";
-import { contrastOn } from "./color";
+import { contrastOn, huedInk } from "./color";
+import { closeColorPicker, openColorPicker } from "./colorPicker";
 import { h } from "./dom";
 import { drawIcon } from "./icons";
 
@@ -66,22 +67,30 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
   };
 
   const colorRow = (label: string, get: () => string | null, set: (v: string | null) => void, fallback: () => string, resettable = true, enabled: () => boolean = () => true) => {
-    const input = h("input", { type: "color" });
+    const swatch = h("button", { type: "button", class: "swatch-btn", title: "Choose a color" });
     const reset = h("button", { class: "mini", type: "button", title: "Use the theme default" }, "Reset");
-    input.addEventListener("input", () => {
-      set(input.value);
-      deps.onChange();
-      reset.hidden = !resettable;
+    swatch.addEventListener("click", () => {
+      if (swatch.disabled) return;
+      openColorPicker({
+        anchor: swatch,
+        initial: get() ?? fallback(),
+        onChange: (hex) => {
+          set(hex);
+          deps.onChange();
+          reset.hidden = !resettable;
+          swatch.style.background = hex;
+        },
+      });
     });
     reset.addEventListener("click", () => {
       set(null);
       changed();
     });
-    const row = h("div", { class: "row" }, h("span", { class: "grow" }, label), reset, input);
+    const row = h("div", { class: "row" }, h("span", { class: "grow" }, label), reset, swatch);
     refreshers.push(() => {
-      input.value = get() ?? fallback();
+      swatch.style.background = get() ?? fallback();
       reset.hidden = !resettable || get() === null;
-      input.disabled = !enabled();
+      swatch.disabled = !enabled();
       row.classList.toggle("disabled", !enabled());
     });
     return row;
@@ -153,13 +162,19 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
       return [kind, b];
     });
 
-    const color = h("input", { type: "color", title: "Symbol color" });
+    const color = h("button", { type: "button", class: "swatch-btn", title: "Symbol color" });
     const auto = h("button", { class: "mini", type: "button", title: "Back to automatic (contrasts with the cell)" }, "Reset");
-    color.addEventListener("input", () => {
-      setColor(color.value);
-      deps.onChange();
-      auto.hidden = false;
-      paint();
+    color.addEventListener("click", () => {
+      openColorPicker({
+        anchor: color,
+        initial: getColor() ?? autoInk(),
+        onChange: (hex) => {
+          setColor(hex);
+          deps.onChange();
+          auto.hidden = false;
+          paint();
+        },
+      });
     });
     auto.addEventListener("click", () => {
       setColor(null);
@@ -170,7 +185,7 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     const paint = () => {
       const pal = paletteFor(s, deps.getTheme());
       const ink = getColor();
-      color.value = ink ?? autoInk();
+      color.style.background = ink ?? autoInk();
       auto.hidden = ink === null;
       for (const [kind, b] of buttons) {
         const cv = b.firstElementChild as HTMLCanvasElement;
@@ -191,6 +206,56 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     };
     refreshers.push(paint);
     return h("div", { class: "row stack" }, h("span", {}, label), wrap);
+  };
+
+  /**
+   * Hue + saturation only — lightness is picked automatically per background (see
+   * `huedInk`), so a custom label color can't end up unreadable the way a flat RGB
+   * pick could (the label can land on either a filled-cell or a blank-cell background).
+   */
+  const hueSatRow = (label: string, get: () => { hue: number; sat: number } | null, set: (v: { hue: number; sat: number } | null) => void) => {
+    const hueIn = h("input", { type: "range", min: 0, max: 359, step: 1 });
+    const satIn = h("input", { type: "range", min: 0, max: 100, step: 1 });
+    const hueOut = h("output", {});
+    const satOut = h("output", {});
+    const reset = h("button", { class: "mini", type: "button", title: "Back to automatic black/white" }, "Reset");
+    const swL = h("span", { class: "hue-swatch on-light" }, "8");
+    const swD = h("span", { class: "hue-swatch on-dark" }, "8");
+
+    const commit = () => {
+      set({ hue: Number(hueIn.value), sat: Number(satIn.value) });
+      deps.onChange();
+      paint();
+    };
+    hueIn.addEventListener("input", commit);
+    satIn.addEventListener("input", commit);
+    reset.addEventListener("click", () => {
+      set(null);
+      changed();
+    });
+
+    const paint = () => {
+      const v = get();
+      const shown = v ?? { hue: 210, sat: 70 }; // starting point the first time this is opened
+      hueIn.value = String(shown.hue);
+      satIn.value = String(shown.sat);
+      hueOut.textContent = `${shown.hue}°`;
+      satOut.textContent = `${shown.sat}%`;
+      reset.hidden = v === null;
+      const threshold = s.runLength.labelContrastThreshold;
+      const inkOn = (bg: string) => (v ? huedInk(v.hue, v.sat, bg, threshold) : contrastOn(bg, threshold));
+      swL.style.color = inkOn("#ffffff");
+      swD.style.color = inkOn("#14151a");
+    };
+    refreshers.push(paint);
+
+    return h(
+      "div",
+      { class: "row stack" },
+      h("div", { class: "row" }, h("span", { class: "grow" }, label), h("span", { class: "hue-preview" }, swL, swD), reset),
+      h("label", { class: "row range" }, h("span", { class: "grow" }, "Hue"), hueIn, hueOut),
+      h("label", { class: "row range" }, h("span", { class: "grow" }, "Saturation"), satIn, satOut),
+    );
   };
 
   const section = (title: string, ...body: HTMLElement[]) => {
@@ -299,8 +364,10 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     }, "Cells to the left / right / above / below the pointer, within its run."),
     h("div", { class: "row stack" }, h("span", {}, "Label placement (click: empty → H → V)"), subcellGrid),
     range("Label size", 6, 16, 1, () => rl.numSize, (v) => (rl.numSize = v), (v) => `${v}px`),
-    colorRow("Horizontal label color", () => rl.labelHColor, (v) => (rl.labelHColor = v), () => "#66b8ff"),
-    colorRow("Vertical label color", () => rl.labelVColor, (v) => (rl.labelVColor = v), () => "#66b8ff"),
+    range("Label contrast threshold", 0.2, 0.8, 0.01, () => rl.labelContrastThreshold, (v) => (rl.labelContrastThreshold = v), (v) => `${Math.round(v * 100)}%`),
+    h("p", { class: "note" }, "Cell backgrounds lighter than this get dark labels; darker ones get light labels. Applies to Auto and to the custom colors below."),
+    hueSatRow("Horizontal label color", () => rl.labelHColor, (v) => (rl.labelHColor = v)),
+    hueSatRow("Vertical label color", () => rl.labelVColor, (v) => (rl.labelVColor = v)),
   );
 
   const keys = section(
@@ -330,6 +397,7 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
 
   const resetBtn = h("button", { type: "button", class: "btn danger" }, "Reset all settings");
   resetBtn.addEventListener("click", () => {
+    closeColorPicker(); // it may be anchored to a swatch this rebuilds
     deps.onReset();
     refreshers.forEach((f) => f());
   });

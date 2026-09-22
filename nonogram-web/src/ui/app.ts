@@ -10,6 +10,7 @@ import { deleteProgress, listRecent, loadProgress, progressFraction, resumeCandi
 import { defaultSettings, loadSettings, resolveTheme, saveSettings, saveSettingsNow, type ResolvedTheme, type Settings } from "../state/settings";
 import { append, clear, copyText, downloadText, formatTime, h, icon } from "./dom";
 import { HEAVY_LINE_MIN_CELL, type Layout } from "./geometry";
+import { closeColorPicker } from "./colorPicker";
 import { GridView } from "./gridview";
 import { buildSettingsPanel } from "./settingsPanel";
 
@@ -211,6 +212,7 @@ export function startApp(root: HTMLElement): AppHandle {
     const open = force ?? !!settingsDrawer.hidden;
     settingsDrawer.hidden = !open;
     document.body.classList.toggle("drawer-open", open);
+    if (!open) closeColorPicker();
     // A control inside a just-closed drawer must not keep swallowing keyboard shortcuts.
     if (!open && settingsDrawer.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
     if (open) settingsPanel.refresh();

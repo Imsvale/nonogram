@@ -64,3 +64,29 @@ describe("resume candidate", () => {
     expect(resumeCandidate()).toBeNull();
   });
 });
+
+describe("settings migration: run-length label color", () => {
+  it("drops an old hex-string value and falls back to automatic", async () => {
+    store.clear();
+    store.set(
+      "nonogram-web:settings:v1",
+      JSON.stringify({ runLength: { labelHColor: "#66b8ff", labelVColor: null } }),
+    );
+    const { loadSettings } = await import("../src/state/settings");
+    const s = loadSettings();
+    expect(s.runLength.labelHColor).toBeNull();
+    expect(s.runLength.labelVColor).toBeNull();
+  });
+
+  it("keeps a valid {hue,sat} value and defaults the contrast threshold", async () => {
+    store.clear();
+    store.set(
+      "nonogram-web:settings:v1",
+      JSON.stringify({ runLength: { labelHColor: { hue: 200, sat: 60 } } }),
+    );
+    const { loadSettings } = await import("../src/state/settings");
+    const s = loadSettings();
+    expect(s.runLength.labelHColor).toEqual({ hue: 200, sat: 60 });
+    expect(s.runLength.labelContrastThreshold).toBe(0.5);
+  });
+});

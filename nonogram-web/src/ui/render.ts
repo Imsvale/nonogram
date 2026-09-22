@@ -12,7 +12,7 @@ import {
   type Palette,
 } from "../state/colors";
 import type { ResolvedTheme, Settings, SubcellKind } from "../state/settings";
-import { contrastOn, hoverShade, luminance, mix, rgba } from "./color";
+import { contrastOn, hoverShade, huedInk, luminance, mix, rgba } from "./color";
 import { computeHoverRuns, hoverLabelVisible, type HoverRun, type Layout } from "./geometry";
 import { drawIcon } from "./icons";
 
@@ -305,9 +305,10 @@ class Draw {
 
     const runFilled = (hr ?? vr)!.filled;
     const runBg = runFilled ? this.pal.filled : this.pal.unknown;
-    const auto = contrastOn(runBg);
-    const hColor = rl.labelHColor ?? auto;
-    const vColor = rl.labelVColor ?? auto;
+    const th = rl.labelContrastThreshold;
+    const auto = contrastOn(runBg, th);
+    const hColor = rl.labelHColor ? huedInk(rl.labelHColor.hue, rl.labelHColor.sat, runBg, th) : auto;
+    const vColor = rl.labelVColor ? huedInk(rl.labelVColor.hue, rl.labelVColor.sat, runBg, th) : auto;
 
     const hLen = hr ? hr.end - hr.start + 1 : 0;
     const vLen = vr ? vr.end - vr.start + 1 : 0;
