@@ -81,6 +81,46 @@ export function individuallyFulfilledClues(clues: readonly number[], cells: Arra
   return dim;
 }
 
+/**
+ * Indices of Unknown cells that must be Empty because they sit immediately past a run that
+ * already exactly matches its clue, scanning inward from both edges — the same confirmation
+ * `individuallyFulfilledClues` uses (and stopping at the same point), extended one cell further:
+ * once a run's length matches its clue exactly, the very next cell can't belong to that run (too
+ * long) or the next one (needs a gap first), so it's forced Empty regardless of what lies beyond.
+ */
+export function forcedEmptyBeyondMatchedRuns(clues: readonly number[], cells: ArrayLike<number>): number[] {
+  const n = clues.length;
+  const w = cells.length;
+  const out = new Set<number>();
+  if (n === 0 || w === 0) return [];
+
+  let ci = 0;
+  let gi = 0;
+  while (ci < n) {
+    while (gi < w && cells[gi] === EMPTY) gi++;
+    if (gi >= w || cells[gi] === UNKNOWN) break;
+    const start = gi;
+    while (gi < w && cells[gi] === FILLED) gi++;
+    if (gi - start !== clues[ci]) break;
+    if (gi < w && cells[gi] === UNKNOWN) out.add(gi);
+    ci++;
+  }
+  const leftMatched = ci;
+
+  ci = n - 1;
+  gi = w - 1;
+  while (ci >= leftMatched) {
+    while (gi >= 0 && cells[gi] === EMPTY) gi--;
+    if (gi < 0 || cells[gi] === UNKNOWN) break;
+    const end = gi;
+    while (gi >= 0 && cells[gi] === FILLED) gi--;
+    if (end - gi !== clues[ci]) break;
+    if (gi >= 0 && cells[gi] === UNKNOWN) out.add(gi);
+    ci--;
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
 type Span = [start: number, endExclusive: number];
 
 // Left scan where BOTH boundaries of each run are confirmed (Empty or edge).

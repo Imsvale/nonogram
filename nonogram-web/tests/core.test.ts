@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { puzzleToNative, puzzleToPzprv3 } from "../src/core/export";
 import {
   checkLineFulfilled,
+  forcedEmptyBeyondMatchedRuns,
   forcedEmptyFromEdges,
   individuallyFulfilledClues,
   isPuzzleSolved,
@@ -137,6 +138,19 @@ describe("Puz-Pre v3", () => {
     const text = puzzleToPzprv3(p, null, [], []);
     expect(importFromText(text).puzzles[0].width).toBe(3);
   });
+
+  it("round-trips the grid as `progress` — the whole point of the \"with progress\" download", () => {
+    const grid = cells("x#x###x#x");
+    const text = puzzleToPzprv3(p, grid, [false, true, false], [false, true, false]);
+    const back = parsePzprv3(text);
+    // `.` is ambiguous between marked-empty and still-unknown, so it comes back unknown either way.
+    expect(Array.from(back.progress!)).toEqual([UNKNOWN, FILLED, UNKNOWN, FILLED, FILLED, FILLED, UNKNOWN, FILLED, UNKNOWN]);
+  });
+
+  it("has no `progress` when nothing was filled (an empty grid, or none passed)", () => {
+    expect(parsePzprv3(puzzleToPzprv3(p, null, [], [])).progress).toBeUndefined();
+    expect(parsePzprv3(puzzleToPzprv3(p, cells("x x x x x x x x x"), [], [])).progress).toBeUndefined();
+  });
 });
 
 describe("share links", () => {
@@ -227,6 +241,24 @@ describe("line logic", () => {
     expect(forcedEmptyFromEdges([1, 1, 1], cells("#x...x#"))).toEqual([]);
     // A blank line is entirely empty.
     expect(forcedEmptyFromEdges([], cells("..#.."))).toEqual([0, 1, 3, 4]);
+  });
+
+  it("forcedEmptyBeyondMatchedRuns crosses just past a run that already matches its clue", () => {
+    // Confirmed only from the left; the cell right past the matched run is forced empty even
+    // though the run's far side is still open (unlike forcedEmptyFromEdges, which needs both).
+    expect(forcedEmptyBeyondMatchedRuns([3], cells("###....."))).toEqual([3]);
+    expect(forcedEmptyFromEdges([3], cells("###....."))).toEqual([]); // the weaker deduction doesn't fire here
+    // Same, from the right.
+    expect(forcedEmptyBeyondMatchedRuns([1], cells(".....#"))).toEqual([4]);
+    // A run one cell too short (or long) isn't a match yet — nothing to cross.
+    expect(forcedEmptyBeyondMatchedRuns([3], cells("##......"))).toEqual([]);
+    // Second clue's run matches too, once the first is confirmed and out of the way.
+    expect(forcedEmptyBeyondMatchedRuns([1, 2], cells("#x##....."))).toEqual([4]);
+    // Nothing to add once the cell past the run is already known (edge, or already marked).
+    expect(forcedEmptyBeyondMatchedRuns([3], cells("###"))).toEqual([]);
+    expect(forcedEmptyBeyondMatchedRuns([3], cells("###x"))).toEqual([]);
+    // A blank line (no clues) has no runs to match, so nothing to cross.
+    expect(forcedEmptyBeyondMatchedRuns([], cells("..#.."))).toEqual([]);
   });
 
   it("flags structurally impossible puzzles", () => {

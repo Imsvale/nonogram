@@ -1,6 +1,6 @@
 import { puzzleToNative, puzzleToPzprv3 } from "../core/export";
 import { trivialInvalidReason } from "../core/lines";
-import { importFromText } from "../core/parse";
+import { importFromText, parseNativeLine } from "../core/parse";
 import { puzzleToPuzzlinkUrl } from "../core/puzzlink";
 import { SAMPLES } from "../core/samples";
 import { buildShareLink, puzzleFromLocation, puzzleHash } from "../core/share";
@@ -181,6 +181,7 @@ export function startApp(root: HTMLElement): AppHandle {
     if (game) {
       game.assist.autoFillEmpty = settings.assist.autoFillEmpty;
       game.assist.autoCrossEdges = settings.assist.autoCrossEdges;
+      game.assist.autoCrossMatched = settings.assist.autoCrossMatched;
     }
     gridView.requestRender();
     refreshControls();
@@ -225,11 +226,26 @@ export function startApp(root: HTMLElement): AppHandle {
     game?.pauseTimer();
     unsubGame?.();
 
+    const saved = loadProgress(puzzle);
+    // A puzzle opened without its name/answer (a Puz-Pre v3 "with progress" file can't carry
+    // either) picks them back up from this browser's saved progress, if any: same clues mean the
+    // same puzzle, and the saved spec keeps the metadata this particular import couldn't.
+    if (saved) {
+      try {
+        const stored = parseNativeLine(saved.spec);
+        if (!puzzle.name || puzzle.name === `${puzzle.width}×${puzzle.height}`) puzzle = { ...puzzle, name: stored.name };
+        if (puzzle.answer === undefined && stored.answer !== undefined) puzzle = { ...puzzle, answer: stored.answer };
+      } catch {
+        /* corrupt saved spec; keep what we have */
+      }
+    }
+
     const g = new Game(puzzle);
     g.assist.autoFillEmpty = settings.assist.autoFillEmpty;
     g.assist.autoCrossEdges = settings.assist.autoCrossEdges;
-    const saved = loadProgress(puzzle);
+    g.assist.autoCrossMatched = settings.assist.autoCrossMatched;
     if (saved) g.restore(saved);
+    else if (puzzle.progress) g.seedGrid(puzzle.progress);
     game = g;
     wasSolved = g.solvedNow;
     unsubGame = g.subscribe(onGameChange);

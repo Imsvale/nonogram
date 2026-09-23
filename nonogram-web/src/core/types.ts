@@ -17,6 +17,12 @@ export interface Puzzle {
   answer?: string;
   /** Row-major; FILLED / EMPTY only. Kept so exports round-trip. */
   solution?: Uint8Array;
+  /**
+   * Row-major grid to seed a freshly opened game with, when this browser has no saved progress
+   * for the puzzle yet (a Puz-Pre v3 "with progress" file carries this). Unlike `solution`, this
+   * is never a spoiler — only ever written by this app's own progress export.
+   */
+  progress?: Grid;
 }
 
 export function newGrid(p: { width: number; height: number }): Grid {

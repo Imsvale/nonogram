@@ -480,10 +480,15 @@ class Draw {
 
   // ── Sums ──────────────────────────────────────────────────────────────────
 
-  private sumOf(clues: readonly number[]): number {
+  /** `indiv` is that line's `individuallyFulfilledClues` result, when available: with "exclude
+   *  completed" on, those clues drop out, so the sum stays a relevant comparison against what's
+   *  actually left to place (not the grand totals — those must stay full sums, or a puzzle whose
+   *  rows and columns happen to have completed different amounts would falsely look mismatched). */
+  private sumOf(clues: readonly number[], indiv: boolean[] | null): number {
+    const live = this.s.assist.clueSumsExcludeCompleted && indiv ? clues.filter((_, i) => !indiv[i]) : clues;
     let s = 0;
-    for (const c of clues) s += c;
-    return this.s.assist.clueSumsWithGaps ? s + Math.max(0, clues.length - 1) : s;
+    for (const c of live) s += c;
+    return this.s.assist.clueSumsWithGaps ? s + Math.max(0, live.length - 1) : s;
   }
 
   /** A number in a sum cell; infeasible lines get an amber badge like the desktop GUI. */
@@ -527,7 +532,7 @@ class Draw {
     ctx.fillStyle = pal.sumBg;
     ctx.fillRect(rx, L.oy, m.sumW, L.ch);
     for (let r = this.r0; r <= this.r1; r++) {
-      this.sumText(String(this.sumOf(p.rowClues[r])), rx + m.sumW / 2, this.cy(r) + this.C / 2, minSpan(p.rowClues[r]) > p.width);
+      this.sumText(String(this.sumOf(p.rowClues[r], inp.derived?.rowIndiv[r] ?? null)), rx + m.sumW / 2, this.cy(r) + this.C / 2, minSpan(p.rowClues[r]) > p.width);
     }
     for (let r = this.r0; r <= this.r1 + 1; r++) {
       if (r === 0 || r === this.h) continue;
@@ -543,7 +548,7 @@ class Draw {
     ctx.fillStyle = pal.sumBg;
     ctx.fillRect(L.ox, by, L.cw, m.N);
     for (let c = this.c0; c <= this.c1; c++) {
-      this.sumText(String(this.sumOf(p.colClues[c])), this.cx(c) + this.C / 2, by + m.N / 2, minSpan(p.colClues[c]) > p.height);
+      this.sumText(String(this.sumOf(p.colClues[c], inp.derived?.colIndiv[c] ?? null)), this.cx(c) + this.C / 2, by + m.N / 2, minSpan(p.colClues[c]) > p.height);
     }
     for (let c = this.c0; c <= this.c1 + 1; c++) {
       if (c === 0 || c === this.w) continue;

@@ -1,6 +1,7 @@
 import {
   checkLineFulfilled,
   clueTotal,
+  forcedEmptyBeyondMatchedRuns,
   forcedEmptyFromEdges,
   getCol,
   getRow,
@@ -99,7 +100,7 @@ export class Game {
   stroke: Stroke | null = null;
   solvedNow = false;
   everSolved = false;
-  assist = { autoFillEmpty: false, autoCrossEdges: false };
+  assist = { autoFillEmpty: false, autoCrossEdges: false, autoCrossMatched: false };
 
   private elapsedBase = 0;
   private startedAt: number | null = null;
@@ -197,8 +198,8 @@ export class Game {
   /** Auto-fill / auto-cross for the row and column of a cell that was just painted. */
   private applyLineAssistance(row: number, col: number, paint: Cell): void {
     if (paint === UNKNOWN) return;
-    const { autoFillEmpty, autoCrossEdges } = this.assist;
-    if (!autoFillEmpty && !autoCrossEdges) return;
+    const { autoFillEmpty, autoCrossEdges, autoCrossMatched } = this.assist;
+    if (!autoFillEmpty && !autoCrossEdges && !autoCrossMatched) return;
     const { width: w, height: h, rowClues, colClues } = this.puzzle;
     const g = this.grid;
 
@@ -213,6 +214,10 @@ export class Game {
     if (autoCrossEdges) {
       for (const c of forcedEmptyFromEdges(rowClues[row], getRow(g, w, row))) g[row * w + c] = EMPTY;
       for (const r of forcedEmptyFromEdges(colClues[col], getCol(g, w, h, col))) g[r * w + col] = EMPTY;
+    }
+    if (autoCrossMatched) {
+      for (const c of forcedEmptyBeyondMatchedRuns(rowClues[row], getRow(g, w, row))) g[row * w + c] = EMPTY;
+      for (const r of forcedEmptyBeyondMatchedRuns(colClues[col], getCol(g, w, h, col))) g[r * w + col] = EMPTY;
     }
   }
 
@@ -438,6 +443,17 @@ export class Game {
     this.redoStack = [];
     this.solvedNow = this.solvable && isPuzzleSolved(this.puzzle, this.grid);
     this.everSolved = !!e.everSolved || this.solvedNow;
+    this.bump();
+  }
+
+  /** Like `restore`, but for a plain grid with no trial/dim/timer history (e.g. a puzzle file's
+   *  own embedded progress) — used only when this browser has no saved progress to `restore()`. */
+  seedGrid(grid: Grid): void {
+    this.grid = grid;
+    this.undoStack = [];
+    this.redoStack = [];
+    this.solvedNow = this.solvable && isPuzzleSolved(this.puzzle, this.grid);
+    this.everSolved = this.solvedNow;
     this.bump();
   }
 }

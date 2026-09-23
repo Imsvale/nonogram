@@ -131,7 +131,25 @@ export function parsePzprv3(text: string): Puzzle {
     for (let c = 0; c < maxRd; c++) if (grid[maxCd + r][c] !== ".") clue.push(tok(grid[maxCd + r][c]));
     rowClues.push(clue);
   }
-  return { name: `${w}×${h}`, width: w, height: h, rowClues, colClues };
+
+  // The puzzle-grid region (`#` / `.`) is progress, not a spoiler solution — this is the only
+  // format the app ever writes it to (see `puzzleToPzprv3`, always called with the live grid), so
+  // it's safe to feed straight back into a freshly opened game. `.` is ambiguous between "marked
+  // empty" and "still unknown" (the export collapses both), so it comes back as unknown.
+  const progress = new Uint8Array(w * h);
+  let anyFilled = false;
+  for (let r = 0; r < h; r++) {
+    for (let c = 0; c < w; c++) {
+      if (grid[maxCd + r][maxRd + c] === "#") {
+        progress[r * w + c] = FILLED;
+        anyFilled = true;
+      }
+    }
+  }
+
+  const puzzle: Puzzle = { name: `${w}×${h}`, width: w, height: h, rowClues, colClues };
+  if (anyFilled) puzzle.progress = progress;
+  return puzzle;
 }
 
 export interface ImportResult {

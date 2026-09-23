@@ -293,8 +293,21 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     check("Dim fulfilled clues", () => s.assist.autoDim, (v) => (s.assist.autoDim = v), "Gray out clues that the grid already satisfies."),
     check("Auto-fill empty", () => s.assist.autoFillEmpty, (v) => (s.assist.autoFillEmpty = v), "Cross out the rest of a line once its clues are met."),
     check("Auto-cross from edges", () => s.assist.autoCrossEdges, (v) => (s.assist.autoCrossEdges = v), "Cross out cells that lie between edge-confirmed runs."),
+    check(
+      "Auto-cross a matched run's open end",
+      () => s.assist.autoCrossMatched,
+      (v) => (s.assist.autoCrossMatched = v),
+      "Once a run's length already matches its clue, cross the cell right past it — even before that side is otherwise edge-confirmed.",
+    ),
     check("Show clue sums", () => s.assist.showSums, (v) => (s.assist.showSums = v), "The totals column on the right and row along the bottom."),
     check("Line sums include gaps", () => s.assist.clueSumsWithGaps, (v) => (s.assist.clueSumsWithGaps = v), "Shows the minimum span each line needs.", () => s.assist.showSums),
+    check(
+      "Line sums exclude completed clues",
+      () => s.assist.clueSumsExcludeCompleted,
+      (v) => (s.assist.clueSumsExcludeCompleted = v),
+      "Drop clues the line has already fulfilled from its sum, so it stays a fair comparison against what's left.",
+      () => s.assist.showSums,
+    ),
     check("Axis-lock dragging", () => s.assist.axisLock, (v) => (s.assist.axisLock = v), "Drags paint a straight line, previewed until you release."),
   );
 
@@ -355,7 +368,7 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     check("Label the neighboring cell", () => rl.adjLabelEnabled, (v) => {
       rl.adjLabelEnabled = v;
       if (v) rl.fourDirLabels = false;
-    }, "Puts the run length just beside the pointer instead of on it."),
+    }, "Puts the run length in the before the hovered cell instead."),
     check("…prefer the cell after (horizontal)", () => rl.adjLabelHPreferAfter, (v) => (rl.adjLabelHPreferAfter = v)),
     check("…prefer the cell after (vertical)", () => rl.adjLabelVPreferAfter, (v) => (rl.adjLabelVPreferAfter = v)),
     check("Four-direction counts", () => rl.fourDirLabels, (v) => {

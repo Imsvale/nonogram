@@ -202,7 +202,7 @@ export class GridView {
       grid: game.displayGrid(),
       tierMap: game.tierMap(),
       trial: game.trial,
-      derived: settings.assist.autoDim ? game.derived() : null,
+      derived: settings.assist.autoDim || settings.assist.clueSumsExcludeCompleted ? game.derived() : null,
       dimRows: game.dimRows,
       dimCols: game.dimCols,
       settings,

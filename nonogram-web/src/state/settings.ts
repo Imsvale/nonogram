@@ -52,9 +52,15 @@ export interface Settings {
     autoDim: boolean;
     autoFillEmpty: boolean;
     autoCrossEdges: boolean;
+    /** Cross the cell just past a run that already exactly matches its clue, even before the
+     *  run's far side is itself edge-confirmed (a weaker, earlier-firing cousin of `autoCrossEdges`). */
+    autoCrossMatched: boolean;
     /** Show the line-sum strips (right column, bottom row and their totals). */
     showSums: boolean;
     clueSumsWithGaps: boolean;
+    /** Leave out clues that are individually fulfilled (see `individuallyFulfilledClues`) from
+     *  each line's sum, so the total stays a meaningful comparison against what's left to place. */
+    clueSumsExcludeCompleted: boolean;
     axisLock: boolean;
   };
   crosshair: {
@@ -100,8 +106,10 @@ export function defaultSettings(): Settings {
       autoDim: false,
       autoFillEmpty: false,
       autoCrossEdges: false,
+      autoCrossMatched: false,
       showSums: false,
       clueSumsWithGaps: false,
+      clueSumsExcludeCompleted: false,
       axisLock: false,
     },
     crosshair: {
