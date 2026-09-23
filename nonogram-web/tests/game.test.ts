@@ -153,6 +153,41 @@ describe("assistance", () => {
     stroke(off, [[0, 6]]);
     expect(state(off)).toBe("1200021");
   });
+
+  it("auto-cross-matched crosses the cell right past a run that already matches its clue", () => {
+    const puzzle: Puzzle = { name: "m", width: 5, height: 1, colClues: Array(5).fill([]), rowClues: [[3]] };
+    const g = new Game(puzzle);
+    g.assist.autoCrossMatched = true;
+    stroke(g, [[0, 0], [0, 2]]);
+    expect(state(g)).toBe("11120"); // run touches the left edge; the cell past it is crossed
+  });
+
+  it("auto-dim guess needs \"Dim fulfilled clues\" too, and then crosses both open ends", () => {
+    const puzzle: Puzzle = { name: "g", width: 8, height: 1, colClues: Array(8).fill([]), rowClues: [[2, 5]] };
+
+    const withoutDim = new Game(puzzle);
+    withoutDim.assist.autoDimGuess = true; // autoDim left off
+    stroke(withoutDim, [[0, 2], [0, 6]]);
+    expect(state(withoutDim)).toBe("00111110"); // nothing crossed — the checkbox is a no-op alone
+
+    const withDim = new Game(puzzle);
+    withDim.assist.autoDim = true;
+    withDim.assist.autoDimGuess = true;
+    stroke(withDim, [[0, 2], [0, 6]]);
+    expect(state(withDim)).toBe("02111112"); // 5 is the unique largest clue → both open ends crossed
+  });
+
+  it("derived().rowIndiv reflects a central anchor once its run is delimited", () => {
+    // derived() itself always includes central-run anchoring (see resolveLine); autoDim only
+    // gates whether the renderer draws it and whether gridview bothers calling derived() at all.
+    const puzzle: Puzzle = { name: "c", width: 10, height: 1, colClues: Array(10).fill([]), rowClues: [[3, 2]] };
+    const g = new Game(puzzle);
+    // Delimit an isolated "2" in the middle by hand (mark, not fill, for the boundary cells).
+    stroke(g, [[0, 3]], "mark");
+    stroke(g, [[0, 6]], "mark");
+    stroke(g, [[0, 4], [0, 5]]);
+    expect(g.derived().rowIndiv[0]).toEqual([false, true]); // the "3" is still wide open; the "2" is anchored
+  });
 });
 
 describe("solving", () => {

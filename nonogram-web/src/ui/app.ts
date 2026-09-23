@@ -179,9 +179,11 @@ export function startApp(root: HTMLElement): AppHandle {
     saveSettings(settings);
     applyTheme();
     if (game) {
+      game.assist.autoDim = settings.assist.autoDim;
       game.assist.autoFillEmpty = settings.assist.autoFillEmpty;
       game.assist.autoCrossEdges = settings.assist.autoCrossEdges;
       game.assist.autoCrossMatched = settings.assist.autoCrossMatched;
+      game.assist.autoDimGuess = settings.assist.autoDimGuess;
     }
     gridView.requestRender();
     refreshControls();
@@ -241,9 +243,11 @@ export function startApp(root: HTMLElement): AppHandle {
     }
 
     const g = new Game(puzzle);
+    g.assist.autoDim = settings.assist.autoDim;
     g.assist.autoFillEmpty = settings.assist.autoFillEmpty;
     g.assist.autoCrossEdges = settings.assist.autoCrossEdges;
     g.assist.autoCrossMatched = settings.assist.autoCrossMatched;
+    g.assist.autoDimGuess = settings.assist.autoDimGuess;
     if (saved) g.restore(saved);
     else if (puzzle.progress) g.seedGrid(puzzle.progress);
     game = g;

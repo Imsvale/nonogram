@@ -6,6 +6,7 @@ import {
   forcedEmptyFromEdges,
   individuallyFulfilledClues,
   isPuzzleSolved,
+  resolveLine,
   trivialInvalidReason,
 } from "../src/core/lines";
 import { importFromText, parseNativeLine, parseNativeText, parsePzprv3 } from "../src/core/parse";
@@ -259,6 +260,74 @@ describe("line logic", () => {
     expect(forcedEmptyBeyondMatchedRuns([3], cells("###x"))).toEqual([]);
     // A blank line (no clues) has no runs to match, so nothing to cross.
     expect(forcedEmptyBeyondMatchedRuns([], cells("..#.."))).toEqual([]);
+  });
+
+  describe("resolveLine (central-run anchoring, on top of the plain edge scan)", () => {
+    it("matches individuallyFulfilledClues exactly when nothing central applies", () => {
+      // Same cases as the individuallyFulfilledClues test above, unchanged by resolveLine.
+      expect(resolveLine([2, 1], cells("##....")).dim).toEqual([true, false]);
+      expect(resolveLine([2, 1], cells(".##...")).dim).toEqual([false, false]);
+      expect(resolveLine([2, 1], cells("x##...")).dim).toEqual([true, false]);
+      expect(resolveLine([2, 1], cells("....#x")).dim).toEqual([false, true]);
+      expect(resolveLine([2, 1], cells("##x..#")).dim).toEqual([true, true]);
+    });
+
+    it("crossable reproduces forcedEmptyBeyondMatchedRuns for plain edge-reached runs", () => {
+      expect(resolveLine([3], cells("###.....")).crossable).toEqual([3]);
+      expect(resolveLine([1], cells(".....#")).crossable).toEqual([4]);
+      expect(resolveLine([1, 2], cells("#x##.....")).crossable).toEqual([4]);
+    });
+
+    it("anchors a delimited central run whose length matches exactly one open clue", () => {
+      const { dim, crossable } = resolveLine([3, 2], cells("...x##x..."));
+      expect(dim).toEqual([false, true]); // only the "2" is confirmed; "3" is still wide open
+      expect(crossable).toEqual([]); // already delimited on both sides — nothing new to cross
+    });
+
+    it("does not anchor a delimited central run when its length isn't unique among open clues", () => {
+      // Both clues are 2 — a delimited run of length 2 could be either, so neither is confirmed.
+      expect(resolveLine([2, 2], cells("...x##x...")).dim).toEqual([false, false]);
+    });
+
+    it("chains outward from a central anchor, and resolves duplicate-valued clues once the gap narrows", () => {
+      // clue [2, 5, 2]: the "5" is delimited and globally unique, so it anchors in pass 1.
+      // The second "2" sits past an Unknown gap (so it can't be reached by ordinary chaining),
+      // delimited but NOT globally unique (two clues are "2") — it only resolves once the "5"
+      // anchor narrows its gap's remaining clues down to just the one "2", in pass 2.
+      const cellStr = "....x#####x.x##x..";
+      const { dim, crossable } = resolveLine([2, 5, 2], cells(cellStr));
+      expect(dim).toEqual([false, true, true]);
+      expect(crossable).toEqual([]); // everything involved is already marked on both sides
+      // The leading "2" has no delimited run at all yet — correctly still open.
+    });
+
+    it("undelimited runs are ignored unless allowUndelimited is on", () => {
+      const line = cells("..#####...");
+      expect(resolveLine([2, 5], line).dim).toEqual([false, false]);
+      expect(resolveLine([2, 5], line, { allowUndelimited: true }).dim).toEqual([false, true]);
+    });
+
+    it("allowUndelimited only anchors the run matching the unique largest remaining clue", () => {
+      // Length 5 is the max of [2, 5] → anchors. Length 2 is not the max → never anchors, however
+      // long it might eventually turn out to be (it could still be mid-paint).
+      expect(resolveLine([2, 5], cells("..#####..."), { allowUndelimited: true }).dim).toEqual([false, true]);
+      expect(resolveLine([2, 5], cells("..##......"), { allowUndelimited: true }).dim).toEqual([false, false]);
+      // Tied for largest ([3, 3]): which clue this run belongs to is genuinely ambiguous.
+      expect(resolveLine([3, 3], cells("...###...."), { allowUndelimited: true }).dim).toEqual([false, false]);
+    });
+
+    it("crosses both open ends of an allowUndelimited anchor, and only those, via guessCrossable", () => {
+      const { dim, crossable, guessCrossable } = resolveLine([2, 5], cells("..#####..."), { allowUndelimited: true });
+      expect(dim).toEqual([false, true]);
+      expect(crossable).toEqual([]);
+      expect(guessCrossable).toEqual([1, 7]);
+    });
+
+    it("un-dimming is implicit: the same run no longer qualifies once it's no longer the largest", () => {
+      // A second clue is added that's now bigger than the run — the guess must not fire.
+      expect(resolveLine([2, 5], cells("..#####..."), { allowUndelimited: true }).dim).toEqual([false, true]);
+      expect(resolveLine([2, 5, 6], cells("..#####......."), { allowUndelimited: true }).dim).toEqual([false, false, false]);
+    });
   });
 
   it("flags structurally impossible puzzles", () => {

@@ -291,6 +291,13 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
   const assist = section(
     "Assistance",
     check("Dim fulfilled clues", () => s.assist.autoDim, (v) => (s.assist.autoDim = v), "Gray out clues that the grid already satisfies."),
+    check(
+      "…including a guess at the longest run",
+      () => s.assist.autoDimGuess,
+      (v) => (s.assist.autoDimGuess = v),
+      "Dim (and cross both ends of) an isolated run before it's delimited, once its length already matches the biggest clue still open around it — the only length that can't still be mid-paint toward something bigger.",
+      () => s.assist.autoDim,
+    ),
     check("Auto-fill empty", () => s.assist.autoFillEmpty, (v) => (s.assist.autoFillEmpty = v), "Cross out the rest of a line once its clues are met."),
     check("Auto-cross from edges", () => s.assist.autoCrossEdges, (v) => (s.assist.autoCrossEdges = v), "Cross out cells that lie between edge-confirmed runs."),
     check(

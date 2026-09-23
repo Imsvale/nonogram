@@ -55,11 +55,15 @@ export interface Settings {
     /** Cross the cell just past a run that already exactly matches its clue, even before the
      *  run's far side is itself edge-confirmed (a weaker, earlier-firing cousin of `autoCrossEdges`). */
     autoCrossMatched: boolean;
+    /** Dim (and treat as an anchor) an isolated, not-yet-delimited run whose length already equals
+     *  the unique largest clue still open around it — the only case where it can't still be mid-
+     *  paint toward a bigger clue. Also crosses both of its open ends. See `resolveLine`. */
+    autoDimGuess: boolean;
     /** Show the line-sum strips (right column, bottom row and their totals). */
     showSums: boolean;
     clueSumsWithGaps: boolean;
-    /** Leave out clues that are individually fulfilled (see `individuallyFulfilledClues`) from
-     *  each line's sum, so the total stays a meaningful comparison against what's left to place. */
+    /** Leave out clues that are individually fulfilled (see `resolveLine`) from each line's sum,
+     *  so the total stays a meaningful comparison against what's left to place. */
     clueSumsExcludeCompleted: boolean;
     axisLock: boolean;
   };
@@ -107,6 +111,7 @@ export function defaultSettings(): Settings {
       autoFillEmpty: false,
       autoCrossEdges: false,
       autoCrossMatched: false,
+      autoDimGuess: false,
       showSums: false,
       clueSumsWithGaps: false,
       clueSumsExcludeCompleted: false,

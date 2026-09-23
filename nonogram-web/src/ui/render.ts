@@ -427,7 +427,10 @@ class Draw {
           ctx.fillStyle = hoverShade(pal.clueBg);
           ctx.fillRect(x, y, this.C, m.N);
         }
-        const dim = !!inp.derived?.colFulfilled[c] || !!inp.derived?.colIndiv[c][i] || inp.dimCols.has(`${c},${i}`);
+        // `derived` may be computed just for the clue-sum exclusion even with auto-dim off, so the
+        // auto part of this still needs its own gate; the manual per-clue dim doesn't.
+        const auto = this.s.assist.autoDim && (!!inp.derived?.colFulfilled[c] || !!inp.derived?.colIndiv[c][i]);
+        const dim = auto || inp.dimCols.has(`${c},${i}`);
         ctx.fillStyle = this.clueInk(dim);
         ctx.fillText(String(clues[i]), x + this.C / 2, y + m.N / 2 + 0.5);
       }
@@ -466,7 +469,8 @@ class Draw {
           ctx.fillStyle = hoverShade(pal.clueBg);
           ctx.fillRect(x, y, m.N, this.C);
         }
-        const dim = !!inp.derived?.rowFulfilled[r] || !!inp.derived?.rowIndiv[r][i] || inp.dimRows.has(`${r},${i}`);
+        const auto = this.s.assist.autoDim && (!!inp.derived?.rowFulfilled[r] || !!inp.derived?.rowIndiv[r][i]);
+        const dim = auto || inp.dimRows.has(`${r},${i}`);
         ctx.fillStyle = this.clueInk(dim);
         ctx.fillText(String(clues[i]), x + m.N / 2, y + this.C / 2 + 0.5);
       }

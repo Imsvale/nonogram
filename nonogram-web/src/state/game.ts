@@ -1,13 +1,4 @@
-import {
-  checkLineFulfilled,
-  clueTotal,
-  forcedEmptyBeyondMatchedRuns,
-  forcedEmptyFromEdges,
-  getCol,
-  getRow,
-  individuallyFulfilledClues,
-  isPuzzleSolved,
-} from "../core/lines";
+import { checkLineFulfilled, clueTotal, forcedEmptyFromEdges, getCol, getRow, isPuzzleSolved, resolveLine } from "../core/lines";
 import { EMPTY, FILLED, UNKNOWN, newGrid, type Cell, type Grid, type Puzzle } from "../core/types";
 import { gridToString, puzzleId, specFor, stringToGrid, type ProgressEntry } from "./progress";
 
@@ -100,12 +91,12 @@ export class Game {
   stroke: Stroke | null = null;
   solvedNow = false;
   everSolved = false;
-  assist = { autoFillEmpty: false, autoCrossEdges: false, autoCrossMatched: false };
+  assist = { autoDim: false, autoFillEmpty: false, autoCrossEdges: false, autoCrossMatched: false, autoDimGuess: false };
 
   private elapsedBase = 0;
   private startedAt: number | null = null;
   private listeners = new Set<() => void>();
-  private derivedCache: { version: number; value: Derived } | null = null;
+  private derivedCache: { version: number; guess: boolean; value: Derived } | null = null;
   private tierCache: { version: number; value: Uint8Array } | null = null;
   private readonly solvable: boolean;
 
@@ -147,24 +138,26 @@ export class Game {
   }
 
   derived(): Derived {
-    if (this.derivedCache?.version === this.version) return this.derivedCache.value;
+    const guess = this.assist.autoDim && this.assist.autoDimGuess;
+    if (this.derivedCache?.version === this.version && this.derivedCache.guess === guess) return this.derivedCache.value;
     const { width: w, height: h, rowClues, colClues } = this.puzzle;
+    const opts = { allowUndelimited: guess };
     const rowFulfilled: boolean[] = [];
     const rowIndiv: boolean[][] = [];
     for (let r = 0; r < h; r++) {
       const row = getRow(this.grid, w, r);
       rowFulfilled.push(checkLineFulfilled(rowClues[r], row));
-      rowIndiv.push(individuallyFulfilledClues(rowClues[r], row));
+      rowIndiv.push(resolveLine(rowClues[r], row, opts).dim);
     }
     const colFulfilled: boolean[] = [];
     const colIndiv: boolean[][] = [];
     for (let c = 0; c < w; c++) {
       const col = getCol(this.grid, w, h, c);
       colFulfilled.push(checkLineFulfilled(colClues[c], col));
-      colIndiv.push(individuallyFulfilledClues(colClues[c], col));
+      colIndiv.push(resolveLine(colClues[c], col, opts).dim);
     }
     const value = { rowFulfilled, colFulfilled, rowIndiv, colIndiv };
-    this.derivedCache = { version: this.version, value };
+    this.derivedCache = { version: this.version, guess, value };
     return value;
   }
 
@@ -198,8 +191,9 @@ export class Game {
   /** Auto-fill / auto-cross for the row and column of a cell that was just painted. */
   private applyLineAssistance(row: number, col: number, paint: Cell): void {
     if (paint === UNKNOWN) return;
-    const { autoFillEmpty, autoCrossEdges, autoCrossMatched } = this.assist;
-    if (!autoFillEmpty && !autoCrossEdges && !autoCrossMatched) return;
+    const { autoFillEmpty, autoCrossEdges, autoCrossMatched, autoDim } = this.assist;
+    const autoDimGuess = autoDim && this.assist.autoDimGuess; // the checkbox is a sub-option of "Dim fulfilled clues"
+    if (!autoFillEmpty && !autoCrossEdges && !autoCrossMatched && !autoDimGuess) return;
     const { width: w, height: h, rowClues, colClues } = this.puzzle;
     const g = this.grid;
 
@@ -215,9 +209,21 @@ export class Game {
       for (const c of forcedEmptyFromEdges(rowClues[row], getRow(g, w, row))) g[row * w + c] = EMPTY;
       for (const r of forcedEmptyFromEdges(colClues[col], getCol(g, w, h, col))) g[r * w + col] = EMPTY;
     }
-    if (autoCrossMatched) {
-      for (const c of forcedEmptyBeyondMatchedRuns(rowClues[row], getRow(g, w, row))) g[row * w + c] = EMPTY;
-      for (const r of forcedEmptyBeyondMatchedRuns(colClues[col], getCol(g, w, h, col))) g[r * w + col] = EMPTY;
+    if (autoCrossMatched || autoDimGuess) {
+      const opts = { allowUndelimited: autoDimGuess };
+      const rr = resolveLine(rowClues[row], getRow(g, w, row), opts);
+      const cc = resolveLine(colClues[col], getCol(g, w, h, col), opts);
+      // The "matched" crossing (any confirmed anchor's open end) and the "guess" crossing (an
+      // undelimited anchor's own open ends) are independently gated — a guess-only run's ends
+      // still get crossed even with autoCrossMatched off, since the guess assist implies it.
+      if (autoCrossMatched) {
+        for (const c of rr.crossable) g[row * w + c] = EMPTY;
+        for (const r of cc.crossable) g[r * w + col] = EMPTY;
+      }
+      if (autoDimGuess) {
+        for (const c of rr.guessCrossable) g[row * w + c] = EMPTY;
+        for (const r of cc.guessCrossable) g[r * w + col] = EMPTY;
+      }
     }
   }
 
