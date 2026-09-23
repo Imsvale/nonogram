@@ -84,6 +84,10 @@ export interface Settings {
   fullscreenKey: string;
   /** Show the timer (it runs from the moment a puzzle opens; pausing hides the puzzle). */
   showTimer: boolean;
+  /** Auto-pause when you leave: switching tabs, minimizing, or switching to another app. Two
+   *  browser signals drive this (the tab/window being hidden, and this window losing focus) —
+   *  merged into one setting since a tab switch and a minimize can't be told apart anyway. */
+  pauseOnAway: boolean;
   /** What the left mouse button (or a tap) does; the right button / Shift does the other. */
   primaryMode: "fill" | "mark";
   /**
@@ -150,6 +154,7 @@ export function defaultSettings(): Settings {
     },
     fullscreenKey: "f",
     showTimer: true,
+    pauseOnAway: false,
     primaryMode: "fill",
     wheelMode: "zoom",
     zoomReference: 26,

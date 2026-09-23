@@ -326,7 +326,16 @@ export function startApp(root: HTMLElement): AppHandle {
   };
   window.addEventListener("pagehide", flushAll);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") flushAll();
+    if (document.visibilityState === "hidden") {
+      flushAll();
+      if (settings.pauseOnAway) game?.pauseTimer();
+    }
+  });
+  // Tab-switching and minimizing already hide the page (above); this additionally catches
+  // switching to another app while the window stays open (a tab switch and a minimize can't be
+  // told apart from here, so there's no point offering that split as a separate choice).
+  window.addEventListener("blur", () => {
+    if (settings.pauseOnAway) game?.pauseTimer();
   });
 
   function onGameChange(): void {

@@ -269,6 +269,13 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     "Appearance",
     selectRow<ThemeChoice>("Theme", [["system", "Match system"], ["light", "Light"], ["dark", "Dark"]], () => s.theme, (v) => (s.theme = v)),
     check("Hide timer", () => !s.showTimer, (v) => (s.showTimer = !v)),
+    check(
+      "Auto-pause when you leave",
+      () => s.pauseOnAway,
+      (v) => (s.pauseOnAway = v),
+      "Switching tabs, minimizing, or switching to another app.",
+      () => s.showTimer,
+    ),
     colorRow("Unknown cell", () => s.colors.unknown, (v) => (s.colors.unknown = v), () => paletteFor(s, deps.getTheme()).unknown),
     colorRow("Filled cell", () => s.colors.filled, (v) => (s.colors.filled = v), () => paletteFor(s, deps.getTheme()).filled),
     colorRow("Empty (crossed) cell", () => s.colors.empty, (v) => (s.colors.empty = v), () => paletteFor(s, deps.getTheme()).empty),
