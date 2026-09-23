@@ -240,11 +240,11 @@ export function computeHoverRuns(grid: Grid, w: number, h: number, hr: number, h
 }
 
 /**
- * Whether the run length shows under the pointer. It appears when at least one
- * end of the run is `threshold` or more cells away — the point is to give a
- * length when a long run's end(s) are off-screen, so a nearby end must not
- * suppress it while the other end is far.
+ * Whether the run length shows under the pointer. It appears only when BOTH ends of the
+ * run are `threshold` or more cells away — the point is to give a length when a long run's
+ * ends are off-screen; if either end is already close enough to read directly, the hover
+ * (or neighboring-cell) label isn't needed.
  */
 export function hoverLabelVisible(start: number, end: number, hover: number, threshold: number): boolean {
-  return hover - start >= threshold || end - hover >= threshold;
+  return hover - start >= threshold && end - hover >= threshold;
 }

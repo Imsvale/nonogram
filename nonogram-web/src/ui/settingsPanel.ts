@@ -351,7 +351,7 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     check("Show at run end", () => rl.showEnd, (v) => (rl.showEnd = v)),
     range("…if at least", 1, 20, 1, () => rl.endThreshold, (v) => (rl.endThreshold = v)),
     check("Show under the pointer", () => rl.showHover, (v) => (rl.showHover = v), "For long runs whose ends are off-screen."),
-    range("…when at least this far from either end", 0, 10, 1, () => rl.hoverThreshold, (v) => (rl.hoverThreshold = v)),
+    range("…when at least this far from both ends", 1, 30, 1, () => rl.hoverThreshold, (v) => (rl.hoverThreshold = v)),
     check("Label the neighboring cell", () => rl.adjLabelEnabled, (v) => {
       rl.adjLabelEnabled = v;
       if (v) rl.fourDirLabels = false;
@@ -362,7 +362,8 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
       rl.fourDirLabels = v;
       if (v) rl.adjLabelEnabled = false;
     }, "Cells to the left / right / above / below the pointer, within its run."),
-    h("div", { class: "row stack" }, h("span", {}, "Label placement (click: empty → H → V)"), subcellGrid),
+    h("div", { class: "row stack" }, h("span", {}, "Hover label placement (click: empty → H → V)"), subcellGrid),
+    h("p", { class: "note" }, "Start/end labels always hug the outer edge of the run; this only positions the one under the pointer."),
     range("Label size", 6, 16, 1, () => rl.numSize, (v) => (rl.numSize = v), (v) => `${v}px`),
     range("Label contrast threshold", 0.2, 0.8, 0.01, () => rl.labelContrastThreshold, (v) => (rl.labelContrastThreshold = v), (v) => `${Math.round(v * 100)}%`),
     h("p", { class: "note" }, "Cell backgrounds lighter than this get dark labels; darker ones get light labels. Applies to Auto and to the custom colors below."),

@@ -314,6 +314,14 @@ class Draw {
     const vLen = vr ? vr.end - vr.start + 1 : 0;
     const ht = rl.hoverThreshold;
 
+    // A "1×1 island": a single cell that is, on its own, a run of 1 in both directions. With the
+    // start/end thresholds both at 1, the ordinary per-edge logic below would stack up to four
+    // "1"s on that one cell (h-start, h-end, v-start, v-end, all hugging different edges of the
+    // same tiny square). Special-case it: one bigger, centered "1" instead.
+    const isIsland = !!(hr && vr && hLen === 1 && vLen === 1);
+    const islandR = isIsland ? vr!.start : -1;
+    const islandC = isIsland ? hr!.start : -1;
+
     const labelCell = (r: number, c: number) => {
       const x = this.cx(c);
       const y = this.cy(r);
@@ -321,46 +329,61 @@ class Draw {
       const light = luminance(bg) > 0.5;
       const adjColor = light ? RUN_LABEL_INK.adjOnLight : RUN_LABEL_INK.adjOnDark;
       const fourColor = light ? RUN_LABEL_INK.fourOnLight : RUN_LABEL_INK.fourOnDark;
+      const isIslandCell = isIsland && r === islandR && c === islandC;
 
-      // Labels inside the hovered runs.
-      if (hr && r === hr.fixed && c >= hr.start && c <= hr.end) {
-        const show =
-          (c === hr.start && rl.showStart && hLen >= rl.startThreshold) ||
-          (c === hr.end && rl.showEnd && hLen >= rl.endThreshold) ||
-          (c === hr.hover && rl.showHover && hoverLabelVisible(hr.start, hr.end, hr.hover, ht));
-        if (show) for (const [sr, sc] of hSub) put(String(hLen), x, y, sc as 0 | 1 | 2, sr as 0 | 1 | 2, hColor);
+      // Labels at the run's ends always hug the outer edge of the run (start: middle-left for a
+      // horizontal run / middle-top for a vertical one; end: the opposite edge) — the configurable
+      // "label placement" position only applies to the hover label below.
+      if (hr && r === hr.fixed && !isIslandCell) {
+        if (c === hr.start && rl.showStart && hLen >= rl.startThreshold) put(String(hLen), x, y, 0, 1, hColor);
+        if (c === hr.end && rl.showEnd && hLen >= rl.endThreshold) put(String(hLen), x, y, 2, 1, hColor);
+        // The neighboring-cell label (below) replaces this one when enabled, rather than joining it.
+        if (c === hr.hover && rl.showHover && !rl.adjLabelEnabled && hoverLabelVisible(hr.start, hr.end, hr.hover, ht))
+          for (const [sr, sc] of hSub) put(String(hLen), x, y, sc as 0 | 1 | 2, sr as 0 | 1 | 2, hColor);
       }
-      if (vr && c === vr.fixed && r >= vr.start && r <= vr.end) {
-        const show =
-          (r === vr.start && rl.showStart && vLen >= rl.startThreshold) ||
-          (r === vr.end && rl.showEnd && vLen >= rl.endThreshold) ||
-          (r === vr.hover && rl.showHover && hoverLabelVisible(vr.start, vr.end, vr.hover, ht));
-        if (show) for (const [sr, sc] of vSub) put(String(vLen), x, y, sc as 0 | 1 | 2, sr as 0 | 1 | 2, vColor);
+      if (vr && c === vr.fixed && !isIslandCell) {
+        if (r === vr.start && rl.showStart && vLen >= rl.startThreshold) put(String(vLen), x, y, 1, 0, vColor);
+        if (r === vr.end && rl.showEnd && vLen >= rl.endThreshold) put(String(vLen), x, y, 1, 2, vColor);
+        if (r === vr.hover && rl.showHover && !rl.adjLabelEnabled && hoverLabelVisible(vr.start, vr.end, vr.hover, ht))
+          for (const [sr, sc] of vSub) put(String(vLen), x, y, sc as 0 | 1 | 2, sr as 0 | 1 | 2, vColor);
+      }
+      if (isIslandCell && ((rl.showStart && rl.startThreshold <= 1) || (rl.showEnd && rl.endThreshold <= 1))) {
+        const bigSize = size * 1.6;
+        ctx.font = `${bigSize}px ${FONT}`;
+        put("1", x, y, 1, 1, hColor);
+        ctx.font = `${size}px ${FONT}`;
       }
 
-      // Adjacent-cell label: the run length, shown in a neighbor of the hovered cell.
-      if (rl.adjLabelEnabled) {
-        if (hr && r === hr.fixed) {
+      // Adjacent-cell label: the hover label itself, shifted to a neighbor of the hovered cell
+      // instead of drawn on it (so as not to crowd it) — same visibility rule as the hover label.
+      if (rl.adjLabelEnabled && rl.showHover) {
+        if (hr && r === hr.fixed && hoverLabelVisible(hr.start, hr.end, hr.hover, ht)) {
           const target =
             hr.hover === hr.start ? hr.hover + 1 : hr.hover === hr.end ? hr.hover - 1 : rl.adjLabelHPreferAfter ? hr.hover + 1 : hr.hover - 1;
           if (target === c && target >= 0 && target < w) put(String(hLen), x, y, c > hr.hover ? 0 : 2, hAdjRow as 0 | 1 | 2, adjColor);
         }
-        if (vr && c === vr.fixed) {
+        if (vr && c === vr.fixed && hoverLabelVisible(vr.start, vr.end, vr.hover, ht)) {
           const target =
             vr.hover === vr.start ? vr.hover + 1 : vr.hover === vr.end ? vr.hover - 1 : rl.adjLabelVPreferAfter ? vr.hover + 1 : vr.hover - 1;
           if (target === r && target >= 0 && target < h) put(String(vLen), x, y, vAdjCol as 0 | 1 | 2, r > vr.hover ? 0 : 2, adjColor);
         }
       }
 
-      // Four-direction counts: cells on each side of the hovered cell.
+      // Four-direction counts: cells on each side of the hovered cell, each subject to the same
+      // "far enough from the end" rule as the hover label — but per direction, against only its
+      // own end (each of these speaks for one side, not both).
       if (rl.fourDirLabels) {
         if (hr && r === hr.fixed) {
-          if (hr.hover > 0 && c + 1 === hr.hover && hr.hover - hr.start > 0) put(String(hr.hover - hr.start), x, y, 2, hAdjRow as 0 | 1 | 2, fourColor);
-          if (c === hr.hover + 1 && c < w && hr.end - hr.hover > 0) put(String(hr.end - hr.hover), x, y, 0, hAdjRow as 0 | 1 | 2, fourColor);
+          const left = hr.hover - hr.start;
+          const right = hr.end - hr.hover;
+          if (c + 1 === hr.hover && left > 0 && left >= ht) put(String(left), x, y, 2, hAdjRow as 0 | 1 | 2, fourColor);
+          if (c === hr.hover + 1 && c < w && right > 0 && right >= ht) put(String(right), x, y, 0, hAdjRow as 0 | 1 | 2, fourColor);
         }
         if (vr && c === vr.fixed) {
-          if (vr.hover > 0 && r + 1 === vr.hover && vr.hover - vr.start > 0) put(String(vr.hover - vr.start), x, y, vAdjCol as 0 | 1 | 2, 2, fourColor);
-          if (r === vr.hover + 1 && r < h && vr.end - vr.hover > 0) put(String(vr.end - vr.hover), x, y, vAdjCol as 0 | 1 | 2, 0, fourColor);
+          const up = vr.hover - vr.start;
+          const down = vr.end - vr.hover;
+          if (r + 1 === vr.hover && up > 0 && up >= ht) put(String(up), x, y, vAdjCol as 0 | 1 | 2, 2, fourColor);
+          if (r === vr.hover + 1 && r < h && down > 0 && down >= ht) put(String(down), x, y, vAdjCol as 0 | 1 | 2, 0, fourColor);
         }
       }
     };

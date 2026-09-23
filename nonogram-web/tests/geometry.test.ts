@@ -55,11 +55,12 @@ describe("hover runs", () => {
 });
 
 describe("hover run-length label rule", () => {
-  it("shows when at least one end is `threshold`+ cells away", () => {
+  it("shows only when BOTH ends are `threshold`+ cells away", () => {
     // Run of 20 (cells 0..19), threshold 2.
     expect(hoverLabelVisible(0, 19, 10, 2)).toBe(true); // far from both ends
-    expect(hoverLabelVisible(0, 19, 1, 2)).toBe(true); // near the start, far from the end
-    expect(hoverLabelVisible(0, 19, 18, 2)).toBe(true); // near the end, far from the start
+    // Near either end: that end is already readable directly, so the hover label isn't needed.
+    expect(hoverLabelVisible(0, 19, 1, 2)).toBe(false); // near the start, far from the end
+    expect(hoverLabelVisible(0, 19, 18, 2)).toBe(false); // near the end, far from the start
     // Short run: both ends are close, so nothing to add.
     expect(hoverLabelVisible(0, 2, 1, 2)).toBe(false);
     expect(hoverLabelVisible(4, 5, 4, 2)).toBe(false);
