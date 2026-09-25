@@ -1,5 +1,5 @@
-import { checkLineFulfilled, clueTotal, forcedEmptyFromEdges, getCol, getRow, isPuzzleSolved, resolveLine } from "../core/lines";
-import { EMPTY, FILLED, UNKNOWN, newGrid, type Cell, type Grid, type Puzzle } from "../core/types";
+import { checkLineFulfilled, clueTotal, getCol, getRow, isPuzzleSolved, resolveLine } from "../core/lines";
+import { EMPTY, FILLED, UNKNOWN, newGrid, type Cell, type Diff, type Grid, type Puzzle } from "../core/types";
 import { gridToString, puzzleId, specFor, stringToGrid, type ProgressEntry } from "./progress";
 
 /**
@@ -14,6 +14,16 @@ export interface TrialTier {
   snap: Grid;
   /** First cell painted inside the tier — shown as the tier's numbered marker. */
   origin: Pos | null;
+  /**
+   * The tier's own undo/redo history, entirely separate from the outer one: while a trial is
+   * open, every stroke inside it steps through this instead. On accept, it's discarded and the
+   * whole tier collapses into a single Diff (snap → final grid) pushed to whichever history is
+   * next below (the parent tier's, or the main one) — so undoing an accepted trial from outside
+   * it is one step, not a replay of everything done inside it. On reject, likewise one step (the
+   * revert itself), which is why a reject can still be undone.
+   */
+  undo: Diff[];
+  redo: Diff[];
 }
 
 export interface Stroke {
@@ -83,8 +93,8 @@ export class Game {
   grid: Grid;
   /** Bumped on every visible change; caches key off it. */
   version = 0;
-  undoStack: Grid[] = [];
-  redoStack: Grid[] = [];
+  undoStack: Diff[] = [];
+  redoStack: Diff[] = [];
   trial: TrialTier[] = [];
   dimRows = new Set<string>();
   dimCols = new Set<string>();
@@ -121,10 +131,18 @@ export class Game {
   }
 
   get canUndo(): boolean {
-    return this.undoStack.length > 0;
+    return this.activeUndo().length > 0;
   }
   get canRedo(): boolean {
-    return this.redoStack.length > 0;
+    return this.activeRedo().length > 0;
+  }
+
+  /** The undo/redo history currently in effect: the innermost open trial's own, or the main one. */
+  private activeUndo(): Diff[] {
+    return this.trial.length ? this.trial[this.trial.length - 1].undo : this.undoStack;
+  }
+  private activeRedo(): Diff[] {
+    return this.trial.length ? this.trial[this.trial.length - 1].redo : this.redoStack;
   }
 
   /** The grid to draw: includes the axis-lock preview while a stroke is in flight. */
@@ -206,8 +224,12 @@ export class Game {
       }
     }
     if (autoCrossEdges) {
-      for (const c of forcedEmptyFromEdges(rowClues[row], getRow(g, w, row))) g[row * w + c] = EMPTY;
-      for (const r of forcedEmptyFromEdges(colClues[col], getCol(g, w, h, col))) g[r * w + col] = EMPTY;
+      // Always the "confirmed" anchor set (never allowUndelimited), regardless of autoDimGuess —
+      // this shouldn't get more aggressive just because an unrelated, more speculative assist is
+      // also on. between() generalizes forcedEmptyFromEdges to also cover a central anchor's gap.
+      const opts = { allowUndelimited: false };
+      for (const c of resolveLine(rowClues[row], getRow(g, w, row), opts).between) g[row * w + c] = EMPTY;
+      for (const r of resolveLine(colClues[col], getCol(g, w, h, col), opts).between) g[r * w + col] = EMPTY;
     }
     if (autoCrossMatched || autoDimGuess) {
       const opts = { allowUndelimited: autoDimGuess };
@@ -288,11 +310,11 @@ export class Game {
       for (const [r, c] of s.preview) this.writeCell(r, c, s.target);
     }
     this.stroke = null;
-    const changed = !sameGrid(s.before, this.grid);
-    if (changed) this.pushUndo(s.before);
+    const diff = diffGrids(s.before, this.grid);
+    this.pushUndo(diff);
     this.checkSolved();
     this.bump();
-    return changed;
+    return diff.length > 0;
   }
 
   /** Abandon the stroke and put the grid back as it was (e.g. a second finger landed). */
@@ -305,25 +327,31 @@ export class Game {
     this.bump();
   }
 
-  private pushUndo(snapshot: Grid): void {
-    this.undoStack.push(snapshot);
-    if (this.undoStack.length > UNDO_LIMIT) this.undoStack.shift();
-    this.redoStack = [];
+  /** Records `diff` as one undoable step on whichever history is currently active (see
+   *  `activeUndo`), and clears the matching redo — a no-op if nothing actually changed. */
+  private pushUndo(diff: Diff): void {
+    if (!diff.length) return;
+    const undo = this.activeUndo();
+    undo.push(diff);
+    if (undo.length > UNDO_LIMIT) undo.shift();
+    this.activeRedo().length = 0;
   }
 
   undo(): void {
-    const prev = this.undoStack.pop();
-    if (!prev) return;
-    this.redoStack.push(this.grid);
-    this.grid = prev;
+    const undo = this.activeUndo();
+    const diff = undo.pop();
+    if (!diff) return;
+    this.activeRedo().push(diff);
+    this.grid = applyDiff(this.grid, diff, "before");
     this.afterBulkChange();
   }
 
   redo(): void {
-    const next = this.redoStack.pop();
-    if (!next) return;
-    this.undoStack.push(this.grid);
-    this.grid = next;
+    const redo = this.activeRedo();
+    const diff = redo.pop();
+    if (!diff) return;
+    this.activeUndo().push(diff);
+    this.grid = applyDiff(this.grid, diff, "after");
     this.afterBulkChange();
   }
 
@@ -335,13 +363,20 @@ export class Game {
   // ── Trial mode ────────────────────────────────────────────────────────────
 
   enterTrial(): void {
-    this.trial.push({ snap: this.grid.slice(), origin: null });
+    this.trial.push({ snap: this.grid.slice(), origin: null, undo: [], redo: [] });
     this.bump();
   }
 
-  /** Keep everything painted in the innermost tier (merges it into the tier below). */
+  /**
+   * Keep everything painted in the innermost tier (merges it into the tier below). The tier's own
+   * undo/redo history — whatever step-by-step state it was in — is discarded along with it: from
+   * outside the tier, accepting it is one undoable action (snap → final grid), not a replay of
+   * every stroke made inside it.
+   */
   acceptTrial(): void {
-    if (!this.trial.pop()) return;
+    const tier = this.trial.pop();
+    if (!tier) return;
+    this.pushUndo(diffGrids(tier.snap, this.grid));
     this.bump();
   }
 
@@ -349,7 +384,7 @@ export class Game {
   rejectTrial(): void {
     const tier = this.trial.pop();
     if (!tier) return;
-    if (!sameGrid(tier.snap, this.grid)) this.pushUndo(this.grid);
+    this.pushUndo(diffGrids(this.grid, tier.snap));
     this.grid = tier.snap;
     this.afterBulkChange();
   }
@@ -428,25 +463,30 @@ export class Game {
       width: this.puzzle.width,
       height: this.puzzle.height,
       grid: gridToString(this.grid),
-      trial: this.trial.map((t) => ({ snap: gridToString(t.snap), origin: t.origin })),
+      trial: this.trial.map((t) => ({ snap: gridToString(t.snap), origin: t.origin, undo: t.undo, redo: t.redo })),
       dimRows: [...this.dimRows],
       dimCols: [...this.dimCols],
       elapsedMs: this.timerElapsedMs(),
       everSolved: this.everSolved,
       updated: Date.now(),
+      // Diffs, not snapshots — see game.ts's Diff type. Cheap enough (a handful of changed cells
+      // per step, not a whole grid) that the full in-memory history persists as-is, uncapped
+      // beyond the existing UNDO_LIMIT.
+      undo: this.undoStack,
+      redo: this.redoStack,
     };
   }
 
   restore(e: ProgressEntry): void {
     const size = this.puzzle.width * this.puzzle.height;
     this.grid = stringToGrid(e.grid, size);
-    this.trial = (e.trial ?? []).map((t) => ({ snap: stringToGrid(t.snap, size), origin: t.origin }));
+    this.trial = (e.trial ?? []).map((t) => ({ snap: stringToGrid(t.snap, size), origin: t.origin, undo: t.undo ?? [], redo: t.redo ?? [] }));
     this.dimRows = new Set(e.dimRows ?? []);
     this.dimCols = new Set(e.dimCols ?? []);
     this.elapsedBase = e.elapsedMs ?? 0;
     this.startedAt = null;
-    this.undoStack = [];
-    this.redoStack = [];
+    this.undoStack = e.undo ?? [];
+    this.redoStack = e.redo ?? [];
     this.solvedNow = this.solvable && isPuzzleSolved(this.puzzle, this.grid);
     this.everSolved = !!e.everSolved || this.solvedNow;
     this.bump();
@@ -464,8 +504,18 @@ export class Game {
   }
 }
 
-function sameGrid(a: Grid, b: Grid): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
+/** The Diff that turns `before` into `after` — empty when they're identical. */
+function diffGrids(before: Grid, after: Grid): Diff {
+  const out: [number, Cell, Cell][] = [];
+  for (let i = 0; i < before.length; i++) {
+    if (before[i] !== after[i]) out.push([i, before[i] as Cell, after[i] as Cell]);
+  }
+  return out;
+}
+
+/** A new grid with `diff` applied in the given direction. */
+function applyDiff(grid: Grid, diff: Diff, to: "before" | "after"): Grid {
+  const next = grid.slice();
+  for (const [i, before, after] of diff) next[i] = to === "before" ? before : after;
+  return next;
 }

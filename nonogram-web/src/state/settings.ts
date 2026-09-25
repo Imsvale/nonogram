@@ -90,6 +90,9 @@ export interface Settings {
   pauseOnAway: boolean;
   /** What the left mouse button (or a tap) does; the right button / Shift does the other. */
   primaryMode: "fill" | "mark";
+  /** Touch's own input style — a tap steps Unknown → Filled → Empty → Unknown, ignoring
+   *  `primaryMode` and the right button / Shift — extended to every pointer type, not just touch. */
+  cycleAnyInput: boolean;
   /**
    * What the mouse wheel does: `zoom` (default; panning is by dragging) or `scroll` the
    * grid (Shift: sideways). In `scroll` mode Ctrl + wheel zooms.
@@ -156,6 +159,7 @@ export function defaultSettings(): Settings {
     showTimer: true,
     pauseOnAway: false,
     primaryMode: "fill",
+    cycleAnyInput: false,
     wheelMode: "zoom",
     zoomReference: 26,
     lockFrame: false,

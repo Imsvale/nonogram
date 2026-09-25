@@ -154,6 +154,19 @@ describe("assistance", () => {
     expect(state(off)).toBe("1200021");
   });
 
+  it("auto-cross also crosses the side of a central run where nothing else can fit", () => {
+    // clue [3, 2]: the "2" is delimited and the LAST clue, so once it's placed, its trailing gap
+    // (nothing can follow it) crosses too — even though it was never reachable from either edge,
+    // and even though the "3" before it is still completely open.
+    const puzzle: Puzzle = { name: "e", width: 10, height: 1, colClues: Array(10).fill([]), rowClues: [[3, 2]] };
+    const g = new Game(puzzle);
+    g.assist.autoCrossEdges = true;
+    stroke(g, [[0, 3]], "mark");
+    stroke(g, [[0, 6]], "mark");
+    stroke(g, [[0, 4], [0, 5]]);
+    expect(state(g)).toBe("0002112222");
+  });
+
   it("auto-cross-matched crosses the cell right past a run that already matches its clue", () => {
     const puzzle: Puzzle = { name: "m", width: 5, height: 1, colClues: Array(5).fill([]), rowClues: [[3]] };
     const g = new Game(puzzle);
@@ -251,6 +264,61 @@ describe("trial mode", () => {
     expect(g.trial).toHaveLength(0);
     expect(g.tierMap().every((v) => v === 0)).toBe(true);
   });
+
+  it("undo steps store only the cells a stroke actually touched, not a whole grid", () => {
+    const big: Puzzle = { name: "big", width: 20, height: 20, colClues: Array(20).fill([]), rowClues: Array(20).fill([]) };
+    const g = new Game(big);
+    stroke(g, [[0, 0]]);
+    expect(g.undoStack).toHaveLength(1);
+    expect(g.undoStack[0]).toHaveLength(1); // one cell, not 400
+    expect(g.undoStack[0][0]).toEqual([0, UNKNOWN, FILLED]);
+  });
+
+  it("accepting a trial with several strokes is one undo step, not a replay of each", () => {
+    const g = new Game(plus);
+    g.enterTrial();
+    stroke(g, [[0, 0]]);
+    stroke(g, [[0, 1]]);
+    stroke(g, [[0, 2]]);
+    expect(state(g)).toBe("111000000");
+    g.acceptTrial();
+    expect(g.undoStack).toHaveLength(1); // flattened, not three
+    g.undo();
+    expect(state(g)).toBe("000000000"); // the whole trial reverts in one call
+    g.redo();
+    expect(state(g)).toBe("111000000"); // and reapplies in one call too
+  });
+
+  it("undo/redo inside an open trial only steps through that trial's own history", () => {
+    const g = new Game(plus);
+    stroke(g, [[0, 0]]); // pre-trial history
+    g.enterTrial();
+    stroke(g, [[0, 1]]);
+    stroke(g, [[0, 2]]);
+    expect(state(g)).toBe("111000000");
+    g.undo();
+    expect(state(g)).toBe("110000000");
+    g.undo();
+    expect(state(g)).toBe("100000000"); // back to the trial's own snapshot
+    expect(g.canUndo).toBe(false); // the pre-trial stroke is on a different, inaccessible history
+    g.undo(); // no-op
+    expect(state(g)).toBe("100000000");
+    g.redo();
+    g.redo();
+    expect(state(g)).toBe("111000000");
+  });
+
+  it("nested trials each get their own isolated history", () => {
+    const g = new Game(plus);
+    g.enterTrial();
+    stroke(g, [[0, 0]]); // outer tier
+    g.enterTrial();
+    stroke(g, [[0, 1]]); // inner tier
+    expect(state(g)).toBe("110000000");
+    g.undo(); // the inner tier's own stroke, not the outer's
+    expect(state(g)).toBe("100000000");
+    expect(g.canUndo).toBe(false); // inner tier's history is empty; the outer's isn't reachable here
+  });
 });
 
 describe("persistence", () => {
@@ -275,6 +343,28 @@ describe("persistence", () => {
     expect(saved.spec).toContain("C:1|3|1");
     expect(saved.spec).not.toMatch(/;[01]{9}$/);
     expect(FILLED).toBe(1);
+  });
+
+  it("round-trips undo/redo history, including an open trial's own", () => {
+    const g = new Game(plus);
+    stroke(g, [[0, 0]]);
+    stroke(g, [[0, 1]]);
+    g.undo(); // one step each side, on the main history
+    g.enterTrial();
+    stroke(g, [[1, 1]]);
+    const saved = JSON.parse(JSON.stringify(g.toProgress()));
+
+    const h = new Game(plus);
+    h.restore(saved);
+    expect(state(h)).toBe(state(g));
+    expect(h.undoStack).toHaveLength(1);
+    expect(h.redoStack).toHaveLength(1);
+    expect(h.trial).toHaveLength(1);
+    expect(h.trial[0].undo).toHaveLength(1);
+    expect(h.trial[0].redo).toHaveLength(0);
+    // Undoing after restore acts on the still-open trial's own history, same as before saving.
+    h.undo();
+    expect(state(h)).toBe("100000000");
   });
 });
 

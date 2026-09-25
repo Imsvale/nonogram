@@ -385,7 +385,9 @@ export function startApp(root: HTMLElement): AppHandle {
       pauseOverlay.hidden = true;
     }
   }
-  resumeBtn.addEventListener("click", () => game?.startTimer());
+  // resumeBtn is inside pauseOverlay, so this also catches clicks (and Enter/Space on the
+  // focused button) on it via bubbling — anywhere in the blurred play area resumes.
+  pauseOverlay.addEventListener("click", () => game?.startTimer());
 
   function refreshTimer(): void {
     if (game) {

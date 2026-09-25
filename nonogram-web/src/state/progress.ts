@@ -1,6 +1,6 @@
 import { puzzleToNative } from "../core/export";
 import { parseNativeLine } from "../core/parse";
-import { EMPTY, FILLED, UNKNOWN, type Grid, type Puzzle } from "../core/types";
+import { EMPTY, FILLED, UNKNOWN, type Diff, type Grid, type Puzzle } from "../core/types";
 
 /**
  * Per-puzzle progress in localStorage, keyed by a hash of the clues (so the
@@ -19,12 +19,17 @@ export interface ProgressEntry {
   width: number;
   height: number;
   grid: string;
-  trial: { snap: string; origin: [number, number] | null }[];
+  trial: { snap: string; origin: [number, number] | null; undo?: Diff[]; redo?: Diff[] }[];
   dimRows: string[];
   dimCols: string[];
   elapsedMs: number;
   everSolved: boolean;
   updated: number;
+  /** Undo/redo history, as Diffs (see core/types.ts) rather than full-grid snapshots — a step is
+   *  the handful of cells it actually touched, not the whole grid, so the full history is cheap
+   *  enough to keep. Optional so progress saved before this existed just resumes with none. */
+  undo?: Diff[];
+  redo?: Diff[];
 }
 
 export function puzzleId(p: Puzzle): string {

@@ -5,6 +5,11 @@ export const EMPTY = 2;
 export type Cell = 0 | 1 | 2;
 export type Grid = Uint8Array;
 
+/** One changed cell: flat grid index, its value before, and after. */
+export type CellChange = readonly [index: number, before: Cell, after: Cell];
+/** Everything one undoable action changed — an empty diff means nothing actually changed. */
+export type Diff = readonly CellChange[];
+
 export interface Puzzle {
   name: string;
   width: number;

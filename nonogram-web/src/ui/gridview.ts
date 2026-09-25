@@ -295,8 +295,9 @@ export class GridView {
   }
 
   private paintAction(e: PointerEvent): PaintAction {
-    // No right button or Shift on a touch screen: a tap steps through the states instead.
-    if (e.pointerType === "touch") return "cycle";
+    // No right button or Shift on a touch screen — or on any pointer, if the setting extends this
+    // style everywhere: a tap/click steps through the states instead.
+    if (e.pointerType === "touch" || this.deps.getSettings().cycleAnyInput) return "cycle";
     const alt = e.button === 2 || e.shiftKey;
     const primary = this.deps.getSettings().primaryMode;
     return alt ? (primary === "fill" ? "mark" : "fill") : primary;

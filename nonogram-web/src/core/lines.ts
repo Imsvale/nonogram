@@ -209,6 +209,10 @@ export interface LineResolution {
    *  Crossing these unconditionally is what makes the guess durable: once both sides are Empty,
    *  the run can never grow, so it's no longer a guess from the next recompute on. */
   guessCrossable: number[];
+  /** Unknown cells strictly between two anchors with consecutive clue indices (including the
+   *  line's own two edges) — nothing else can fit there, so they're all forced Empty. Generalizes
+   *  `forcedEmptyFromEdges` to also cover a gap flanked by a central anchor on either side. */
+  between: number[];
 }
 
 interface Anchor {
@@ -244,7 +248,7 @@ export function resolveLine(clues: readonly number[], cells: ArrayLike<number>, 
   const n = clues.length;
   const w = cells.length;
   const dim = new Array<boolean>(n).fill(false);
-  if (n === 0 || w === 0) return { dim, crossable: [], guessCrossable: [] };
+  if (w === 0) return { dim, crossable: [], guessCrossable: [], between: [] };
   const allowUndelimited = !!opts.allowUndelimited;
 
   // Every maximal filled run, found once up front; central-run matching below just filters these.
@@ -341,6 +345,7 @@ export function resolveLine(clues: readonly number[], cells: ArrayLike<number>, 
     if (!found.length) break;
     for (const f of found) anchors.push(f);
   }
+  anchors.sort((a, b) => a.ci - b.ci); // guarantee sorted, however the loop above exited
 
   const crossable = new Set<number>();
   const guessCrossable = new Set<number>();
@@ -351,10 +356,21 @@ export function resolveLine(clues: readonly number[], cells: ArrayLike<number>, 
     if (a.start > 0 && cells[a.start - 1] === UNKNOWN) bucket.add(a.start - 1);
     if (a.end < w && cells[a.end] === UNKNOWN) bucket.add(a.end);
   }
+
+  const between = new Set<number>();
+  for (let g = 0; g + 1 < anchors.length; g++) {
+    const a = anchors[g];
+    const b = anchors[g + 1];
+    if (b.ci !== a.ci + 1) continue; // a clue is still unaccounted-for between them — not safe
+    if (a.guess || b.guess) continue; // only ever flanked by confirmed anchors, like crossable
+    for (let i = a.end; i < b.start; i++) if (cells[i] === UNKNOWN) between.add(i);
+  }
+
   return {
     dim,
     crossable: [...crossable].sort((x, y) => x - y),
     guessCrossable: [...guessCrossable].sort((x, y) => x - y),
+    between: [...between].sort((x, y) => x - y),
   };
 }
 

@@ -289,6 +289,12 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     "Mouse & zoom",
     segRow<"fill" | "mark">("Left button / tap", [["fill", "Fill"], ["mark", "Mark"]], () => s.primaryMode, (v) => (s.primaryMode = v)),
     h("p", { class: "note" }, "The right button (or holding Shift) does the other one. Press X to swap. On a touch screen a tap cycles a cell: unknown → filled → crossed → unknown."),
+    check(
+      "Cycle for mouse/pen too",
+      () => s.cycleAnyInput,
+      (v) => (s.cycleAnyInput = v),
+      "Every click steps through the states like a touch tap does, instead of the left/right button split above (which is then unused, but kept for when you turn this back off).",
+    ),
     segRow<"zoom" | "scroll">("Mouse wheel", [["zoom", "Zoom"], ["scroll", "Scroll"]], () => s.wheelMode, (v) => (s.wheelMode = v)),
     h("p", { class: "note" }, "Scroll moves the grid up and down (Shift: sideways) and needs Ctrl to zoom."),
     check("Lock the puzzle's position", () => s.lockFrame, (v) => (s.lockFrame = v), "Dragging then only scrolls the grid inside the frame; the frame stays where it is. (L)"),
@@ -306,7 +312,12 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
       () => s.assist.autoDim,
     ),
     check("Auto-fill empty", () => s.assist.autoFillEmpty, (v) => (s.assist.autoFillEmpty = v), "Cross out the rest of a line once its clues are met."),
-    check("Auto-cross from edges", () => s.assist.autoCrossEdges, (v) => (s.assist.autoCrossEdges = v), "Cross out cells that lie between edge-confirmed runs."),
+    check(
+      "Auto-cross from edges",
+      () => s.assist.autoCrossEdges,
+      (v) => (s.assist.autoCrossEdges = v),
+      "Cross out cells between two confirmed runs — including a confirmed central run and the edge (or another confirmed run) beyond it, once nothing else could fit between them.",
+    ),
     check(
       "Auto-cross a matched run's open end",
       () => s.assist.autoCrossMatched,

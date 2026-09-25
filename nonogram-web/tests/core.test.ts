@@ -328,6 +328,54 @@ describe("line logic", () => {
       expect(resolveLine([2, 5], cells("..#####..."), { allowUndelimited: true }).dim).toEqual([false, true]);
       expect(resolveLine([2, 5, 6], cells("..#####......."), { allowUndelimited: true }).dim).toEqual([false, false, false]);
     });
+
+    describe("between (generalizes forcedEmptyFromEdges to a central anchor's own gap)", () => {
+      it("matches forcedEmptyFromEdges whenever the flanking run is confirmed on both sides", () => {
+        expect(resolveLine([3], cells("###x...")).between).toEqual([4, 5, 6]);
+        expect(resolveLine([1], cells("...x#")).between).toEqual([0, 1, 2]);
+        expect(resolveLine([1, 1], cells("#x...x#")).between).toEqual([2, 3, 4]);
+        expect(resolveLine([1, 1, 1], cells("#x...x#")).between).toEqual([]); // one clue unaccounted-for
+        expect(resolveLine([], cells("..#..")).between).toEqual([0, 1, 3, 4]); // a blank line
+      });
+
+      it("is a genuine superset of forcedEmptyFromEdges, not just an edge-case-identical twin", () => {
+        // forcedEmptyFromEdges refuses both of these (comment: "Run touches an Unknown → it might
+        // still grow, so it isn't confirmed") — but a single/last clue whose run already matches
+        // its exact length CAN'T grow without breaking the count or the length, regardless of
+        // whether its far side happens to be marked Empty yet. between correctly uses that.
+        expect(forcedEmptyFromEdges([3], cells("###...."))).toEqual([]);
+        expect(resolveLine([3], cells("###....")).between).toEqual([3, 4, 5, 6]);
+        expect(forcedEmptyFromEdges([2, 1], cells("......#x"))).toEqual([]);
+        expect(resolveLine([2, 1], cells("......#x")).between).toEqual([]); // clue 0 still fully open
+      });
+
+      it("crosses the gap on both sides of a central anchor that's next from the edge either way", () => {
+        // clue [2]: the run is delimited and the sole clue, so it's anchored centrally — and since
+        // it's necessarily clue 0 (there's only one clue), nothing else can be in the leading or
+        // trailing gap either. forcedEmptyFromEdges couldn't reach any of this (it never even sees
+        // a confirmed run, since neither edge scan gets past the leading Unknown cells).
+        const { dim, between } = resolveLine([2], cells("...x##x.."));
+        expect(dim).toEqual([true]);
+        expect(between).toEqual([0, 1, 2, 7, 8]);
+      });
+
+      it("only crosses the side where every earlier/later clue is already accounted for", () => {
+        // clue [3, 2]: the "2" anchors centrally and is the LAST clue, so its trailing gap (nothing
+        // can follow it) is safe — but its leading gap isn't, since the "3" hasn't been placed yet.
+        expect(resolveLine([3, 2], cells("...x##x...")).between).toEqual([7, 8, 9]);
+        // clue [3, 2, 3]: now the "2" has an unresolved clue on BOTH sides — neither gap crosses.
+        expect(resolveLine([3, 2, 3], cells("....x##x....")).between).toEqual([]);
+      });
+
+      it("does not use a guess (allowUndelimited) anchor to cross a between-gap", () => {
+        // The "5" only anchors via the undelimited/guess rule here; between must ignore it even
+        // though it's technically clue 0 with nothing else possible before or after it — a guess
+        // is provisional, and between's job is only ever to state hard, permanent facts.
+        const { dim, between } = resolveLine([5], cells("..#####..."), { allowUndelimited: true });
+        expect(dim).toEqual([true]);
+        expect(between).toEqual([]);
+      });
+    });
   });
 
   it("flags structurally impossible puzzles", () => {
