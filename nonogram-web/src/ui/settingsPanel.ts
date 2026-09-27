@@ -277,11 +277,12 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
       () => s.showTimer,
     ),
     colorRow(
-      "Page background",
+      "Canvas background",
       () => s.colors.pageBg,
       (v) => (s.colors.pageBg = v),
       () => paletteFor(s, deps.getTheme()).canvasBg,
     ),
+    h("p", { class: "note" }, "Behind the puzzle frame only — not the header, settings, dialogs, or the start page."),
     colorRow("Unknown cell", () => s.colors.unknown, (v) => (s.colors.unknown = v), () => paletteFor(s, deps.getTheme()).unknown),
     colorRow("Filled cell", () => s.colors.filled, (v) => (s.colors.filled = v), () => paletteFor(s, deps.getTheme()).filled),
     colorRow("Empty (crossed) cell", () => s.colors.empty, (v) => (s.colors.empty = v), () => paletteFor(s, deps.getTheme()).empty),

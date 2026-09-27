@@ -49,8 +49,9 @@ export interface Settings {
     empty: string | null;
     clueBg: string | null;
     sumBg: string | null;
-    /** The page background — everywhere around the puzzle (header, settings drawer, dialogs, and
-     *  the canvas margin the frame pans around in), not any part of the puzzle's own look. */
+    /** The canvas background behind the puzzle frame — where the frame pans around, outside the
+     *  grid/clues/sums themselves. Not any part of the puzzle's own look, and not the rest of the
+     *  app's chrome (header, settings drawer, dialogs, the home page) — those stay themed. */
     pageBg: string | null;
   };
   icons: { filled: IconKind; empty: IconKind };
