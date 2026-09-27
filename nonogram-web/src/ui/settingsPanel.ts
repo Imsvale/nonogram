@@ -276,6 +276,12 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
       "Switching tabs, minimizing, or switching to another app.",
       () => s.showTimer,
     ),
+    colorRow(
+      "Page background",
+      () => s.colors.pageBg,
+      (v) => (s.colors.pageBg = v),
+      () => paletteFor(s, deps.getTheme()).canvasBg,
+    ),
     colorRow("Unknown cell", () => s.colors.unknown, (v) => (s.colors.unknown = v), () => paletteFor(s, deps.getTheme()).unknown),
     colorRow("Filled cell", () => s.colors.filled, (v) => (s.colors.filled = v), () => paletteFor(s, deps.getTheme()).filled),
     colorRow("Empty (crossed) cell", () => s.colors.empty, (v) => (s.colors.empty = v), () => paletteFor(s, deps.getTheme()).empty),

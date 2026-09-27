@@ -198,8 +198,14 @@ export function startApp(root: HTMLElement): AppHandle {
   function applyTheme(): void {
     theme = resolveTheme(settings.theme);
     document.documentElement.dataset.theme = theme;
+    // The page background (everywhere around the puzzle, not any part of its own look) is the
+    // one color override that lives outside the canvas palette — push it as the CSS variable
+    // every chrome surface (header, drawer, dialogs) already reads, or clear it for the default.
+    const pageBg = settings.colors.pageBg;
+    if (pageBg) document.documentElement.style.setProperty("--bg", pageBg);
+    else document.documentElement.style.removeProperty("--bg");
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", theme === "dark" ? "#181b22" : "#ffffff");
+    if (meta) meta.setAttribute("content", pageBg ?? (theme === "dark" ? "#181b22" : "#ffffff"));
   }
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
     if (settings.theme === "system") {

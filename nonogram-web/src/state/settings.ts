@@ -44,6 +44,9 @@ export interface Settings {
     empty: string | null;
     clueBg: string | null;
     sumBg: string | null;
+    /** The page background — everywhere around the puzzle (header, settings drawer, dialogs, and
+     *  the canvas margin the frame pans around in), not any part of the puzzle's own look. */
+    pageBg: string | null;
   };
   icons: { filled: IconKind; empty: IconKind };
   /** Marker colors; `null` = automatic (contrasts with the cell). */
@@ -110,7 +113,7 @@ export const FULLSCREEN_KEYS = ["f", "g", "h", "z", "F9", "F10", "F12"] as const
 export function defaultSettings(): Settings {
   return {
     theme: "system",
-    colors: { unknown: null, filled: null, empty: null, clueBg: null, sumBg: null },
+    colors: { unknown: null, filled: null, empty: null, clueBg: null, sumBg: null, pageBg: null },
     icons: { filled: "none", empty: "x" },
     iconColors: { filled: null, empty: null },
     assist: {
@@ -183,6 +186,7 @@ export function paletteFor(s: Settings, theme: ResolvedTheme): Palette {
     empty: s.colors.empty ?? base.empty,
     clueBg: s.colors.clueBg ?? base.clueBg,
     sumBg: s.colors.sumBg ?? base.sumBg,
+    canvasBg: s.colors.pageBg ?? base.canvasBg,
   };
 }
 
