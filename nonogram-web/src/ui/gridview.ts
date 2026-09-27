@@ -2,6 +2,7 @@ import type { Game, PaintAction } from "../state/game";
 import { paletteFor, type ResolvedTheme, type Settings } from "../state/settings";
 import { computeLayout, fitCellSize, hitTest, viewportOk, type Hit, type Layout } from "./geometry";
 import { minimapGeometry, NO_HOVER, render, type HoverState } from "./render";
+import { EMPTY_SELECTION, selectDrag, selectPress, type SelectionState } from "./selection";
 
 export interface GridViewDeps {
   getSettings(): Settings;
@@ -61,7 +62,31 @@ export class GridView {
   private hover: HoverState = NO_HOVER;
   private hoverKey = "";
   private pointers = new Map<number, Pt & { type: string }>();
-  private drag: "none" | "stroke" | "pan" | "minimap" = "none";
+  private drag: "none" | "stroke" | "pan" | "minimap" | "select" = "none";
+
+  // ── Selection tool ──────────────────────────────────────────────────────────
+  // A view-only concern: never touches Game, never saved, doesn't care about cell contents. The
+  // Shift/Ctrl/Ctrl+Shift combining logic itself lives in ./selection (pure, unit-tested).
+  private _selectMode = false;
+  private selState: SelectionState = EMPTY_SELECTION;
+
+  get selectMode(): boolean {
+    return this._selectMode;
+  }
+  set selectMode(v: boolean) {
+    if (this._selectMode === v) return;
+    this._selectMode = v;
+    if (!v && this.drag === "select") this.drag = "none";
+    this.updateCursor();
+  }
+  get hasSelection(): boolean {
+    return this.selState.rects.length > 0;
+  }
+  clearSelection(): void {
+    if (!this.selState.rects.length) return;
+    this.selState = EMPTY_SELECTION;
+    this.requestRender();
+  }
   /** `click` runs on release if the pointer never moved (a clue that was clicked rather than dragged). */
   private panStart: {
     px: number;
@@ -130,6 +155,7 @@ export class GridView {
     this.panX = this.panY = 0;
     this.offX = this.offY = 0;
     this.autoFit = true;
+    this.clearSelection();
     if (game) {
       this.unsub = game.subscribe(() => this.requestRender());
       this.C = fitCellSize(game.puzzle, this.W, this.H, undefined, undefined, this.showSums);
@@ -209,6 +235,7 @@ export class GridView {
       theme,
       palette: paletteFor(settings, theme),
       hover: this.hover,
+      selection: this.selState.rects,
     });
   }
 
@@ -329,9 +356,13 @@ export class GridView {
 
     switch (hit.kind) {
       case "cell": {
-        const settings = this.deps.getSettings();
-        game.startStroke(hit.r, hit.c, this.paintAction(e), settings.assist.axisLock);
-        this.drag = "stroke";
+        if (this._selectMode) {
+          this.beginSelectDrag(hit.r, hit.c, e);
+        } else {
+          const settings = this.deps.getSettings();
+          game.startStroke(hit.r, hit.c, this.paintAction(e), settings.assist.axisLock);
+          this.drag = "stroke";
+        }
         this.setHover(this.hoverFor(hit));
         break;
       }
@@ -365,6 +396,12 @@ export class GridView {
     }
   }
 
+  private beginSelectDrag(r: number, c: number, e: PointerEvent): void {
+    this.selState = selectPress(this.selState, [r, c], { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey });
+    this.drag = "select";
+    this.requestRender();
+  }
+
   private onPointerMove(e: PointerEvent): void {
     const game = this.game;
     if (!game) return;
@@ -392,6 +429,15 @@ export class GridView {
       case "minimap": {
         const L = this.layout()!;
         this.minimapJump(pt.x - L.originX, pt.y - L.originY);
+        return;
+      }
+      case "select": {
+        const L = this.layout()!;
+        const [r, c] = this.clampedCell(L, pt.x, pt.y);
+        this.selState = selectDrag(this.selState, [r, c]);
+        this.requestRender();
+        this.setHover({ ...NO_HOVER, cell: [r, c] });
+        this.maybeAutoScroll();
         return;
       }
       default:
@@ -461,7 +507,7 @@ export class GridView {
     if (this.drag === "pan") cursor = "grabbing";
     else if (this.spaceHeld) cursor = "grab";
     else if (hit) {
-      if (hit.kind === "cell") cursor = "default";
+      if (hit.kind === "cell") cursor = this._selectMode ? "crosshair" : "default";
       else if (hit.kind === "colClue" || hit.kind === "rowClue" || hit.kind === "minimap" || hit.kind === "sumToggle") cursor = "pointer";
       else if (hit.kind === "colHead" || hit.kind === "rowHead" || hit.kind === "none") cursor = "grab";
     }

@@ -1,5 +1,5 @@
 import { clueTotal } from "../core/lines";
-import { EMPTY, FILLED, type Grid, type Puzzle } from "../core/types";
+import { EMPTY, FILLED, UNKNOWN, type Grid, type Puzzle } from "../core/types";
 
 /** Cell size from which the heavy separators / 5-cell lines are drawn 2px thick; smaller cells use 1px. */
 export const HEAVY_LINE_MIN_CELL = 22;
@@ -236,6 +236,53 @@ export function computeHoverRuns(grid: Grid, w: number, h: number, hr: number, h
   return {
     h: { fixed: hr, start: hs, end: he, hover: hc, filled },
     v: { fixed: hc, start: vs, end: ve, hover: hr, filled },
+  };
+}
+
+export interface EmptyRunLabel {
+  /** Row (for a horizontal run) or column (for a vertical run) the run lies in. */
+  fixed: number;
+  /** Cell index (column or row, matching axis) to put the count in — always Unknown. */
+  at: number;
+  length: number;
+}
+
+export interface EmptyRunLabels {
+  h: EmptyRunLabel | null;
+  v: EmptyRunLabel | null;
+}
+
+/**
+ * The hovered cell's maximal run of Empty cells, per axis — but only when that run is anchored to
+ * one of the line's own edges (touches position 0 or the far end), and only ever reported at the
+ * single Unknown cell just past the run's *other*, non-edge end. Unlike `computeHoverRuns`, an
+ * interior Empty run (touching neither edge) is deliberately not reported: its length isn't a
+ * useful boundary the way "this many cells from the edge are excluded" is.
+ */
+export function computeEmptyRunLabels(grid: Grid, w: number, h: number, hr: number, hc: number): EmptyRunLabels {
+  if (hr < 0 || hc < 0 || hr >= h || hc >= w || grid[hr * w + hc] !== EMPTY) return { h: null, v: null };
+
+  const along = (fixed: number, start: number, end: number, len: number, at: (i: number) => number): EmptyRunLabel | null => {
+    const touchesNear = start === 0;
+    const touchesFar = end === len - 1;
+    if (touchesNear === touchesFar) return null; // neither edge, or the whole line — no boundary to mark
+    const labelAt = touchesNear ? end + 1 : start - 1; // always in bounds, given the check above
+    if (grid[at(labelAt)] !== UNKNOWN) return null;
+    return { fixed, at: labelAt, length: end - start + 1 };
+  };
+
+  let hs = hc;
+  while (hs > 0 && grid[hr * w + hs - 1] === EMPTY) hs--;
+  let he = hc;
+  while (he + 1 < w && grid[hr * w + he + 1] === EMPTY) he++;
+  let vs = hr;
+  while (vs > 0 && grid[(vs - 1) * w + hc] === EMPTY) vs--;
+  let ve = hr;
+  while (ve + 1 < h && grid[(ve + 1) * w + hc] === EMPTY) ve++;
+
+  return {
+    h: along(hr, hs, he, w, (i) => hr * w + i),
+    v: along(hc, vs, ve, h, (i) => i * w + hc),
   };
 }
 

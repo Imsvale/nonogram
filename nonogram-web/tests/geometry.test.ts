@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SAMPLES } from "../src/core/samples";
-import { computeHoverRuns, computeLayout, fitCellSize, FOOTER_RESERVE, hitTest, hoverLabelVisible, MARGIN, MARGIN_TOP, viewportOk } from "../src/ui/geometry";
-import { FILLED, UNKNOWN } from "../src/core/types";
+import { computeEmptyRunLabels, computeHoverRuns, computeLayout, fitCellSize, FOOTER_RESERVE, hitTest, hoverLabelVisible, MARGIN, MARGIN_TOP, viewportOk } from "../src/ui/geometry";
+import { EMPTY, FILLED, UNKNOWN } from "../src/core/types";
 
 const p = SAMPLES[1]; // Heart 10×10
 
@@ -51,6 +51,43 @@ describe("hover runs", () => {
     expect(computeHoverRuns(g, w, h, 0, 0)).toEqual({ h: null, v: null });
     const u = computeHoverRuns(g, w, h, 2, 0);
     expect(u.h).toMatchObject({ start: 0, end: 4, filled: false });
+  });
+});
+
+describe("empty-run edge labels", () => {
+  const row = (s: string) => Uint8Array.from(s, (ch) => (ch === "#" ? FILLED : ch === "x" ? EMPTY : UNKNOWN));
+
+  it("is null unless the hovered cell is itself Empty", () => {
+    expect(computeEmptyRunLabels(row("x.#"), 3, 1, 0, 1)).toEqual({ h: null, v: null }); // Unknown
+    expect(computeEmptyRunLabels(row("x.#"), 3, 1, 0, 2)).toEqual({ h: null, v: null }); // Filled
+  });
+
+  it("labels the Unknown cell past the run's far end, when the run touches the near edge", () => {
+    const g = row("xxx..#"); // run [0,2] touches col 0; next cell (3) is Unknown
+    expect(computeEmptyRunLabels(g, 6, 1, 0, 1)).toEqual({ h: { fixed: 0, at: 3, length: 3 }, v: null });
+  });
+
+  it("labels the Unknown cell past the run's near end, when the run touches the far edge", () => {
+    const g = row("#..xxx"); // run [3,5] touches the far edge; the cell before it (2) is Unknown
+    expect(computeEmptyRunLabels(g, 6, 1, 0, 4)).toEqual({ h: { fixed: 0, at: 2, length: 3 }, v: null });
+  });
+
+  it("is null for a run touching neither edge, or the whole line", () => {
+    expect(computeEmptyRunLabels(row("#.xxx.#"), 7, 1, 0, 3).h).toBeNull(); // interior run
+    expect(computeEmptyRunLabels(row("xxxx"), 4, 1, 0, 2).h).toBeNull(); // whole line — no boundary cell
+  });
+
+  it("is null when the cell past the run isn't Unknown (e.g. Filled)", () => {
+    expect(computeEmptyRunLabels(row("xxx#."), 5, 1, 0, 1).h).toBeNull();
+  });
+
+  it("computes each axis independently, from the same hovered cell", () => {
+    const w = 3, h = 5;
+    const g = new Uint8Array(w * h).fill(UNKNOWN);
+    for (const r of [0, 1, 2]) g[r * w + 1] = EMPTY; // vertical run, col 1, rows 0-2, touches the top
+    const labels = computeEmptyRunLabels(g, w, h, 1, 1);
+    expect(labels.h).toBeNull(); // row 1 is just this one Empty cell, flanked by Unknown on both sides
+    expect(labels.v).toEqual({ fixed: 1, at: 3, length: 3 }); // touches the top edge; row 3 is Unknown
   });
 });
 

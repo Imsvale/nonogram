@@ -5,6 +5,7 @@ import {
   HOVER_RUN_TINT,
   MINIMAP_VIEWPORT,
   RUN_LABEL_INK,
+  SELECTION_INK,
   TRIAL_ORIGIN_INK,
   trialEmpty,
   trialFilled,
@@ -13,8 +14,9 @@ import {
 } from "../state/colors";
 import type { ResolvedTheme, Settings, SubcellKind } from "../state/settings";
 import { contrastOn, hoverShade, huedInk, luminance, mix, rgba } from "./color";
-import { computeHoverRuns, hoverLabelVisible, type HoverRun, type Layout } from "./geometry";
+import { computeEmptyRunLabels, computeHoverRuns, hoverLabelVisible, type HoverRun, type Layout } from "./geometry";
 import { drawIcon } from "./icons";
+import type { SelRect } from "./selection";
 
 export interface HoverState {
   cell: Pos | null;
@@ -43,6 +45,7 @@ export interface RenderInput {
   theme: ResolvedTheme;
   palette: Palette;
   hover: HoverState;
+  selection: readonly SelRect[];
 }
 
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -56,6 +59,7 @@ export function render(inp: RenderInput): void {
 
   const x = new Draw(inp);
   x.cells();
+  x.selection();
   x.colClues();
   x.rowClues();
   x.sums();
@@ -223,6 +227,59 @@ class Draw {
     // 6. Run-length labels
     if (runs.h || runs.v) this.runLabels(runs.h, runs.v, hc!);
 
+    // 7. Crossed-out (Empty) run edge labels — independent of 6: computeHoverRuns excludes Empty,
+    // since it's a wholly different question ("how far does this excluded zone reach the edge").
+    if (this.s.runLength.showCrossedRun && hc) this.emptyRunLabel(hc);
+
+    ctx.restore();
+  }
+
+  /** The Selection tool's marquee: a tinted, dashed-outline rectangle per selected region, each
+   *  labeled with its own W × H — it doesn't care what's under it, so this just overlays cells(). */
+  selection(): void {
+    const sel = this.inp.selection;
+    if (!sel.length) return;
+    const { ctx, L, C } = this;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(L.ox, L.oy, L.cw, L.ch);
+    ctx.clip();
+
+    for (const s of sel) {
+      const c0 = Math.max(s.c0, this.c0);
+      const c1 = Math.min(s.c1, this.c1);
+      const r0 = Math.max(s.r0, this.r0);
+      const r1 = Math.min(s.r1, this.r1);
+      if (c0 > c1 || r0 > r1) continue; // this rectangle is entirely outside the visible viewport
+      const x = this.cx(c0);
+      const y = this.cy(r0);
+      const w = this.cx(c1) + C - x;
+      const h = this.cy(r1) + C - y;
+
+      ctx.fillStyle = rgba(SELECTION_INK, 0.14);
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = SELECTION_INK;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+      ctx.setLineDash([]);
+
+      const label = `${s.c1 - s.c0 + 1} × ${s.r1 - s.r0 + 1}`;
+      const fs = Math.max(11, Math.round(C * 0.4));
+      ctx.font = `bold ${fs}px ${FONT}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const bw = ctx.measureText(label).width + 14;
+      const bh = fs + 8;
+      const bx = x + w / 2;
+      const by = y + h / 2;
+      ctx.fillStyle = SELECTION_INK;
+      ctx.beginPath();
+      ctx.roundRect(bx - bw / 2, by - bh / 2, bw, bh, 4);
+      ctx.fill();
+      ctx.fillStyle = contrastOn(SELECTION_INK);
+      ctx.fillText(label, bx, by + 0.5);
+    }
     ctx.restore();
   }
 
@@ -392,6 +449,31 @@ class Draw {
     for (let c = this.c0; c <= this.c1; c++) if (hovR >= this.r0 && hovR <= this.r1) labelCell(hovR, c);
     for (let r = this.r0; r <= this.r1; r++) if (r !== hovR && hovC >= this.c0 && hovC <= this.c1) labelCell(r, hovC);
     ctx.textBaseline = "middle";
+  }
+
+  /** The length of a crossed-out run anchored to one of the line's own edges, shown in the
+   *  Unknown cell just past its other end (see `computeEmptyRunLabels`) — the run itself is
+   *  excluded space, so the count goes on the neighboring cell instead of on the run. */
+  private emptyRunLabel(hover: Pos): void {
+    const { ctx, C, w, h, s, inp } = this;
+    const { grid, tierMap } = inp;
+    const rl = s.runLength;
+    const labels = computeEmptyRunLabels(grid, w, h, hover[0], hover[1]);
+    if (!labels.h && !labels.v) return;
+
+    const size = Math.max(7, rl.numSize * (C / 26));
+    ctx.font = `${size}px ${FONT}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    const draw = (r: number, c: number, length: number) => {
+      if (length < rl.crossedRunThreshold) return;
+      const bg = this.stateColor(grid[r * w + c], tierMap[r * w + c]);
+      ctx.fillStyle = luminance(bg) > 0.5 ? RUN_LABEL_INK.adjOnLight : RUN_LABEL_INK.adjOnDark;
+      ctx.fillText(String(length), this.cx(c) + C / 2, this.cy(r) + C / 2 + 0.5);
+    };
+    if (labels.h) draw(labels.h.fixed, labels.h.at, labels.h.length);
+    if (labels.v) draw(labels.v.at, labels.v.fixed, labels.v.length);
   }
 
   // ── Clue strips ───────────────────────────────────────────────────────────

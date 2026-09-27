@@ -88,3 +88,6 @@ export const RUN_LABEL_INK = {
 
 /** Outline of the visible region on the minimap when zoomed in. */
 export const MINIMAP_VIEWPORT = "#ff8c1a";
+
+/** The Selection tool's marquee (fill tint + dashed outline) and its dimension label's badge. */
+export const SELECTION_INK = "#22d3ee";

@@ -303,6 +303,8 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     ),
     segRow<"zoom" | "scroll">("Mouse wheel", [["zoom", "Zoom"], ["scroll", "Scroll"]], () => s.wheelMode, (v) => (s.wheelMode = v)),
     h("p", { class: "note" }, "Scroll moves the grid up and down (Shift: sideways) and needs Ctrl to zoom."),
+    segRow<"hold" | "toggle">("Selection tool key (S)", [["hold", "Hold"], ["toggle", "Toggle"]], () => s.selectToolMode, (v) => (s.selectToolMode = v)),
+    h("p", { class: "note" }, "Hold: S activates it only while held down. Toggle: press once to switch it on, again (or the button) to switch it off."),
     check("Lock the puzzle's position", () => s.lockFrame, (v) => (s.lockFrame = v), "Dragging then only scrolls the grid inside the frame; the frame stays where it is. (L)"),
     range("100% zoom is a cell size of", 12, 60, 1, () => s.zoomReference, (v) => (s.zoomReference = v), (v) => `${v} px`),
   );
@@ -406,6 +408,14 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
       rl.fourDirLabels = v;
       if (v) rl.adjLabelEnabled = false;
     }, "Cells to the left / right / above / below the pointer, within its run."),
+    h("p", { class: "note" }, "The above are all about Filled (or blank) runs. This one's about crossed-out runs instead:"),
+    check(
+      "Show a crossed-out run's length at the edge",
+      () => rl.showCrossedRun,
+      (v) => (rl.showCrossedRun = v),
+      "While hovering a crossed-out run anchored to the edge of the line, show its length in the Unknown cell just past its other end.",
+    ),
+    range("…if at least", 1, 20, 1, () => rl.crossedRunThreshold, (v) => (rl.crossedRunThreshold = v)),
     h("div", { class: "row stack" }, h("span", {}, "Hover label placement (click: empty → H → V)"), subcellGrid),
     h("p", { class: "note" }, "Start/end labels always hug the outer edge of the run; this only positions the one under the pointer."),
     range("Label size", 6, 16, 1, () => rl.numSize, (v) => (rl.numSize = v), (v) => `${v}px`),
@@ -428,6 +438,7 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
           ["L", "Lock / unlock the puzzle's position"],
           ["T", "Enter trial (again: nested tier)"],
           ["A / R", "Accept / reject trial tier"],
+          ["S", "Selection tool — hold or toggle, see Mouse & zoom. Shift/Ctrl/Ctrl+Shift extend, add, or extend-and-keep others"],
           ["+ / − / 0", "Zoom in / out / fit"],
           ["Mouse wheel", "Zoom, or scroll the grid (see Mouse & zoom); Ctrl always zooms, Shift scrolls sideways"],
           ["Drag outside the grid", "Pan (clue strips, sums, blank space)"],

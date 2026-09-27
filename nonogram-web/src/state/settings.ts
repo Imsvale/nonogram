@@ -22,6 +22,11 @@ export interface RunLengthSettings {
   fourDirLabels: boolean;
   /** Tint the run of blank cells under the pointer; only used while the crosshair is off. */
   highlightEmptyRuns: boolean;
+  /** Show the length of a crossed-out (Empty) run, when it's anchored to one of the line's own
+   *  edges — in the Unknown cell just past its other end, since an edge-anchored run has nowhere
+   *  else to show it. Unlike the other indicators above, this is about Empty runs, not Filled ones. */
+  showCrossedRun: boolean;
+  crossedRunThreshold: number;
   /** 3×3 grid; each subcell hosts the horizontal run length, the vertical one, or nothing. */
   subcells: SubcellKind[][];
   numSize: number;
@@ -106,6 +111,9 @@ export interface Settings {
   /** Keep the puzzle frame where it is; dragging then only scrolls the grid inside it. */
   lockFrame: boolean;
   headerHidden: boolean;
+  /** How the Selection tool's hotkey (S) behaves: `hold` activates it only while held, reverting
+   *  to whatever was active before on release; `toggle` switches it on/off like the button does. */
+  selectToolMode: "hold" | "toggle";
 }
 
 export const FULLSCREEN_KEYS = ["f", "g", "h", "z", "F9", "F10", "F12"] as const;
@@ -148,6 +156,8 @@ export function defaultSettings(): Settings {
       adjLabelVPreferAfter: true,
       fourDirLabels: false,
       highlightEmptyRuns: true,
+      showCrossedRun: false,
+      crossedRunThreshold: 1,
       subcells: [
         ["e", "e", "v"],
         ["e", "e", "e"],
@@ -167,6 +177,7 @@ export function defaultSettings(): Settings {
     zoomReference: 26,
     lockFrame: false,
     headerHidden: false,
+    selectToolMode: "hold",
   };
 }
 

@@ -29,6 +29,10 @@ export function startApp(root: HTMLElement): AppHandle {
   let unsubGame: (() => void) | null = null;
   let wasSolved = false;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  // Selection tool's "hold" hotkey mode: true while S is physically down for a temporary
+  // activation, remembering what selectMode was before so releasing restores it.
+  let selectHeld = false;
+  let selectPreHold = false;
 
   // ── Static DOM ───────────────────────────────────────────────────────────
 
@@ -87,6 +91,11 @@ export function startApp(root: HTMLElement): AppHandle {
   // Footer: sits centered under the puzzle frame (positioned from the layout).
   const undoBtn = h("button", { class: "btn sm icon-only", type: "button", title: "Undo (Ctrl+Z)", "aria-label": "Undo" }, icon("undo", 16));
   const redoBtn = h("button", { class: "btn sm icon-only", type: "button", title: "Redo (Ctrl+Y)", "aria-label": "Redo" }, icon("redo", 16));
+  const selectBtn = h(
+    "button",
+    { class: "btn sm icon-only", type: "button", title: "Selection tool: measure any area, regardless of what's in it (S)", "aria-label": "Selection tool" },
+    icon("select", 16),
+  );
   const tierEl = h("span", { class: "tier" });
   const trialReject = h("button", { class: "btn sm reject icon-only", type: "button", title: "Reject: discard this trial tier (R)", "aria-label": "Reject trial" }, icon("x", 15));
   const trialEnter = h("button", { class: "btn sm", type: "button", title: "Start a trial: guess, and keep or discard it later (T)" }, "Trial");
@@ -96,6 +105,7 @@ export function startApp(root: HTMLElement): AppHandle {
     "div",
     { id: "footer" },
     h("div", { class: "group" }, undoBtn, redoBtn),
+    h("div", { class: "group" }, selectBtn),
     h("div", { class: "group trial" }, tierEl, trialReject, trialEnter, trialAccept),
   );
 
@@ -342,6 +352,7 @@ export function startApp(root: HTMLElement): AppHandle {
   // told apart from here, so there's no point offering that split as a separate choice).
   window.addEventListener("blur", () => {
     if (settings.pauseOnAway) game?.pauseTimer();
+    endSelectHold();
   });
 
   function onGameChange(): void {
@@ -412,6 +423,9 @@ export function startApp(root: HTMLElement): AppHandle {
     const g = game;
     undoBtn.disabled = !g?.canUndo;
     redoBtn.disabled = !g?.canRedo;
+    selectBtn.disabled = !g;
+    selectBtn.classList.toggle("on", gridView.selectMode);
+    selectBtn.setAttribute("aria-pressed", String(gridView.selectMode));
     const tiers = g?.trial.length ?? 0;
     trialEnter.textContent = tiers === 0 ? "Trial" : "+1";
     trialReject.disabled = tiers === 0;
@@ -497,6 +511,7 @@ export function startApp(root: HTMLElement): AppHandle {
   restartBtn.addEventListener("blur", disarmRestart);
   undoBtn.addEventListener("click", () => game?.undo());
   redoBtn.addEventListener("click", () => game?.redo());
+  selectBtn.addEventListener("click", () => toggleSelectMode());
   zoomReadout.addEventListener("click", () => gridView.setCellSize(settings.zoomReference));
   headerTab.addEventListener("click", () => setHeaderHidden(!settings.headerHidden));
   trialEnter.addEventListener("click", () => game?.enterTrial());
@@ -514,6 +529,22 @@ export function startApp(root: HTMLElement): AppHandle {
     settingsChanged();
     settingsPanel.refresh();
     toast(`Left button now ${settings.primaryMode === "fill" ? "fills" : "marks"}`);
+  }
+
+  function setSelectMode(v: boolean): void {
+    if (gridView.selectMode === v) return;
+    gridView.selectMode = v;
+    refreshControls();
+  }
+  function toggleSelectMode(): void {
+    setSelectMode(!gridView.selectMode);
+  }
+  /** Called on keyup ("s") and on window blur, so a hold released outside the window (e.g.
+   *  Alt-Tab while still holding it down) doesn't leave the tool stuck on. */
+  function endSelectHold(): void {
+    if (!selectHeld) return;
+    selectHeld = false;
+    setSelectMode(selectPreHold);
   }
 
   // ── Share / export menu ──────────────────────────────────────────────────
@@ -799,6 +830,7 @@ export function startApp(root: HTMLElement): AppHandle {
     if (e.key === "Escape") {
       if (!shareMenu.hidden) closeShare();
       else if (!settingsDrawer.hidden) toggleSettings(false);
+      else if (gridView.hasSelection) gridView.clearSelection();
       return;
     }
     if (!game) return;
@@ -849,6 +881,15 @@ export function startApp(root: HTMLElement): AppHandle {
       case "r":
         game.rejectTrial();
         break;
+      case "s":
+        if (e.repeat) break;
+        if (settings.selectToolMode === "toggle") toggleSelectMode();
+        else {
+          selectHeld = true;
+          selectPreHold = gridView.selectMode;
+          setSelectMode(true);
+        }
+        break;
       case "+":
       case "=":
         gridView.zoomIn();
@@ -864,6 +905,9 @@ export function startApp(root: HTMLElement): AppHandle {
         return;
     }
     e.preventDefault();
+  });
+  window.addEventListener("keyup", (e) => {
+    if (e.key.toLowerCase() === "s") endSelectHold();
   });
 
   // ── Boot ─────────────────────────────────────────────────────────────────

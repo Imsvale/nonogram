@@ -131,7 +131,8 @@ small {
   padding: 0;
   width: 34px;
 }
-.icon-btn.on {
+.icon-btn.on,
+.btn.on {
   background: var(--accent);
   color: var(--accent-text);
 }
