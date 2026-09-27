@@ -135,15 +135,22 @@ class Draw {
     return Math.round(v * d) / d;
   }
 
+  /** A floor, not a fixed value: major always renders at least 1px heavier than minor, at every
+   *  zoom level, whatever the two settings are — no more of the old size-threshold toggle where
+   *  both could round down to the same single device pixel at a small cell size. */
+  private majorLineWidth(): number {
+    return Math.max(this.s.majorLineThickness, this.s.minorLineThickness + 1);
+  }
+
   // Lines are snapped to device pixels: a 1px line centered on a pixel boundary
   // smears over two pixels and reads as thicker and grayer than it should.
   private vline(x: number, y0: number, y1: number, major: boolean): void {
-    const t = this.thick(major ? this.L.m.sep : 1);
+    const t = this.thick(major ? this.majorLineWidth() : this.s.minorLineThickness);
     this.ctx.fillStyle = major ? this.pal.borderMaj : this.pal.borderMin;
     this.ctx.fillRect(this.snap(x - t / 2), y0, t, y1 - y0);
   }
   private hline(y: number, x0: number, x1: number, major: boolean): void {
-    const t = this.thick(major ? this.L.m.sep : 1);
+    const t = this.thick(major ? this.majorLineWidth() : this.s.minorLineThickness);
     this.ctx.fillStyle = major ? this.pal.borderMaj : this.pal.borderMin;
     this.ctx.fillRect(x0, this.snap(y - t / 2), x1 - x0, t);
   }
@@ -666,8 +673,8 @@ class Draw {
     const { m } = L;
     const right = L.ox + L.cw + m.rightW;
     const bottom = L.oy + L.ch + m.bottomH;
-    // Same thickness as the 5-cell grid lines, so a border never reads heavier than they do.
-    const t = this.thick(m.sep);
+    // Same thickness as the major (5-cell) grid lines, so a border never reads lighter than them.
+    const t = this.thick(this.majorLineWidth());
     ctx.fillStyle = pal.borderMaj;
     ctx.fillRect(this.snap(L.ox - t), L.originY, t, bottom - L.originY); // left of cells
     ctx.fillRect(L.originX, this.snap(L.oy - t), right - L.originX, t); // above cells

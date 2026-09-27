@@ -9,7 +9,7 @@ import { Game } from "../state/game";
 import { deleteProgress, listRecent, loadProgress, progressFraction, resumeCandidate, saveProgress, setLastOpen } from "../state/progress";
 import { defaultSettings, loadSettings, resolveTheme, saveSettings, saveSettingsNow, type ResolvedTheme, type Settings } from "../state/settings";
 import { append, clear, copyText, downloadText, formatTime, h, icon } from "./dom";
-import { HEAVY_LINE_MIN_CELL, type Layout } from "./geometry";
+import type { Layout } from "./geometry";
 import { closeColorPicker } from "./colorPicker";
 import { GridView } from "./gridview";
 import { buildSettingsPanel } from "./settingsPanel";
@@ -432,10 +432,7 @@ export function startApp(root: HTMLElement): AppHandle {
     const cell = gridView.cellSize;
     const ref = settings.zoomReference;
     zoomReadout.textContent = `${Math.round((cell / ref) * 100)}%`;
-    zoomReadout.title =
-      `Zoom ${Math.round((cell / ref) * 100)}%: cells are ${cell} px (100% = ${ref} px, change it in Settings).
-` +
-      `Click to return to 100%. Grid lines are 1 px below ${HEAVY_LINE_MIN_CELL} px cells.`;
+    zoomReadout.title = `Zoom ${Math.round((cell / ref) * 100)}%: cells are ${cell} px (100% = ${ref} px, change it in Settings). Click to return to 100%.`;
   }
 
   // ── Notices & toasts ─────────────────────────────────────────────────────
@@ -522,7 +519,7 @@ export function startApp(root: HTMLElement): AppHandle {
     settings.primaryMode = settings.primaryMode === "fill" ? "mark" : "fill";
     settingsChanged();
     settingsPanel.refresh();
-    toast(`Left button now ${settings.primaryMode === "fill" ? "fills" : "marks"}`);
+    toast(`Primary now ${settings.primaryMode === "fill" ? "paints" : "crosses"}`);
   }
 
   function setSelectMode(v: boolean): void {

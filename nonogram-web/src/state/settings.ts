@@ -53,10 +53,20 @@ export interface Settings {
      *  grid/clues/sums themselves. Not any part of the puzzle's own look, and not the rest of the
      *  app's chrome (header, settings drawer, dialogs, the home page) — those stay themed. */
     pageBg: string | null;
+    /** The ordinary cell-separator lines. */
+    minorLine: string | null;
+    /** The heavier lines every 5 cells, and the frame/strip-separator borders (kept the same
+     *  thickness as these so the frame never reads lighter than the lines it's bordering). */
+    majorLine: string | null;
   };
   icons: { filled: IconKind; empty: IconKind };
   /** Marker colors; `null` = automatic (contrasts with the cell). */
   iconColors: { filled: string | null; empty: string | null };
+  /** Grid line thickness, in CSS px before device-pixel rounding. Major is a floor, not a fixed
+   *  value: it's always drawn at least 1px thicker than minor, however the two are set — no more
+   *  of the old behavior where both could round down to the same 1 device px at a small zoom. */
+  minorLineThickness: number;
+  majorLineThickness: number;
   assist: {
     autoDim: boolean;
     autoFillEmpty: boolean;
@@ -122,9 +132,11 @@ export const FULLSCREEN_KEYS = ["f", "g", "h", "z", "F9", "F10", "F12"] as const
 export function defaultSettings(): Settings {
   return {
     theme: "system",
-    colors: { unknown: null, filled: null, empty: null, clueBg: null, sumBg: null, pageBg: null },
+    colors: { unknown: null, filled: null, empty: null, clueBg: null, sumBg: null, pageBg: null, minorLine: null, majorLine: null },
     icons: { filled: "none", empty: "x" },
     iconColors: { filled: null, empty: null },
+    minorLineThickness: 1,
+    majorLineThickness: 2,
     assist: {
       autoDim: false,
       autoFillEmpty: false,
@@ -199,6 +211,8 @@ export function paletteFor(s: Settings, theme: ResolvedTheme): Palette {
     clueBg: s.colors.clueBg ?? base.clueBg,
     sumBg: s.colors.sumBg ?? base.sumBg,
     canvasBg: s.colors.pageBg ?? base.canvasBg,
+    borderMin: s.colors.minorLine ?? base.borderMin,
+    borderMaj: s.colors.majorLine ?? base.borderMaj,
   };
 }
 

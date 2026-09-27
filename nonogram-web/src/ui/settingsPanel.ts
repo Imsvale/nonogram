@@ -290,17 +290,26 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     iconPicker("Empty symbol and color", "empty", () => s.icons.empty, (v) => (s.icons.empty = v), () => s.iconColors.empty, (v) => (s.iconColors.empty = v)),
     colorRow("Clue background", () => s.colors.clueBg, (v) => (s.colors.clueBg = v), () => paletteFor(s, deps.getTheme()).clueBg),
     colorRow("Line-sum background", () => s.colors.sumBg, (v) => (s.colors.sumBg = v), () => paletteFor(s, deps.getTheme()).sumBg),
+    colorRow("Minor grid lines", () => s.colors.minorLine, (v) => (s.colors.minorLine = v), () => paletteFor(s, deps.getTheme()).borderMin),
+    range("Minor line thickness", 1, 6, 1, () => s.minorLineThickness, (v) => (s.minorLineThickness = v), (v) => `${v} px`),
+    colorRow("Major grid lines", () => s.colors.majorLine, (v) => (s.colors.majorLine = v), () => paletteFor(s, deps.getTheme()).borderMaj),
+    range("Major line thickness", 1, 8, 1, () => s.majorLineThickness, (v) => (s.majorLineThickness = v), (v) => `${v} px`),
+    h("p", { class: "note" }, "Major (every 5th line, and the frame) always renders at least 1px thicker than minor, whatever these two are set to."),
   );
 
   const painting = section(
     "Mouse & zoom",
-    segRow<"fill" | "mark">("Left button / tap", [["fill", "Fill"], ["mark", "Mark"]], () => s.primaryMode, (v) => (s.primaryMode = v)),
-    h("p", { class: "note" }, "The right button (or holding Shift) does the other one. Press X to swap. On a touch screen a tap cycles a cell: unknown → filled → crossed → unknown."),
-    check(
-      "Cycle for mouse/pen too",
-      () => s.cycleAnyInput,
-      (v) => (s.cycleAnyInput = v),
-      "Every click steps through the states like a touch tap does, instead of the left/right button split above (which is then unused, but kept for when you turn this back off).",
+    segRow<"double" | "single">(
+      "Input mode",
+      [["double", "Double"], ["single", "Single"]],
+      () => (s.cycleAnyInput ? "single" : "double"),
+      (v) => (s.cycleAnyInput = v === "single"),
+    ),
+    segRow<"fill" | "mark">("Primary", [["fill", "Paint"], ["mark", "Cross"]], () => s.primaryMode, (v) => (s.primaryMode = v)),
+    h(
+      "p",
+      { class: "note" },
+      "Double (two-button, like a mouse): the other button (or Shift) does the opposite of Primary; press X to swap which one is primary. Single: every click cycles unknown → filled → crossed → unknown, like a touch tap always does — Primary is then unused, but kept for when you switch back.",
     ),
     segRow<"zoom" | "scroll">("Mouse wheel", [["zoom", "Zoom"], ["scroll", "Scroll"]], () => s.wheelMode, (v) => (s.wheelMode = v)),
     h("p", { class: "note" }, "Scroll moves the grid up and down (Shift: sideways) and needs Ctrl to zoom."),
@@ -435,7 +444,7 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
       ...(
         [
           ["Ctrl+Z / Ctrl+Y", "Undo / redo"],
-          ["X", "Swap what the left button does (fill ↔ mark)"],
+          ["X", "Swap Primary (Paint ↔ Cross)"],
           ["L", "Lock / unlock the puzzle's position"],
           ["T", "Enter trial (again: nested tier)"],
           ["A / R", "Accept / reject trial tier"],
@@ -444,7 +453,7 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
           ["Mouse wheel", "Zoom, or scroll the grid (see Mouse & zoom); Ctrl always zooms, Shift scrolls sideways"],
           ["Drag outside the grid", "Pan (clue strips, sums, blank space)"],
           ["Space + drag", "Pan from inside the grid"],
-["Right-click / Shift", "Do the other action (mark ↔ fill)"],
+["Right-click / Shift", "Do the other action (Cross ↔ Paint)"],
           ["Click a clue", "Dim / undim it"],
           ["Fullscreen key / F11", "Toggle the browser's fullscreen"],
         ] as const

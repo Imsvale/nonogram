@@ -1,8 +1,6 @@
 import { clueTotal } from "../core/lines";
 import { EMPTY, FILLED, UNKNOWN, type Grid, type Puzzle } from "../core/types";
 
-/** Cell size from which the heavy separators / 5-cell lines are drawn 2px thick; smaller cells use 1px. */
-export const HEAVY_LINE_MIN_CELL = 22;
 /** Breathing room around the puzzle frame. */
 export const MARGIN = 6;
 /** Extra room above the frame, so the header show/hide tab never covers the puzzle. */
@@ -36,7 +34,13 @@ export interface Metrics {
   maxCd: number;
 }
 
-export function computeMetrics(p: Puzzle, C: number, showSums = true): Metrics {
+/**
+ * @param majorWidth The major (5-cell) grid line thickness in CSS px (see Settings, and
+ *   render.ts's `majorLineWidth`) — the separator/frame gap between clue strips, grid and sums is
+ *   always sized to fit it exactly, at every zoom level (it used to be a fixed 1 or 2px, switching
+ *   at a cell-size threshold; that's gone now that major thickness doesn't depend on zoom either).
+ */
+export function computeMetrics(p: Puzzle, C: number, showSums = true, majorWidth = 2): Metrics {
   // Clue text follows the cell size but stops growing: zooming in must not let
   // the (frozen) clue strips take over the window.
   const fs = Math.min(18, Math.max(9, Math.round(C * 0.5)));
@@ -46,7 +50,7 @@ export function computeMetrics(p: Puzzle, C: number, showSums = true): Metrics {
   const total = Math.max(clueTotal(p.rowClues), clueTotal(p.colClues));
   const digits = String(total).length;
   const sumW = Math.max(N, Math.round(digits * fs * 0.62 + 10));
-  const sep = C >= HEAVY_LINE_MIN_CELL ? 2 : 1;
+  const sep = Math.max(1, majorWidth);
   return {
     C,
     fs,
@@ -101,8 +105,8 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(lo, hi), 
  * The two are independent: the frame only has room to move on an axis where
  * the puzzle isn't already filling the window, i.e. where it isn't scrollable.
  */
-export function computeLayout(p: Puzzle, C: number, W: number, H: number, panX = 0, panY = 0, offX = 0, offY = 0, showSums = true): Layout {
-  const m = computeMetrics(p, C, showSums);
+export function computeLayout(p: Puzzle, C: number, W: number, H: number, panX = 0, panY = 0, offX = 0, offY = 0, showSums = true, majorWidth = 2): Layout {
+  const m = computeMetrics(p, C, showSums, majorWidth);
   const fullW = p.width * C;
   const fullH = p.height * C;
   const availW = Math.max(40, W - 2 * MARGIN - m.leftW - m.rightW);
@@ -144,15 +148,15 @@ export function computeLayout(p: Puzzle, C: number, W: number, H: number, panX =
 }
 
 /** Whether cell size `C` still leaves a usable scrolling area next to the frozen clue strips. */
-export function viewportOk(p: Puzzle, C: number, W: number, H: number, showSums = true): boolean {
-  const L = computeLayout(p, C, W, H, 0, 0, 0, 0, showSums);
+export function viewportOk(p: Puzzle, C: number, W: number, H: number, showSums = true, majorWidth = 2): boolean {
+  const L = computeLayout(p, C, W, H, 0, 0, 0, 0, showSums, majorWidth);
   return L.cw >= Math.min(L.fullW, W * 0.35) && L.ch >= Math.min(L.fullH, H * 0.35);
 }
 
 /** Largest cell size (within [min, max]) at which the whole puzzle fits in W×H. */
-export function fitCellSize(p: Puzzle, W: number, H: number, min = 10, max = 36, showSums = true): number {
+export function fitCellSize(p: Puzzle, W: number, H: number, min = 10, max = 36, showSums = true, majorWidth = 2): number {
   for (let C = max; C > min; C--) {
-    const m = computeMetrics(p, C, showSums);
+    const m = computeMetrics(p, C, showSums, majorWidth);
     const tw = m.leftW + p.width * C + m.rightW + 2 * MARGIN;
     const th = m.topH + p.height * C + m.bottomH + MARGIN_TOP + MARGIN + FOOTER_RESERVE;
     if (tw <= W && th <= H) return C;
