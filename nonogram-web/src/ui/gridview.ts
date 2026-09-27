@@ -76,7 +76,10 @@ export class GridView {
   set selectMode(v: boolean) {
     if (this._selectMode === v) return;
     this._selectMode = v;
-    if (!v && this.drag === "select") this.drag = "none";
+    if (!v) {
+      if (this.drag === "select") this.drag = "none";
+      this.clearSelection();
+    }
     this.updateCursor();
   }
   get hasSelection(): boolean {
