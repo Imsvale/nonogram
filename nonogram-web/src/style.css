@@ -669,6 +669,15 @@ dialog::backdrop {
 #topbar .hd-right {
   justify-content: flex-end;
 }
+.restart-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.restart-group .seg {
+  min-height: 34px;
+  padding: 6px 14px;
+}
 body.header-hidden #topbar {
   display: none;
 }
@@ -768,9 +777,7 @@ button.pill:focus-visible {
 }
 
 .no-puzzle #topbar .title,
-.no-puzzle #restartBtn,
-.no-puzzle #restartPuzzleBtn,
-.no-puzzle #restartTimeBtn,
+.no-puzzle .restart-group,
 .no-puzzle #topbar .pill,
 .no-puzzle #topbar .menu-wrap,
 .no-puzzle #footer,
@@ -969,6 +976,26 @@ body.no-timer .pill.timer {
 .seg:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+/* Restart's Puzzle/+Time pair: an amber, in-between highlight between the neutral Restart
+   button and the red "Sure?" stage. Hovering +Time previews both halves since it resets the
+   puzzle too. */
+.restart-choice .seg {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.restart-choice .seg:hover {
+  background: var(--warn);
+  color: #fff;
+}
+.restart-choice:has(#restartTimeBtn:hover) #restartPuzzleBtn {
+  background: var(--warn);
+  color: #fff;
+}
+.restart-choice .seg.armed {
+  background: var(--danger);
+  color: #fff;
 }
 
 /* Hue/saturation label-color picker (Run-length indicators). */

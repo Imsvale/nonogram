@@ -59,9 +59,15 @@ export function startApp(root: HTMLElement): AppHandle {
   });
   const RESTART_TIP = "Restart: blank the grid, un-dim every clue, and clear the undo history. Choose whether the timer resets too.";
   const restartBtn = h("button", { id: "restartBtn", class: "btn", type: "button", title: RESTART_TIP }, icon("reset", 16), h("span", {}, "Restart"));
-  // Appear in place of restartBtn after its first click: pick which kind of reset, then confirm.
-  const restartPuzzleBtn = h("button", { id: "restartPuzzleBtn", class: "btn", type: "button", hidden: true }, "Puzzle");
-  const restartTimeBtn = h("button", { id: "restartTimeBtn", class: "btn", type: "button", hidden: true }, "+Time");
+  // Appear in place of restartBtn after its first click, as two halves of one pill: pick which
+  // kind of reset, then confirm.
+  const restartPuzzleBtn = h("button", { id: "restartPuzzleBtn", class: "seg", type: "button", hidden: true }, "Puzzle");
+  const restartTimeBtn = h("button", { id: "restartTimeBtn", class: "seg", type: "button", hidden: true }, "+Time");
+  const restartChoice = h("div", { class: "segmented restart-choice", hidden: true }, restartPuzzleBtn, restartTimeBtn);
+  // Grouped so "click away cancels" can be a single focusout check (see below) instead of a blur
+  // listener per button — hiding whichever of the three currently has focus, as every transition
+  // here does, would otherwise fire that button's own blur mid-transition and reset everything.
+  const restartGroup = h("div", { class: "restart-group" }, restartBtn, restartChoice);
   const zoomOut = iconButton("minus", "Zoom out (−)", () => gridView.zoomOut());
   const zoomIn = iconButton("plus", "Zoom in (+)", () => gridView.zoomIn());
   const zoomFit = iconButton("fit", "Fit the puzzle to the window (0)", () => gridView.fit());
@@ -76,7 +82,7 @@ export function startApp(root: HTMLElement): AppHandle {
   const topbar = h(
     "header",
     { id: "topbar" },
-    h("div", { class: "hd-left" }, homeBtn, timerBtn, restartBtn, restartPuzzleBtn, restartTimeBtn, warnEl),
+    h("div", { class: "hd-left" }, homeBtn, timerBtn, restartGroup, warnEl),
     h("div", { class: "title" }, nameEl, sizeEl, answerEl),
     h(
       "div",
@@ -487,6 +493,7 @@ export function startApp(root: HTMLElement): AppHandle {
     restartArmed = undefined;
     restartStage = "idle";
     restartBtn.hidden = false;
+    restartChoice.hidden = true;
     restartPuzzleBtn.hidden = true;
     restartTimeBtn.hidden = true;
     restartPuzzleBtn.classList.remove("armed");
@@ -501,9 +508,14 @@ export function startApp(root: HTMLElement): AppHandle {
   restartBtn.addEventListener("click", () => {
     if (!game) return;
     restartStage = "choose";
-    restartBtn.hidden = true;
+    restartChoice.hidden = false;
     restartPuzzleBtn.hidden = false;
     restartTimeBtn.hidden = false;
+    // Move focus into the group *before* hiding restartBtn: hiding the currently-focused button
+    // fires its blur synchronously, mid-click-handler, which would otherwise look like "focus
+    // left the group" to the focusout check below and immediately disarm what we just armed.
+    restartPuzzleBtn.focus();
+    restartBtn.hidden = true;
     arm();
   });
   const doRestart = (resetTimer: boolean) => {
@@ -529,9 +541,13 @@ export function startApp(root: HTMLElement): AppHandle {
     restartTimeBtn.textContent = "Sure?";
     arm();
   });
-  restartBtn.addEventListener("blur", disarmRestart);
-  restartPuzzleBtn.addEventListener("blur", disarmRestart);
-  restartTimeBtn.addEventListener("blur", disarmRestart);
+  // One check for "focus left the group" instead of a blur listener per button: focusout bubbles
+  // and carries relatedTarget (where focus is going), so moving focus *between* the three buttons
+  // (as every transition above does) is distinguishable from actually clicking/tabbing away.
+  restartGroup.addEventListener("focusout", (e) => {
+    const next = e.relatedTarget as Node | null;
+    if (!next || !restartGroup.contains(next)) disarmRestart();
+  });
   undoBtn.addEventListener("click", () => game?.undo());
   redoBtn.addEventListener("click", () => game?.redo());
   selectBtn.addEventListener("click", () => toggleSelectMode());
