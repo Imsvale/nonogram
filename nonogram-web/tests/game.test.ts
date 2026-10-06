@@ -244,7 +244,7 @@ describe("trial mode", () => {
     expect(g.trial[1].origin).toEqual([1, 2]);
   });
 
-  it("reject restores the tier's snapshot and is itself undoable; accept keeps the work", () => {
+  it("reject restores the tier's snapshot as a plain, non-undoable revert; accept keeps the work", () => {
     const g = new Game(plus);
     stroke(g, [[0, 1]]);
     g.enterTrial();
@@ -252,17 +252,34 @@ describe("trial mode", () => {
     g.rejectTrial();
     expect(state(g)).toBe("010000000");
     expect(g.trial).toHaveLength(0);
+    // Reject added nothing of its own to undo: this undoes the pre-trial stroke, not the reject —
+    // the rejected work is simply gone, same as if the trial had never been entered.
+    expect(g.undoStack).toHaveLength(1);
     g.undo();
-    expect(state(g)).toBe("010110000");
+    expect(state(g)).toBe("000000000");
+    g.redo();
+    expect(state(g)).toBe("010000000");
 
     g.rejectTrial(); // nothing open: no-op
-    g.redo();
     g.enterTrial();
     stroke(g, [[2, 1]]);
     g.acceptTrial();
     expect(state(g)).toBe("010000010");
     expect(g.trial).toHaveLength(0);
     expect(g.tierMap().every((v) => v === 0)).toBe(true);
+  });
+
+  it("undo right after a reject skips straight to whatever came before the trial", () => {
+    const g = new Game(plus);
+    stroke(g, [[0, 0]]); // A, before the trial
+    g.enterTrial();
+    stroke(g, [[0, 1]]); // B, inside the trial
+    stroke(g, [[0, 2]]); // C, inside the trial
+    g.rejectTrial();
+    expect(state(g)).toBe("100000000"); // back to just A; B and C are gone, not undoable
+    g.undo();
+    expect(state(g)).toBe("000000000"); // undoes A — the only thing left on the stack
+    expect(g.canUndo).toBe(false);
   });
 
   it("undo steps store only the cells a stroke actually touched, not a whole grid", () => {
@@ -430,5 +447,18 @@ describe("restart", () => {
     expect(g.undoStack).toHaveLength(0);
     expect(g.dimCols.size).toBe(0);
     expect(g.timerRunning).toBe(false);
+  });
+
+  it("restart(false) blanks the puzzle but leaves the timer untouched", () => {
+    const g = new Game(plus);
+    stroke(g, [[0, 1]]);
+    g.startTimer();
+    g.resetTimer();
+    const before = g.timerElapsedMs();
+    g.restart(false);
+    expect(state(g)).toBe("000000000");
+    expect(g.canUndo).toBe(false);
+    expect(g.timerRunning).toBe(true); // still running, not reset
+    expect(g.timerElapsedMs()).toBeGreaterThanOrEqual(before);
   });
 });

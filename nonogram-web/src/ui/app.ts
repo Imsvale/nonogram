@@ -57,8 +57,11 @@ export function startApp(root: HTMLElement): AppHandle {
     if (!game) return;
     game.timerRunning ? game.pauseTimer() : game.startTimer();
   });
-  const RESTART_TIP = "Restart: blank the grid, un-dim every clue, clear the undo history and reset the timer";
+  const RESTART_TIP = "Restart: blank the grid, un-dim every clue, and clear the undo history. Choose whether the timer resets too.";
   const restartBtn = h("button", { id: "restartBtn", class: "btn", type: "button", title: RESTART_TIP }, icon("reset", 16), h("span", {}, "Restart"));
+  // Appear in place of restartBtn after its first click: pick which kind of reset, then confirm.
+  const restartPuzzleBtn = h("button", { id: "restartPuzzleBtn", class: "btn", type: "button", hidden: true }, "Puzzle");
+  const restartTimeBtn = h("button", { id: "restartTimeBtn", class: "btn", type: "button", hidden: true }, "+Time");
   const zoomOut = iconButton("minus", "Zoom out (−)", () => gridView.zoomOut());
   const zoomIn = iconButton("plus", "Zoom in (+)", () => gridView.zoomIn());
   const zoomFit = iconButton("fit", "Fit the puzzle to the window (0)", () => gridView.fit());
@@ -73,7 +76,7 @@ export function startApp(root: HTMLElement): AppHandle {
   const topbar = h(
     "header",
     { id: "topbar" },
-    h("div", { class: "hd-left" }, homeBtn, timerBtn, restartBtn, warnEl),
+    h("div", { class: "hd-left" }, homeBtn, timerBtn, restartBtn, restartPuzzleBtn, restartTimeBtn, warnEl),
     h("div", { class: "title" }, nameEl, sizeEl, answerEl),
     h(
       "div",
@@ -475,31 +478,60 @@ export function startApp(root: HTMLElement): AppHandle {
 
   // ── Buttons ──────────────────────────────────────────────────────────────
 
-  // Restart throws everything away (grid, undo history, dimming, timer) and sits in the header,
-  // so it takes two clicks.
+  // Restart throws everything away and sits in the header, so it's three clicks: Restart reveals
+  // a choice of what to reset, picking one arms a "Sure?" confirm on that same button.
+  let restartStage: "idle" | "choose" | "confirm" = "idle";
   let restartArmed: ReturnType<typeof setTimeout> | undefined;
   function disarmRestart(): void {
     clearTimeout(restartArmed);
     restartArmed = undefined;
-    restartBtn.classList.remove("armed");
-    restartBtn.title = RESTART_TIP;
-    (restartBtn.querySelector("span") as HTMLElement).textContent = "Restart";
+    restartStage = "idle";
+    restartBtn.hidden = false;
+    restartPuzzleBtn.hidden = true;
+    restartTimeBtn.hidden = true;
+    restartPuzzleBtn.classList.remove("armed");
+    restartPuzzleBtn.textContent = "Puzzle";
+    restartTimeBtn.classList.remove("armed");
+    restartTimeBtn.textContent = "+Time";
+  }
+  function arm(): void {
+    clearTimeout(restartArmed);
+    restartArmed = setTimeout(disarmRestart, 3000);
   }
   restartBtn.addEventListener("click", () => {
     if (!game) return;
-    if (restartArmed === undefined) {
-      restartBtn.classList.add("armed");
-      restartBtn.title = "Click again to restart this puzzle";
-      (restartBtn.querySelector("span") as HTMLElement).textContent = "Sure?";
-      restartArmed = setTimeout(disarmRestart, 3000);
-      return;
-    }
+    restartStage = "choose";
+    restartBtn.hidden = true;
+    restartPuzzleBtn.hidden = false;
+    restartTimeBtn.hidden = false;
+    arm();
+  });
+  const doRestart = (resetTimer: boolean) => {
     disarmRestart();
-    game.restart();
-    if (settings.showTimer && !game.timerRunning) game.startTimer();
-    toast("Puzzle restarted");
+    if (!game) return;
+    game.restart(resetTimer);
+    if (resetTimer && settings.showTimer && !game.timerRunning) game.startTimer();
+    toast(resetTimer ? "Puzzle and timer restarted" : "Puzzle restarted (timer kept)");
+  };
+  restartPuzzleBtn.addEventListener("click", () => {
+    if (restartStage !== "choose") return doRestart(false);
+    restartStage = "confirm";
+    restartTimeBtn.hidden = true;
+    restartPuzzleBtn.classList.add("armed");
+    restartPuzzleBtn.textContent = "Sure?";
+    arm();
+  });
+  restartTimeBtn.addEventListener("click", () => {
+    if (restartStage !== "choose") return doRestart(true);
+    restartStage = "confirm";
+    restartPuzzleBtn.hidden = true;
+    restartTimeBtn.classList.add("armed");
+    restartTimeBtn.textContent = "Sure?";
+    arm();
   });
   restartBtn.addEventListener("blur", disarmRestart);
+  restartPuzzleBtn.addEventListener("blur", disarmRestart);
+  restartTimeBtn.addEventListener("blur", disarmRestart);
   undoBtn.addEventListener("click", () => game?.undo());
   redoBtn.addEventListener("click", () => game?.redo());
   selectBtn.addEventListener("click", () => toggleSelectMode());

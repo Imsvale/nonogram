@@ -769,6 +769,8 @@ button.pill:focus-visible {
 
 .no-puzzle #topbar .title,
 .no-puzzle #restartBtn,
+.no-puzzle #restartPuzzleBtn,
+.no-puzzle #restartTimeBtn,
 .no-puzzle #topbar .pill,
 .no-puzzle #topbar .menu-wrap,
 .no-puzzle #footer,
@@ -930,8 +932,9 @@ body.no-timer .pill.timer {
   color: var(--muted);
 }
 
-/* Restart: armed after the first click, until confirmed, blurred or 3 s pass. */
-#restartBtn.armed {
+/* Restart: Puzzle/+Time choice shown after the first click; armed ("Sure?") after the second,
+   until confirmed, blurred or 3 s pass. */
+.armed {
   background: var(--danger);
   border-color: transparent;
   color: #fff;

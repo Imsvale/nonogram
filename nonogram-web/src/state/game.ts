@@ -16,11 +16,11 @@ export interface TrialTier {
   origin: Pos | null;
   /**
    * The tier's own undo/redo history, entirely separate from the outer one: while a trial is
-   * open, every stroke inside it steps through this instead. On accept, it's discarded and the
-   * whole tier collapses into a single Diff (snap → final grid) pushed to whichever history is
-   * next below (the parent tier's, or the main one) — so undoing an accepted trial from outside
-   * it is one step, not a replay of everything done inside it. On reject, likewise one step (the
-   * revert itself), which is why a reject can still be undone.
+   * open, every stroke inside it steps through this instead, never the history below. On accept,
+   * it's discarded and the whole tier collapses into a single Diff (snap → final grid) pushed to
+   * whichever history is next below (the parent tier's, or the main one) — so undoing an accepted
+   * trial from outside it is one step, not a replay of everything done inside it. On reject, it's
+   * discarded with no replacement at all: a plain revert to `snap`, not itself undoable.
    */
   undo: Diff[];
   redo: Diff[];
@@ -380,11 +380,14 @@ export class Game {
     this.bump();
   }
 
-  /** Discard the innermost tier. Undoable, since it throws work away. */
+  /**
+   * Discard the innermost tier: a plain reversion to the grid as it was the moment the trial was
+   * entered, with no entry of its own on the history below — not undoable (undo right after a
+   * reject goes straight to whatever came before the trial, same as if it had never been entered).
+   */
   rejectTrial(): void {
     const tier = this.trial.pop();
     if (!tier) return;
-    this.pushUndo(diffGrids(this.grid, tier.snap));
     this.grid = tier.snap;
     this.afterBulkChange();
   }
@@ -430,23 +433,26 @@ export class Game {
       this.bump();
     }
   }
-  /** Back to zero; keeps running if it was running. */
   /**
-   * Start over: blank grid, no open trial tiers, every clue un-dimmed, undo/redo
-   * history dropped, timer back to zero (still running if it was). Not undoable.
+   * Start over: blank grid, no open trial tiers, every clue un-dimmed, undo/redo history
+   * dropped. `resetTimer` (default true) also zeroes the timer; when false, elapsed time
+   * carries over unaffected (still running if it was). Not undoable either way.
    */
-  restart(): void {
+  restart(resetTimer = true): void {
     this.grid = newGrid(this.puzzle);
     this.trial = [];
     this.dimRows.clear();
     this.dimCols.clear();
     this.undoStack = [];
     this.redoStack = [];
-    this.elapsedBase = 0;
-    this.startedAt = this.startedAt !== null ? Date.now() : null;
+    if (resetTimer) {
+      this.elapsedBase = 0;
+      this.startedAt = this.startedAt !== null ? Date.now() : null;
+    }
     this.afterBulkChange();
   }
 
+  /** Back to zero; keeps running if it was running. */
   resetTimer(): void {
     this.elapsedBase = 0;
     this.startedAt = this.startedAt !== null ? Date.now() : null;
