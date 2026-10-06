@@ -78,12 +78,10 @@ export const HOVER_RUN_TINT = { onLight: "rgba(0,0,60,0.12)", onDark: "rgba(255,
 /** The number marking where a trial tier started. */
 export const TRIAL_ORIGIN_INK = { onEmptyLight: "#4d4d73", onEmptyDark: "#b9bfe0", onFilled: "#ffffff" };
 
-/** Neighbor-cell run length and four-direction counts, by cell brightness. */
+/** Neighbor-cell run length label, by cell brightness. */
 export const RUN_LABEL_INK = {
   adjOnLight: "#0033b3",
   adjOnDark: "#8dccff",
-  fourOnLight: "#994d00",
-  fourOnDark: "#ffd966",
 };
 
 /** Outline of the visible region on the minimap when zoomed in. */

@@ -392,7 +392,6 @@ class Draw {
       const bg = this.stateColor(grid[r * w + c], tierMap[r * w + c]);
       const light = luminance(bg) > 0.5;
       const adjColor = light ? RUN_LABEL_INK.adjOnLight : RUN_LABEL_INK.adjOnDark;
-      const fourColor = light ? RUN_LABEL_INK.fourOnLight : RUN_LABEL_INK.fourOnDark;
       const isIslandCell = isIsland && r === islandR && c === islandC;
 
       // Labels at the run's ends always hug the outer edge of the run (start: middle-left for a
@@ -430,24 +429,6 @@ class Draw {
           const target =
             vr.hover === vr.start ? vr.hover + 1 : vr.hover === vr.end ? vr.hover - 1 : rl.adjLabelVPreferAfter ? vr.hover + 1 : vr.hover - 1;
           if (target === r && target >= 0 && target < h) put(String(vLen), x, y, vAdjCol as 0 | 1 | 2, r > vr.hover ? 0 : 2, adjColor);
-        }
-      }
-
-      // Four-direction counts: cells on each side of the hovered cell, each subject to the same
-      // "far enough from the end" rule as the hover label — but per direction, against only its
-      // own end (each of these speaks for one side, not both).
-      if (rl.fourDirLabels) {
-        if (hr && r === hr.fixed) {
-          const left = hr.hover - hr.start;
-          const right = hr.end - hr.hover;
-          if (c + 1 === hr.hover && left > 0 && left >= ht) put(String(left), x, y, 2, hAdjRow as 0 | 1 | 2, fourColor);
-          if (c === hr.hover + 1 && c < w && right > 0 && right >= ht) put(String(right), x, y, 0, hAdjRow as 0 | 1 | 2, fourColor);
-        }
-        if (vr && c === vr.fixed) {
-          const up = vr.hover - vr.start;
-          const down = vr.end - vr.hover;
-          if (r + 1 === vr.hover && up > 0 && up >= ht) put(String(up), x, y, vAdjCol as 0 | 1 | 2, 2, fourColor);
-          if (r === vr.hover + 1 && r < h && down > 0 && down >= ht) put(String(down), x, y, vAdjCol as 0 | 1 | 2, 0, fourColor);
         }
       }
     };

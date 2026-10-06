@@ -19,7 +19,6 @@ export interface RunLengthSettings {
   adjLabelEnabled: boolean;
   adjLabelHPreferAfter: boolean;
   adjLabelVPreferAfter: boolean;
-  fourDirLabels: boolean;
   /** Tint the run of blank cells under the pointer; only used while the crosshair is off. */
   highlightEmptyRuns: boolean;
   /** Show the length of a crossed-out (Empty) run, when it's anchored to one of the line's own
@@ -167,7 +166,6 @@ export function defaultSettings(): Settings {
       adjLabelEnabled: false,
       adjLabelHPreferAfter: true,
       adjLabelVPreferAfter: true,
-      fourDirLabels: false,
       highlightEmptyRuns: true,
       showCrossedRun: false,
       crossedRunThreshold: 1,

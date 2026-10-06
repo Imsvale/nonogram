@@ -408,16 +408,9 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     range("…if at least", 1, 20, 1, () => rl.endThreshold, (v) => (rl.endThreshold = v)),
     check("Show under the pointer", () => rl.showHover, (v) => (rl.showHover = v), "For long runs whose ends are off-screen."),
     range("…when at least this far from both ends", 1, 30, 1, () => rl.hoverThreshold, (v) => (rl.hoverThreshold = v)),
-    check("Label the neighboring cell", () => rl.adjLabelEnabled, (v) => {
-      rl.adjLabelEnabled = v;
-      if (v) rl.fourDirLabels = false;
-    }, "Puts the run length in the before the hovered cell instead."),
+    check("Label the neighboring cell", () => rl.adjLabelEnabled, (v) => (rl.adjLabelEnabled = v), "Puts the run length in the before the hovered cell instead."),
     check("…prefer the cell after (horizontal)", () => rl.adjLabelHPreferAfter, (v) => (rl.adjLabelHPreferAfter = v)),
     check("…prefer the cell after (vertical)", () => rl.adjLabelVPreferAfter, (v) => (rl.adjLabelVPreferAfter = v)),
-    check("Four-direction counts", () => rl.fourDirLabels, (v) => {
-      rl.fourDirLabels = v;
-      if (v) rl.adjLabelEnabled = false;
-    }, "Cells to the left / right / above / below the pointer, within its run."),
     h("p", { class: "note" }, "The above are all about Filled (or blank) runs. This one's about crossed-out runs instead:"),
     check(
       "Show a crossed-out run's length at the edge",
