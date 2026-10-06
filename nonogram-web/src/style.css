@@ -93,6 +93,11 @@ small {
 
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 
+:root {
+  /* Shared height for header controls, so anything standing in for a .btn (e.g. a .segmented
+     pill) can size itself to match without duplicating the number. */
+  --ctrl-h: 34px;
+}
 .btn,
 .icon-btn,
 .brand {
@@ -106,7 +111,7 @@ small {
   padding: 6px 10px;
   cursor: pointer;
   white-space: nowrap;
-  min-height: 34px;
+  min-height: var(--ctrl-h);
   user-select: none;
 }
 .btn:hover:not(:disabled),
@@ -129,7 +134,7 @@ small {
 }
 .icon-btn {
   padding: 0;
-  width: 34px;
+  width: var(--ctrl-h);
 }
 .icon-btn.on,
 .btn.on {
@@ -674,8 +679,14 @@ dialog::backdrop {
   align-items: center;
   gap: 10px;
 }
+.restart-choice {
+  /* Match .btn's height exactly: size the pill itself to the shared token (border included,
+     box-sizing is border-box globally) and let its children stretch to fill rather than
+     re-deriving their own height — a .seg here is the same height as a .btn for free, and
+     stays that way if --ctrl-h or the border width ever change. */
+  height: var(--ctrl-h);
+}
 .restart-group .seg {
-  min-height: 34px;
   padding: 6px 14px;
 }
 body.header-hidden #topbar {
