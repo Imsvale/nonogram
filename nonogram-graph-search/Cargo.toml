@@ -8,3 +8,4 @@ license = "MIT"
 nonogram-core = { path = "../nonogram-core" }
 nonogram-propagation = { path = "../nonogram-propagation" }
 log = { version = "0.4", features = ["std"] }
+web-time = "1"

@@ -19,7 +19,7 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::io::Write;
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 use nonogram_core::{AllSolutions, CancelToken, CellState, ExhaustiveSolver, LineId, Puzzle, Solver, SolveContext, SolveResult, SolveStep, SolutionState};
 use nonogram_propagation::{count_completions, enumerate_completions, Propagator};
 
