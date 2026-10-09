@@ -13,9 +13,3 @@ nonogram-graph-search = { path = "../nonogram-graph-search" }
 wasm-bindgen = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
-
-# Not yet a member of the parent workspace (see discussions/WasmPort.md) — this makes the
-# crate root its own single-crate workspace so it builds standalone in the meantime. Remove
-# this table in the same change that adds `nonogram-wasm` to the root Cargo.toml's `members`;
-# a workspace member may not declare its own `[workspace]`.
-[workspace]

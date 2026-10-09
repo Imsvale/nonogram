@@ -8,6 +8,7 @@
 | `nonogram-propagation` | lib | Full per-line hard-logic deduction, no named techniques (category 3; extracted from `nonogram-graph-search`) | **Claude-Propagation** |
 | `nonogram-human-by-ai` | lib | Technique-driven, human-legible constraint propagation solver (category 2; content moved from `nonogram-propagation`) | **unassigned** |
 | `nonogram-graph-search` | lib | Best-first search with MRV heuristic | **Claude-graph** |
+| `nonogram-wasm` | lib (cdylib) | `wasm-bindgen` adapter exposing `nonogram-graph-search` to `nonogram-web`; no solving logic of its own | **Claude-Web** |
 | `nonogram-difficulty` | lib | Puzzle difficulty rating (1.0–10.0) derived from a `nonogram-propagation` solve trace | **Claude-difficulty** |
 | `nonogram-human` | lib | Author-written human-logic solver (AI-free implementation) | **User (human author)** |
 | `nonogram-cli` | bin | CLI entry point; dispatches to any solver | **Claude-CLI** |

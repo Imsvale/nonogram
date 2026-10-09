@@ -5,6 +5,7 @@ members = [
     "nonogram-propagation",
     "nonogram-difficulty",
     "nonogram-graph-search",
+    "nonogram-wasm",
     "nonogram-human",
     "nonogram-cli",
     "nonogram-convert",
