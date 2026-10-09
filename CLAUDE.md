@@ -13,6 +13,7 @@
 | `nonogram-cli` | bin | CLI entry point; dispatches to any solver | **Claude-CLI** |
 | `nonogram-convert` | bin | Format converter; letter-encoded → native `name\|col/row` | **Claude-Convert** |
 | `nonogram-gui` | bin | iced 0.13 graphical front-end | **Claude-GUI** |
+| `nonogram-web` | npm (TS/Vite) | Browser manual-solver, deployed to GitHub Pages; not a Cargo crate | **Claude-Web** |
 | `utils/katana-img-import` | bin | Image→puzzle importer; downloads from wiki, detects grid, emits puzzle format | **User** |
 
 See `discussions/SolverTaxonomy.md` for the four-category taxonomy behind the
