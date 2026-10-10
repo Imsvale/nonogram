@@ -30,6 +30,7 @@ export function startApp(root: HTMLElement): AppHandle {
   let game: Game | null = null;
   let unsubGame: (() => void) | null = null;
   let wasSolved = false;
+  let solvedThisAttemptWas = false;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
   // Selection tool's "hold" hotkey mode: true while S is physically down for a temporary
   // activation, remembering what selectMode was before so releasing restores it.
@@ -64,7 +65,9 @@ export function startApp(root: HTMLElement): AppHandle {
   const timerBtn = h("button", { class: "pill timer", type: "button" }, timeEl, timerIcon);
   timerBtn.addEventListener("click", () => {
     if (!game) return;
-    game.timerRunning ? game.pauseTimer() : game.startTimer();
+    // No resume option once the timer's frozen for the attempt — re-show the banner instead.
+    if (game.solvedThisAttempt) showSolved();
+    else game.timerRunning ? game.pauseTimer() : game.startTimer();
   });
   const RESTART_TIP = "Restart: blank the grid, un-dim every clue, and clear the undo history. Choose whether the timer resets too.";
   const restartBtn = h("button", { id: "restartBtn", class: "btn hd-collapsible", type: "button", title: RESTART_TIP }, icon("reset", 16), h("span", {}, "Restart"));
@@ -334,6 +337,7 @@ export function startApp(root: HTMLElement): AppHandle {
     else if (puzzle.progress) g.seedGrid(puzzle.progress);
     game = g;
     wasSolved = g.solvedNow;
+    solvedThisAttemptWas = g.solvedThisAttempt;
     unsubGame = g.subscribe(onGameChange);
     if (settings.showTimer && !g.solvedNow) g.startTimer();
 
@@ -428,9 +432,13 @@ export function startApp(root: HTMLElement): AppHandle {
     refreshControls();
     refreshHeader();
     scheduleSave();
-    if (game.solvedNow && !wasSolved) showSolved();
+    // Auto-show only on the attempt's first completion (solvedThisAttempt's own false→true
+    // edge, not solvedNow's) — redoing or repainting your way back to a completion already
+    // shown this attempt shouldn't pop the notice again.
+    if (game.solvedThisAttempt && !solvedThisAttemptWas) showSolved();
     else if (!game.solvedNow && wasSolved) hideNotice();
     wasSolved = game.solvedNow;
+    solvedThisAttemptWas = game.solvedThisAttempt;
   }
 
   // ── Header / controls refresh ────────────────────────────────────────────
@@ -447,18 +455,28 @@ export function startApp(root: HTMLElement): AppHandle {
     nameEl.textContent = g.puzzle.name;
     answerEl.textContent = g.puzzle.answer && g.everSolved ? `“${g.puzzle.answer}”` : "";
     sizeEl.textContent = `${g.puzzle.width}×${g.puzzle.height}`;
-    const playing = g.timerRunning;
     clear(timerIcon);
-    timerIcon.append(icon(playing ? "pause" : "play", 18));
-    timerBtn.title = playing ? "Pause timer" : "Start timer";
+    if (g.solvedThisAttempt) {
+      // Frozen for the rest of the attempt (see Game.checkSolved) — resuming isn't an option
+      // here, so the button isn't a play/pause toggle anymore: it re-shows the solved banner.
+      timerIcon.append(icon("checkCircle", 18));
+      timerBtn.title = "Show the solved banner again";
+    } else {
+      const playing = g.timerRunning;
+      timerIcon.append(icon(playing ? "pause" : "play", 18));
+      timerBtn.title = playing ? "Pause timer" : "Start timer";
+    }
     timerBtn.setAttribute("aria-label", timerBtn.title);
     refreshTimer();
     refreshPause();
   }
 
-  /** Paused = the timer is stopped on an unsolved puzzle (only possible with the timer shown). */
+  /** Paused = the timer is stopped on an unsolved puzzle (only possible with the timer shown).
+   *  Not once the attempt's been completed, even if undo/redo has since made it not currently
+   *  match — the timer's frozen at that point on purpose (see Game.checkSolved), not waiting
+   *  on a Resume. */
   function isPaused(): boolean {
-    return !!game && settings.showTimer && !game.timerRunning && !game.solvedNow;
+    return !!game && settings.showTimer && !game.timerRunning && !game.solvedNow && !game.solvedThisAttempt;
   }
 
   function refreshPause(): void {

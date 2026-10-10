@@ -293,8 +293,9 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     colorRow("Minor grid lines", () => s.colors.minorLine, (v) => (s.colors.minorLine = v), () => paletteFor(s, deps.getTheme()).borderMin),
     range("Minor line thickness", 1, 6, 1, () => s.minorLineThickness, (v) => (s.minorLineThickness = v), (v) => `${v} px`),
     colorRow("Major grid lines", () => s.colors.majorLine, (v) => (s.colors.majorLine = v), () => paletteFor(s, deps.getTheme()).borderMaj),
-    range("Major line thickness", 1, 8, 1, () => s.majorLineThickness, (v) => (s.majorLineThickness = v), (v) => `${v} px`),
+    range("Major line thickness", 2, 8, 1, () => s.majorLineThickness, (v) => (s.majorLineThickness = v), (v) => `${v} px`),
     h("p", { class: "note" }, "Major (every 5th line, and the frame) always renders at least 1px thicker than minor, whatever these two are set to."),
+    colorRow("Minimap background", () => s.minimapBg, (v) => v && (s.minimapBg = v), () => s.minimapBg, false),
   );
 
   const painting = section(

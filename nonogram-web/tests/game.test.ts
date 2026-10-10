@@ -204,7 +204,7 @@ describe("assistance", () => {
 });
 
 describe("solving", () => {
-  it("detects a solved grid, pauses the timer, and unsolves on edit", () => {
+  it("detects a solved grid, freezes the timer, and unsolves (but stays frozen) on edit", () => {
     const g = new Game(plus);
     g.startTimer();
     expect(g.timerRunning).toBe(true);
@@ -214,10 +214,31 @@ describe("solving", () => {
     stroke(g, [[2, 1]]);
     expect(g.solvedNow).toBe(true);
     expect(g.everSolved).toBe(true);
+    expect(g.solvedThisAttempt).toBe(true);
     expect(g.timerRunning).toBe(false);
     g.undo();
     expect(g.solvedNow).toBe(false);
     expect(g.everSolved).toBe(true);
+    // Once solved this attempt, the timer stays frozen regardless of further undo/redo —
+    // not restarted, and not treated as "paused" either (solvedThisAttempt keeps isPaused()
+    // from showing the Resume overlay over what's really just an undo).
+    expect(g.solvedThisAttempt).toBe(true);
+    expect(g.timerRunning).toBe(false);
+    g.redo();
+    expect(g.solvedNow).toBe(true);
+    expect(g.timerRunning).toBe(false);
+  });
+
+  it("solvedThisAttempt resets on restart, re-arming the freeze for the next completion", () => {
+    const g = new Game(plus);
+    g.startTimer();
+    stroke(g, [[0, 1]]);
+    stroke(g, [[1, 0], [1, 1], [1, 2]]);
+    stroke(g, [[2, 1]]);
+    expect(g.solvedThisAttempt).toBe(true);
+    g.restart();
+    expect(g.solvedThisAttempt).toBe(false);
+    expect(g.solvedNow).toBe(false);
   });
 
   it("does not treat an untouched blank puzzle as solved", () => {

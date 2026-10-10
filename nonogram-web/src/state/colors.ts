@@ -27,7 +27,7 @@ export interface Palette {
 
 export const LIGHT: Palette = {
   unknown: "#ffffff",
-  filled: "#1a1a26",
+  filled: "#414167",
   empty: "#ffffff",
   clueBg: "#f7f7f7",
   sumBg: "#d1d1d1",

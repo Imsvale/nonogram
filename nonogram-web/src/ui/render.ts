@@ -696,7 +696,7 @@ class Draw {
   }
 
   minimap(): void {
-    const { ctx, L, p, pal, inp } = this;
+    const { ctx, L, p, inp } = this;
     const { m } = L;
     const areaW = m.leftW - L.m.sep;
     const areaH = m.topH - L.m.sep;
@@ -706,7 +706,10 @@ class Draw {
     ctx.beginPath();
     ctx.rect(x0, y0, areaW, areaH);
     ctx.clip();
-    ctx.fillStyle = pal.canvasBg;
+    // Its own setting, not pal.canvasBg: that one's user-configurable for the area around the
+    // puzzle frame specifically, and the minimap reusing it would mean a customized canvas
+    // color (or one chosen to blend into the page) silently leaking into the minimap too.
+    ctx.fillStyle = this.s.minimapBg;
     ctx.fillRect(x0, y0, areaW, areaH);
 
     const g = minimapGeometry(L, p);

@@ -66,6 +66,9 @@ export interface Settings {
    *  of the old behavior where both could round down to the same 1 device px at a small zoom. */
   minorLineThickness: number;
   majorLineThickness: number;
+  /** The minimap's own background — deliberately independent of canvas/clue/cell colors (none
+   *  of those is a clear universal choice for it), always opaque. */
+  minimapBg: string;
   assist: {
     autoDim: boolean;
     autoFillEmpty: boolean;
@@ -144,6 +147,7 @@ export function defaultSettings(): Settings {
     iconColors: { filled: null, empty: null },
     minorLineThickness: 1,
     majorLineThickness: 2,
+    minimapBg: "#ffffff",
     assist: {
       autoDim: false,
       autoFillEmpty: false,

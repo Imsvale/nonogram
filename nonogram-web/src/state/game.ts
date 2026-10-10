@@ -101,6 +101,11 @@ export class Game {
   stroke: Stroke | null = null;
   solvedNow = false;
   everSolved = false;
+  /** Unlike `everSolved` (permanent — survives Restart, drives the answer reveal),
+   *  this resets on Restart: whether the puzzle has been completed since it was last
+   *  opened/restarted, regardless of further undo/redo. Freezes the timer and suppresses
+   *  the pause overlay for the rest of the attempt — see checkSolved()/isPaused(). */
+  solvedThisAttempt = false;
   assist = { autoDim: false, autoFillEmpty: false, autoCrossEdges: false, autoCrossMatched: false, autoDimGuess: false };
 
   private elapsedBase = 0;
@@ -410,8 +415,13 @@ export class Game {
     this.solvedNow = now;
     if (now && !was) {
       this.everSolved = true;
+      this.solvedThisAttempt = true;
       this.pauseTimer();
     }
+    // No reverse case: once solved this attempt, the timer stays frozen at that time —
+    // undo/redo flickering solvedNow back and forth (e.g. undoing past completion, or
+    // replaying it) doesn't restart it. Only Restart does (see restart()). isPaused() reads
+    // solvedThisAttempt too, so this also never re-triggers the pause overlay afterward.
   }
 
   timerElapsedMs(): number {
@@ -445,6 +455,7 @@ export class Game {
     this.dimCols.clear();
     this.undoStack = [];
     this.redoStack = [];
+    this.solvedThisAttempt = false;
     if (resetTimer) {
       this.elapsedBase = 0;
       this.startedAt = this.startedAt !== null ? Date.now() : null;
@@ -495,6 +506,7 @@ export class Game {
     this.redoStack = e.redo ?? [];
     this.solvedNow = this.solvable && isPuzzleSolved(this.puzzle, this.grid);
     this.everSolved = !!e.everSolved || this.solvedNow;
+    this.solvedThisAttempt = this.solvedNow;
     this.bump();
   }
 
@@ -506,6 +518,7 @@ export class Game {
     this.redoStack = [];
     this.solvedNow = this.solvable && isPuzzleSolved(this.puzzle, this.grid);
     this.everSolved = this.solvedNow;
+    this.solvedThisAttempt = this.solvedNow;
     this.bump();
   }
 }
