@@ -8,6 +8,10 @@ on:
     branches: [main]
     paths:
       - "nonogram-web/**"
+      - "nonogram-wasm/**"
+      - "nonogram-core/**"
+      - "nonogram-propagation/**"
+      - "nonogram-graph-search/**"
       - ".github/workflows/deploy-web.yml"
   workflow_dispatch:
 
@@ -29,6 +33,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # nonogram-web imports the compiled nonogram-wasm package at build time (src/wasm/pkg,
+      # gitignored like any other build output) — it has to exist before `npm test`/`npm run
+      # build` run, or tsc fails to resolve the module.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+      - uses: jetli/wasm-pack-action@v0.4.0
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -36,6 +51,7 @@ jobs:
           cache-dependency-path: nonogram-web/package-lock.json
 
       - run: npm ci
+      - run: npm run build:wasm
       - run: npm test
       - run: npm run build
 
