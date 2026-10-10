@@ -88,9 +88,12 @@ export function parseNativeLine(line: string): Puzzle {
   return puzzle;
 }
 
-/** Puz-Pre v3 (`pzprv3`) nonogram file. Clue tokens may carry a `c` prefix. */
+/** Puz-Pre v3 (`pzprv3`) nonogram file. Clue tokens may carry a `c` prefix. "/" is an
+ *  accepted substitute for a line break — the reference parser (pzprjs's Parser.parseFile)
+ *  unconditionally replaces every "/" with "\n" before splitting into lines, for any input
+ *  that isn't XML-wrapped; this format has no other legitimate use for the character. */
 export function parsePzprv3(text: string): Puzzle {
-  const lines = text.split(/\r?\n/);
+  const lines = text.replace(/\//g, "\n").split(/\r?\n/);
   if ((lines[0] ?? "").trim() !== "pzprv3") throw new ParseError(`Expected 'pzprv3', got '${(lines[0] ?? "").trim()}'`);
   if ((lines[1] ?? "").trim() !== "nonogram") throw new ParseError(`Expected 'nonogram', got '${(lines[1] ?? "").trim()}'`);
   const h = Number((lines[2] ?? "").trim());

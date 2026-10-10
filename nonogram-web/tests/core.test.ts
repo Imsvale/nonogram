@@ -135,6 +135,15 @@ describe("Puz-Pre v3", () => {
     expect(back.rowClues).toEqual(p.rowClues);
   });
 
+  it("accepts \"/\" as a substitute for line breaks, like the reference parser does", () => {
+    const grid = cells("x#x###x#x");
+    const text = puzzleToPzprv3(p, grid, [true, true, true], [true, true, true]);
+    const back = parsePzprv3(text.replace(/\n/g, "/"));
+    expect(back.colClues).toEqual(p.colClues);
+    expect(back.rowClues).toEqual(p.rowClues);
+    expect(Array.from(back.progress!)).toEqual(Array.from(parsePzprv3(text).progress!));
+  });
+
   it("is detected by importFromText", () => {
     const text = puzzleToPzprv3(p, null, [], []);
     expect(importFromText(text).puzzles[0].width).toBe(3);
