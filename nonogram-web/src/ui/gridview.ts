@@ -1,4 +1,5 @@
 import type { Game, PaintAction } from "../state/game";
+import type { Grid } from "../core/types";
 import { paletteFor, type ResolvedTheme, type Settings } from "../state/settings";
 import { computeLayout, fitCellSize, hitTest, viewportOk, type Hit, type Layout } from "./geometry";
 import { minimapGeometry, NO_HOVER, render, type HoverState } from "./render";
@@ -51,6 +52,10 @@ export class GridView {
   /** While true, the cell size tracks the window (until the user zooms). */
   autoFit = true;
   spaceHeld = false;
+  /** Set by the solution viewer: when non-null, `draw()` renders this instead of the live
+   *  game grid and blocks painting (see `onPointerDown`). */
+  private previewGrid: Grid | null = null;
+  private previewHighlight: { current: ReadonlySet<number>; previous: ReadonlySet<number> } | null = null;
   private lastSums: boolean | null = null;
   private get showSums(): boolean {
     return this.deps.getSettings().assist.showSums;
@@ -165,6 +170,9 @@ export class GridView {
     this.offX = this.offY = 0;
     this.autoFit = true;
     this.clearSelection();
+    // A stale preview sized for the old puzzle must not survive a puzzle swap.
+    this.previewGrid = null;
+    this.previewHighlight = null;
     if (game) {
       this.unsub = game.subscribe(() => this.requestRender());
       this.C = fitCellSize(game.puzzle, this.W, this.H, undefined, undefined, this.showSums, this.majorWidth);
@@ -191,6 +199,13 @@ export class GridView {
     this.offX = L.offX;
     this.offY = L.offY;
     return L;
+  }
+
+  /** Enter/update or leave (both null) the solution viewer's read-only preview. */
+  setPreviewOverride(grid: Grid | null, highlight: typeof this.previewHighlight): void {
+    this.previewGrid = grid;
+    this.previewHighlight = highlight;
+    this.requestRender();
   }
 
   requestRender(): void {
@@ -229,22 +244,28 @@ export class GridView {
     const theme = this.deps.getTheme();
     const L = this.layout()!;
     this.onLayout(L);
+    const previewing = this.previewGrid !== null;
     render({
       ctx: this.ctx,
       dpr: this.dpr,
       layout: L,
       puzzle: game.puzzle,
-      grid: game.displayGrid(),
-      tierMap: game.tierMap(),
-      trial: game.trial,
-      derived: settings.assist.autoDim || settings.assist.clueSumsExcludeCompleted ? game.derived() : null,
+      grid: this.previewGrid ?? game.displayGrid(),
+      // No trial tiering for a preview grid — the viewer's trace predates (and knows
+      // nothing about) any trial the real grid might be mid-way through.
+      tierMap: previewing ? new Uint8Array(game.puzzle.width * game.puzzle.height) : game.tierMap(),
+      trial: previewing ? [] : game.trial,
+      derived: !previewing && (settings.assist.autoDim || settings.assist.clueSumsExcludeCompleted) ? game.derived() : null,
       dimRows: game.dimRows,
       dimCols: game.dimCols,
       settings,
       theme,
       palette: paletteFor(settings, theme),
-      hover: this.hover,
-      selection: this.selState.rects,
+      // Crosshair/hover-run tint would compete visually with the step highlight, and
+      // painting (which hover normally tracks) is blocked anyway while previewing.
+      hover: previewing ? NO_HOVER : this.hover,
+      selection: previewing ? [] : this.selState.rects,
+      stepHighlight: this.previewHighlight,
     });
   }
 
@@ -350,6 +371,9 @@ export class GridView {
       return;
     }
     if (this.pointers.size > 2) return;
+    // Read-only while the solution viewer is open: no painting, selecting, dimming or
+    // single-pointer panning. Pinch-zoom (above) and wheel-zoom still work.
+    if (this.previewGrid) return;
 
     this.canvas.setPointerCapture(e.pointerId);
     const L = this.layout()!;

@@ -373,6 +373,15 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     ),
   );
 
+  const stepViewer = section(
+    "Solution viewer",
+    range("Playback speed", 1, 10, 1, () => s.stepViewer.speed, (v) => (s.stepViewer.speed = v), (v) => `${v}/sec`),
+    colorRow("Current step", () => s.stepViewer.currentColor, (v) => v && (s.stepViewer.currentColor = v), () => s.stepViewer.currentColor, false),
+    range("Current step opacity", 0.1, 0.8, 0.01, () => s.stepViewer.currentAlpha, (v) => (s.stepViewer.currentAlpha = v), (v) => `${Math.round(v * 100)}%`),
+    colorRow("Previous step", () => s.stepViewer.previousColor, (v) => v && (s.stepViewer.previousColor = v), () => s.stepViewer.previousColor, false),
+    range("Previous step opacity", 0.1, 0.8, 0.01, () => s.stepViewer.previousAlpha, (v) => (s.stepViewer.previousAlpha = v), (v) => `${Math.round(v * 100)}%`),
+  );
+
   const rl = s.runLength;
   const subcellGrid = h("div", { class: "subcells" });
   const subBtns: HTMLButtonElement[][] = [];
@@ -468,6 +477,7 @@ export function buildSettingsPanel(deps: SettingsPanelDeps): { el: HTMLElement; 
     appearance,
     assist,
     crosshair,
+    stepViewer,
     runLen,
     keys,
     h("div", { class: "row" }, resetBtn),

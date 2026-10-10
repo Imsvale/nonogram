@@ -46,6 +46,9 @@ export interface RenderInput {
   palette: Palette;
   hover: HoverState;
   selection: readonly SelRect[];
+  /** Solution viewer: flat indices changed by the current/previous step, or null when it's
+   *  closed. Colors come from `settings.stepViewer`. */
+  stepHighlight: { current: ReadonlySet<number>; previous: ReadonlySet<number> } | null;
 }
 
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -216,6 +219,22 @@ class Draw {
     }
     if (runs.v && (runs.v.filled || blankTint) && runs.v.fixed >= this.c0 && runs.v.fixed <= this.c1) {
       for (let r = Math.max(runs.v.start, this.r0); r <= Math.min(runs.v.end, this.r1); r++) tint(r, runs.v.fixed);
+    }
+
+    // 3.5. Solution-viewer step highlight: previous first, current on top (drawn last) so
+    // a cell changed by both (shouldn't happen — steps don't repeat a cell — but just in
+    // case) reads as "current".
+    const sh = inp.stepHighlight;
+    if (sh) {
+      const sv = this.s.stepViewer;
+      const paint = (idx: number, color: string, alpha: number) => {
+        const r = Math.floor(idx / w), c = idx % w;
+        if (r < this.r0 || r > this.r1 || c < this.c0 || c > this.c1) return;
+        ctx.fillStyle = rgba(color, alpha);
+        ctx.fillRect(this.cx(c), this.cy(r), C, C);
+      };
+      for (const idx of sh.previous) paint(idx, sv.previousColor, sv.previousAlpha);
+      for (const idx of sh.current) paint(idx, sv.currentColor, sv.currentAlpha);
     }
 
     // 4. Grid lines

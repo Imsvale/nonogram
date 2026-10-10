@@ -55,6 +55,11 @@ const ICONS: Record<string, string> = {
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
   chevron: '<path d="m6 9 6 6 6-6"/>',
   select: '<rect x="4.5" y="4.5" width="15" height="15" rx="1" stroke-dasharray="3 2.5"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+  arrowLeft: '<path d="M15 5 7 12l8 7"/>',
+  arrowRight: '<path d="M9 5l8 7-8 7"/>',
+  skipStart: '<path d="M6 5v14"/><path d="M18 6 9 12l9 6V6z" fill="currentColor"/>',
+  skipEnd: '<path d="M18 5v14"/><path d="M6 6l9 6-9 6V6z" fill="currentColor"/>',
 };
 
 /** Inline SVG icon (stroke-based, inherits `currentColor`). */

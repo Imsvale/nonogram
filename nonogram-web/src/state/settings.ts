@@ -98,6 +98,14 @@ export interface Settings {
     colAlpha: number;
   };
   runLength: RunLengthSettings;
+  stepViewer: {
+    /** Playback speed in the solution viewer, in steps per second. */
+    speed: number;
+    currentColor: string;
+    currentAlpha: number;
+    previousColor: string;
+    previousAlpha: number;
+  };
   /** Key that toggles the browser's fullscreen. */
   fullscreenKey: string;
   /** Show the timer (it runs from the moment a puzzle opens; pausing hides the puzzle). */
@@ -178,6 +186,13 @@ export function defaultSettings(): Settings {
       labelContrastThreshold: 0.5,
       labelHColor: null,
       labelVColor: null,
+    },
+    stepViewer: {
+      speed: 3,
+      currentColor: "#ffd60a",
+      currentAlpha: 0.45,
+      previousColor: "#ffd60a",
+      previousAlpha: 0.2,
     },
     fullscreenKey: "f",
     showTimer: true,

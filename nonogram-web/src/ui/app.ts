@@ -8,11 +8,13 @@ import type { Puzzle } from "../core/types";
 import { Game } from "../state/game";
 import { deleteProgress, listRecent, loadProgress, progressFraction, resumeCandidate, saveProgress, setLastOpen } from "../state/progress";
 import { defaultSettings, loadSettings, resolveTheme, saveSettings, saveSettingsNow, type ResolvedTheme, type Settings } from "../state/settings";
+import { analyzePuzzle, type AnalyzeResult, type SolveStep } from "../wasm/analyze";
 import { append, clear, copyText, downloadText, formatTime, h, icon } from "./dom";
 import type { Layout } from "./geometry";
 import { closeColorPicker } from "./colorPicker";
 import { GridView } from "./gridview";
 import { buildSettingsPanel } from "./settingsPanel";
+import { SolutionViewer } from "./solutionViewer";
 
 const APP_NAME = "Nonogram";
 
@@ -33,6 +35,13 @@ export function startApp(root: HTMLElement): AppHandle {
   // activation, remembering what selectMode was before so releasing restores it.
   let selectHeld = false;
   let selectPreHold = false;
+  let viewer: SolutionViewer | null = null;
+  let analyzing = false;
+  let lastAnalysis: AnalyzeResult | null = null;
+  // Whether each spoiler tag has been clicked open yet; reset on a fresh analysis or puzzle
+  // change, but NOT when just leaving and returning to the viewer (see updateAnalysisTags).
+  let uniqueRevealed = false;
+  let techniqueRevealed = false;
 
   // ── Static DOM ───────────────────────────────────────────────────────────
 
@@ -42,7 +51,7 @@ export function startApp(root: HTMLElement): AppHandle {
   // Overlay (never in flow): an in-flow banner would shift the grid under the
   // pointer when it appears mid-stroke, e.g. on the stroke that solves the puzzle.
   const notice = h("div", { id: "notice", hidden: true, role: "status" });
-  const warnEl = h("span", { class: "warn-pill", hidden: true });
+  const warnEl = h("span", { class: "warn-pill hd-collapsible", hidden: true });
   const toastEl = h("div", { id: "toast", role: "status", "aria-live": "polite" });
 
   // Header: title, size, timer, zoom — then the actions.
@@ -58,7 +67,7 @@ export function startApp(root: HTMLElement): AppHandle {
     game.timerRunning ? game.pauseTimer() : game.startTimer();
   });
   const RESTART_TIP = "Restart: blank the grid, un-dim every clue, and clear the undo history. Choose whether the timer resets too.";
-  const restartBtn = h("button", { id: "restartBtn", class: "btn", type: "button", title: RESTART_TIP }, icon("reset", 16), h("span", {}, "Restart"));
+  const restartBtn = h("button", { id: "restartBtn", class: "btn hd-collapsible", type: "button", title: RESTART_TIP }, icon("reset", 16), h("span", {}, "Restart"));
   // Appear in place of restartBtn after its first click, as two halves of one pill: pick which
   // kind of reset, then confirm.
   const restartPuzzleBtn = h("button", { id: "restartPuzzleBtn", class: "seg", type: "button", hidden: true }, "Puzzle");
@@ -68,25 +77,56 @@ export function startApp(root: HTMLElement): AppHandle {
   // listener per button — hiding whichever of the three currently has focus, as every transition
   // here does, would otherwise fire that button's own blur mid-transition and reset everything.
   const restartGroup = h("div", { class: "restart-group" }, restartBtn, restartChoice);
+  const analyzeBtn = h(
+    "button",
+    { id: "analyzeBtn", class: "btn hd-collapsible", type: "button", title: "Check whether this puzzle has a unique solution and whether it needs guessing" },
+    icon("search", 16),
+    h("span", {}, "Analyze"),
+  );
   const zoomOut = iconButton("minus", "Zoom out (−)", () => gridView.zoomOut());
   const zoomIn = iconButton("plus", "Zoom in (+)", () => gridView.zoomIn());
   const zoomFit = iconButton("fit", "Fit the puzzle to the window (0)", () => gridView.fit());
   const zoomReadout = h("button", { class: "zoom-readout", type: "button" });
   const shareMenu = h("div", { class: "menu", hidden: true, role: "menu" });
-  const shareBtn = h("button", { class: "btn", type: "button", "aria-haspopup": "menu" }, icon("share", 16), h("span", {}, "Share"), icon("chevron", 14));
-  const importBtn = h("button", { class: "btn", type: "button", title: "Open a puzzle from a link, text or file" }, icon("import", 16), h("span", {}, "Open"));
+  const shareBtn = h("button", { class: "btn hd-collapsible", type: "button", "aria-haspopup": "menu" }, icon("share", 16), h("span", {}, "Share"), icon("chevron", 14));
+  const importBtn = h("button", { class: "btn hd-collapsible", type: "button", title: "Open a puzzle from a link, text or file" }, icon("import", 16), h("span", {}, "Open"));
   const settingsBtn = iconButton("sliders", "Settings", () => toggleSettings());
   const homeBtn = h("button", { class: "brand", type: "button", title: "Start page" }, icon("fit", 20), h("span", {}, APP_NAME));
+
+  // Analyze result tags: next to the title, shown once analyzed (until the puzzle changes).
+  // A separate flex item from titleInfo (not appended inside it) so the two can independently
+  // wrap onto their own line when the header's too narrow for both side by side — see
+  // #topbar .title's flex-wrap. Each starts as a spoiler-hiding "...?" button and reveals its
+  // real result (and stops being clickable) once clicked — see updateAnalysisTags/revealTag.
+  const uniqueTag = h("button", { type: "button", class: "tag", hidden: true });
+  const techniqueTag = h("button", { type: "button", class: "tag", hidden: true });
+  const analyzeTags = h("span", { class: "analyze-tags" }, uniqueTag, techniqueTag);
+
+  // Solution viewer's previous/current/next strip: lives where the title normally does
+  // (centered, same spot) and replaces it while the viewer is open — see openViewer/closeViewer.
+  const titleInfo = h("span", { class: "title-info" }, nameEl, sizeEl, answerEl);
+  // Two lines per card — a label ("Previous"/"Current"/"Next") and one combined line
+  // ("Row 7: Trial") — so the whole strip fits the header's usual button height instead of
+  // growing it; see setCard.
+  const stepCard = (label: string) => {
+    const line = h("span", { class: "step-label" });
+    return { el: h("div", { class: "step-card" }, h("small", {}, label), line), line };
+  };
+  const prevCard = stepCard("Previous");
+  const currentCard = stepCard("Current");
+  const nextCard = stepCard("Next");
+  const viewerStrip = h("div", { class: "step-strip", hidden: true }, prevCard.el, currentCard.el, nextCard.el);
 
   // Three columns so the title is truly centered whatever the side groups' widths.
   const topbar = h(
     "header",
     { id: "topbar" },
     h("div", { class: "hd-left" }, homeBtn, timerBtn, restartGroup, warnEl),
-    h("div", { class: "title" }, nameEl, sizeEl, answerEl),
+    h("div", { class: "title" }, titleInfo, analyzeTags, viewerStrip),
     h(
       "div",
       { class: "hd-right" },
+      analyzeBtn,
       h("div", { class: "pill zoom" }, zoomOut, zoomReadout, zoomIn, zoomFit),
       importBtn,
       h("div", { class: "menu-wrap" }, shareBtn, shareMenu),
@@ -110,13 +150,34 @@ export function startApp(root: HTMLElement): AppHandle {
   const trialEnter = h("button", { class: "btn sm", type: "button", title: "Start a trial: guess, and keep or discard it later (T)" }, "Trial");
   const trialAccept = h("button", { class: "btn sm accept icon-only", type: "button", title: "Accept: keep this trial tier's work (A)", "aria-label": "Accept trial" }, icon("check", 15));
 
-  const footer = h(
+  const normalFooter = h(
     "div",
-    { id: "footer" },
+    { class: "footer-group" },
     h("div", { class: "group" }, undoBtn, redoBtn),
     h("div", { class: "group" }, selectBtn),
     h("div", { class: "group trial" }, tierEl, trialReject, trialEnter, trialAccept),
   );
+
+  // Solution viewer: while open, replaces the above (undo/redo/select/trial) in place —
+  // same spot under the puzzle, not the header.
+  const sm = (iconName: string, title: string, onClick: () => void) => {
+    const b = h("button", { class: "btn sm icon-only", type: "button", title, "aria-label": title }, icon(iconName, 16));
+    b.addEventListener("click", onClick);
+    return b;
+  };
+  const viewerToStart = sm("skipStart", "Jump to start (Home)", () => viewer?.toStart());
+  const viewerPrev = sm("arrowLeft", "Previous step (←)", () => viewer?.prev());
+  const viewerPlay = sm("play", "Play / pause (Space)", () => viewer?.togglePlay());
+  const viewerNext = sm("arrowRight", "Next step (→)", () => viewer?.next());
+  const viewerToEnd = sm("skipEnd", "Jump to end (End)", () => viewer?.toEnd());
+  const viewerPos = h("span", { class: "viewer-pos" });
+  const playbackFooter = h(
+    "div",
+    { class: "footer-group", hidden: true },
+    h("div", { class: "group" }, viewerToStart, viewerPrev, viewerPlay, viewerNext, viewerToEnd, viewerPos),
+  );
+
+  const footer = h("div", { id: "footer" }, normalFooter, playbackFooter);
 
   // Shown while the timer is paused: blurs the puzzle so a pause can't be used to think for free.
   const pauseTime = h("div", { class: "pause-time" });
@@ -243,6 +304,8 @@ export function startApp(root: HTMLElement): AppHandle {
   // ── Puzzle lifecycle ─────────────────────────────────────────────────────
 
   function openPuzzle(puzzle: Puzzle, how: "push" | "replace" | "none" = "push"): void {
+    closeViewer(); // a stale preview/footer for the puzzle we're leaving can't survive the swap
+    resetAnalysis(); // ...and neither can its analysis result, which is specific to its clues
     flushSave();
     game?.pauseTimer();
     unsubGame?.();
@@ -296,6 +359,8 @@ export function startApp(root: HTMLElement): AppHandle {
   }
 
   function showLanding(error?: string): void {
+    closeViewer();
+    resetAnalysis();
     flushSave();
     game?.pauseTimer();
     unsubGame?.();
@@ -404,6 +469,15 @@ export function startApp(root: HTMLElement): AppHandle {
     } else if (!paused && !pauseOverlay.hidden) {
       pauseOverlay.hidden = true;
     }
+    refreshAnalyzeBtn();
+  }
+
+  // Analyzing a frozen, blurred puzzle isn't meaningful, and the button's own busy state
+  // (see analyzeBtn's click handler) must survive a pause toggling independently of it.
+  function refreshAnalyzeBtn(): void {
+    // Exiting the viewer must always be available; the pause gate only applies to starting
+    // a fresh analysis.
+    analyzeBtn.disabled = viewer ? false : analyzing || isPaused();
   }
   // resumeBtn is inside pauseOverlay, so this also catches clicks (and Enter/Space on the
   // focused button) on it via bubbling — anywhere in the blurred play area resumes.
@@ -468,10 +542,114 @@ export function startApp(root: HTMLElement): AppHandle {
     const close = h("button", { class: "icon-btn", type: "button", title: "Dismiss", "aria-label": "Dismiss" }, icon("x", 14));
     close.addEventListener("click", hideNotice);
     clear(notice);
+    notice.className = "notice-ok";
     append(notice, [icon("check", 18), h("span", {}, g.puzzle.answer ? `${msg}  It's “${g.puzzle.answer}”.` : msg), close]);
     notice.hidden = false;
     clearTimeout(noticeTimer);
     noticeTimer = setTimeout(hideNotice, 12000);
+  }
+
+  // Each tag starts as a spoiler-hiding "...?" button (blue) and only shows its real result
+  // (green = good, orange-red = bad) once clicked, so Analyze doesn't spoil anything the
+  // player didn't ask to see yet. Revealing is one-way until the next analysis.
+  function revealTag(el: HTMLButtonElement, revealed: boolean, question: string, answer: string, good: boolean): void {
+    el.disabled = revealed;
+    el.textContent = revealed ? answer : question;
+    el.className = revealed ? `tag ${good ? "tag-good" : "tag-bad"}` : "tag tag-reveal";
+  }
+
+  // Analyze result tags, next to the title: uniqueness and technique each read as good
+  // (green) or bad (orange-red) — a puzzle is expected to have exactly one answer, findable
+  // by pure logic; anything else is worth flagging, not graded on a third "in-between" tier.
+  function updateAnalysisTags(result: AnalyzeResult | null): void {
+    analyzeTags.hidden = !result;
+    uniqueTag.hidden = !result;
+    techniqueTag.hidden = !result;
+    if (!result) return;
+    const uniqueAnswer = result.solutionCount === 1 ? "Unique solution" : result.solutionCount === 0 ? "No solution" : "Multiple solutions";
+    revealTag(uniqueTag, uniqueRevealed, "Uniqueness?", uniqueAnswer, result.solutionCount === 1);
+    revealTag(techniqueTag, techniqueRevealed, "Method?", result.needsGuessing ? "Trial" : "Logic", !result.needsGuessing);
+  }
+  uniqueTag.addEventListener("click", () => { uniqueRevealed = true; updateAnalysisTags(lastAnalysis); });
+  techniqueTag.addEventListener("click", () => { techniqueRevealed = true; updateAnalysisTags(lastAnalysis); });
+
+  function resetAnalysis(): void {
+    lastAnalysis = null;
+    uniqueRevealed = false;
+    techniqueRevealed = false;
+    updateAnalysisTags(null);
+    setAnalyzeBtnLabel("search", "Analyze");
+  }
+
+  // ── Solution viewer ──────────────────────────────────────────────────────
+  // Read-only, step-by-step playback of a solve trace — see SolutionViewer. Replaces the
+  // undo/redo/select/trial toolbar under the puzzle with `playbackFooter` while open; the
+  // header is untouched. Never touches the real grid.
+
+  // "Row 7: " (or "" for a step with no associated line) — the kind word itself is a
+  // separate, colored span appended after this, not part of the string.
+  function describeStepLocation(step: SolveStep): string {
+    return step.line ? `${step.line.axis === "row" ? "Row" : "Col"} ${step.line.index + 1}: ` : "";
+  }
+
+  function setCard(card: { line: HTMLElement }, step: SolveStep | null): void {
+    clear(card.line);
+    if (!step) { card.line.textContent = "—"; return; }
+    append(card.line, [describeStepLocation(step), h("span", { class: `step-kind kind-${step.kind.toLowerCase()}` }, step.kind)]);
+  }
+
+  function renderViewer(): void {
+    const v = viewer;
+    if (!v) return;
+    clear(viewerPlay);
+    append(viewerPlay, [icon(v.isPlaying ? "pause" : "play", 16)]);
+    viewerPlay.title = v.isPlaying ? "Pause (Space)" : "Play (Space)";
+    viewerToStart.disabled = v.atStart;
+    viewerPrev.disabled = v.atStart;
+    viewerNext.disabled = v.atEnd;
+    viewerToEnd.disabled = v.atEnd;
+    viewerPos.textContent = `${v.position + 1} / ${v.length}`;
+    setCard(prevCard, v.previousStep);
+    setCard(currentCard, v.currentStep);
+    setCard(nextCard, v.nextStep);
+    gridView.setPreviewOverride(v.grid, v.highlight);
+  }
+
+  function setAnalyzeBtnLabel(iconName: string, text: string): void {
+    clear(analyzeBtn);
+    append(analyzeBtn, [icon(iconName, 16), h("span", {}, text)]);
+  }
+
+  function openViewer(steps: SolveStep[]): void {
+    if (!game) return;
+    closeViewer();
+    viewer = new SolutionViewer(steps, game.puzzle, settings.stepViewer.speed);
+    viewer.onChange = renderViewer;
+    normalFooter.hidden = true;
+    playbackFooter.hidden = false;
+    titleInfo.hidden = true;
+    analyzeTags.hidden = true;
+    viewerStrip.hidden = false;
+    setAnalyzeBtnLabel("arrowLeft", "Return");
+    analyzeBtn.classList.add("primary");
+    refreshAnalyzeBtn();
+    renderViewer();
+  }
+
+  function closeViewer(): void {
+    if (!viewer) return;
+    viewer.close();
+    viewer = null;
+    gridView.setPreviewOverride(null, null);
+    normalFooter.hidden = false;
+    playbackFooter.hidden = true;
+    titleInfo.hidden = false;
+    updateAnalysisTags(lastAnalysis);
+    viewerStrip.hidden = true;
+    analyzeBtn.classList.remove("primary");
+    if (lastAnalysis?.grid && lastAnalysis.steps) setAnalyzeBtnLabel("search", "View solution");
+    else setAnalyzeBtnLabel("search", "Analyze");
+    refreshAnalyzeBtn();
   }
 
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -547,6 +725,30 @@ export function startApp(root: HTMLElement): AppHandle {
   restartGroup.addEventListener("focusout", (e) => {
     const next = e.relatedTarget as Node | null;
     if (!next || !restartGroup.contains(next)) disarmRestart();
+  });
+  analyzeBtn.addEventListener("click", async () => {
+    if (viewer) { closeViewer(); return; }
+    if (lastAnalysis?.grid && lastAnalysis.steps) { openViewer(lastAnalysis.steps); return; }
+    if (!game || analyzing) return;
+    const puzzle = game.puzzle;
+    analyzing = true;
+    refreshAnalyzeBtn();
+    setAnalyzeBtnLabel("search", "Analyzing…");
+    try {
+      const result = await analyzePuzzle(puzzle.rowClues, puzzle.colClues);
+      lastAnalysis = result;
+      uniqueRevealed = false;
+      techniqueRevealed = false;
+      updateAnalysisTags(result);
+      if (result.grid && result.steps) setAnalyzeBtnLabel("search", "View solution");
+      else setAnalyzeBtnLabel("search", "Analyze");
+    } catch (err) {
+      toast(`Analyze failed: ${err instanceof Error ? err.message : String(err)}`);
+      setAnalyzeBtnLabel("search", "Analyze");
+    } finally {
+      analyzing = false;
+      refreshAnalyzeBtn();
+    }
   });
   undoBtn.addEventListener("click", () => game?.undo());
   redoBtn.addEventListener("click", () => game?.redo());
@@ -869,7 +1071,21 @@ export function startApp(root: HTMLElement): AppHandle {
     if (e.key === "Escape") {
       if (!shareMenu.hidden) closeShare();
       else if (!settingsDrawer.hidden) toggleSettings(false);
+      else if (viewer) closeViewer();
       else if (gridView.hasSelection) gridView.clearSelection();
+      return;
+    }
+    // Read-only playback owns the keyboard while it's open: arrows/Home/End navigate it,
+    // and nothing else (undo, trial hotkeys, painting shortcuts) should reach the puzzle
+    // underneath, which the viewer is deliberately not showing.
+    if (viewer) {
+      switch (e.key) {
+        case "ArrowLeft": e.preventDefault(); viewer.prev(); break;
+        case "ArrowRight": e.preventDefault(); viewer.next(); break;
+        case "Home": e.preventDefault(); viewer.toStart(); break;
+        case "End": e.preventDefault(); viewer.toEnd(); break;
+        case " ": e.preventDefault(); viewer.togglePlay(); break;
+      }
       return;
     }
     if (!game) return;

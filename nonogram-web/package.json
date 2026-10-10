@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:wasm": "wasm-pack build ../nonogram-wasm --target web --out-dir ../nonogram-web/src/wasm/pkg"
   },
   "devDependencies": {
     "playwright": "^1.63.0",

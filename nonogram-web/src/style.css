@@ -12,6 +12,8 @@
   --warn: #bf6100;
   --warn-bg: #fff4e0;
   --ok-bg: #e5f6ea;
+  --danger-bg: #fdecea;
+  --accent-bg: #e8ecfb;
   --shadow: 0 8px 28px rgba(20, 24, 40, 0.18);
   --tier-1: #405294;
   --tier-2: #73388c;
@@ -35,6 +37,8 @@
   --warn: #ffb347;
   --warn-bg: #3a2c12;
   --ok-bg: #16301f;
+  --danger-bg: #3a1618;
+  --accent-bg: #1c2340;
   --shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
   --tier-1: #8fa4ff;
   --tier-2: #c58ae0;
@@ -234,11 +238,25 @@ button.mini {
   max-width: calc(100% - 24px);
   padding: 6px 8px 6px 14px;
   border-radius: 10px;
+  font-weight: 600;
+  box-shadow: var(--shadow);
+}
+/* Color is a modifier, not baked into #notice itself — the "Solved" banner is always
+   notice-ok, but Analyze's result swings between all three depending on the verdict. */
+#notice.notice-ok {
   border: 1px solid var(--ok);
   background: var(--ok-bg);
   color: var(--ok);
-  font-weight: 600;
-  box-shadow: var(--shadow);
+}
+#notice.notice-warn {
+  border: 1px solid var(--warn);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+#notice.notice-danger {
+  border: 1px solid var(--danger);
+  background: var(--danger-bg);
+  color: var(--danger);
 }
 #notice .icon-btn {
   width: 26px;
@@ -262,6 +280,37 @@ button.mini {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Analyze result tags, next to the title. */
+.tag {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 2px 10px;
+  border: 0;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: default;
+}
+.tag-good {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.tag-bad {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+/* Spoiler-hiding "Uniqueness?" / "Method?" state, before it's clicked — same blue as Return. */
+.tag-reveal {
+  background: var(--accent);
+  color: var(--accent-text);
+  cursor: pointer;
+}
+.tag-reveal:hover {
+  filter: brightness(1.08);
 }
 
 /* ── Stage / canvas ──────────────────────────────────────────────────────── */
@@ -656,6 +705,14 @@ dialog::backdrop {
 
 #topbar {
   display: grid;
+  /* Equal 1fr side columns: this is what actually centers the title on the page — two tracks
+     sharing the same fr value always resolve to the same size, regardless of how different
+     hd-left's and hd-right's own content widths are (an explicit max-content column per side
+     would guarantee no overflow too, but at the cost of that guarantee: it can't keep both
+     sides equal when their content differs, so the title drifts off-center). The middle
+     column is plain auto (sized to its own content, not shrunk under pressure) so title
+     drives its own width; the side buttons/warning pill stay within their equal fr share via
+     the responsive collapse below (see .hd-collapsible) instead. */
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 12px;
@@ -673,6 +730,82 @@ dialog::backdrop {
 }
 #topbar .hd-right {
   justify-content: flex-end;
+}
+
+/* Restart, Analyze/View solution, Open and Share: the header's widest buttons, and the ones
+   most responsible for crowding the row at moderate widths. Below this, they drop their text
+   and become icon-only (title stays) — same buttons, same handlers, just narrower. 1400px
+   (not a round number by coincidence — verified empirically) is the width the worst case
+   needs: the title column is an unbounded auto track (by design, so the two side columns
+   stay equal-width and the title stays truly page-centered — see #topbar's comment), so
+   unlike the side columns it never gives ground on its own, and its widest state is a long
+   puzzle name plus both analyze tags revealed to their longest text ("Multiple solutions" /
+   "Trial") at once, sitting right next to the buttons at their widest ("View solution"). */
+@media (max-width: 1400px) {
+  .hd-collapsible span {
+    display: none;
+  }
+}
+
+/* ── Solution viewer toolbar (under the puzzle, replacing undo/trial) ────── */
+
+.footer-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.viewer-pos {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.step-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+}
+.step-card {
+  /* Matches the header's usual control height exactly (same token as .btn/.restart-choice)
+     so opening the viewer never changes the header's height — two short lines, not three,
+     is what makes that fit. */
+  height: var(--ctrl-h);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: 70px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+.step-card:nth-child(2) {
+  border-color: var(--accent);
+  background: var(--panel-2);
+}
+.step-card small {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.step-label {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.step-kind {
+  /* Same font size as the rest of the line (.step-label) — only the color marks it out. */
+  font-weight: 600;
+}
+.step-kind.kind-logic {
+  color: var(--ok);
+}
+.step-kind.kind-trial {
+  color: var(--warn);
 }
 .restart-group {
   display: flex;
@@ -694,10 +827,27 @@ body.header-hidden #topbar {
 }
 #topbar .title {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+/* When title-info + the analyze tags don't fit the middle column on one line, the tags (the
+   second flex item here, after title-info) wrap onto their own line below instead of
+   clipping the title or pushing into the header buttons — each wrapped line is still
+   centered via .title's own justify-content. */
+.analyze-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.title-info {
+  display: flex;
+  align-items: baseline;
   gap: 8px;
   min-width: 0;
+  overflow: hidden;
 }
 #topbar .name {
   font-weight: 650;
@@ -789,6 +939,7 @@ button.pill:focus-visible {
 
 .no-puzzle #topbar .title,
 .no-puzzle .restart-group,
+.no-puzzle #analyzeBtn,
 .no-puzzle #topbar .pill,
 .no-puzzle #topbar .menu-wrap,
 .no-puzzle #footer,
@@ -989,20 +1140,20 @@ body.no-timer .pill.timer {
   outline-offset: -2px;
 }
 
-/* Restart's Puzzle/+Time pair: an amber, in-between highlight between the neutral Restart
-   button and the red "Sure?" stage. Hovering +Time previews both halves since it resets the
-   puzzle too. */
+/* Restart's Puzzle/+Time pair: an accent-blue, in-between highlight between the neutral
+   Restart button and the red "Sure?" stage. Hovering +Time previews both halves since it
+   resets the puzzle too. */
 .restart-choice .seg {
-  background: var(--warn-bg);
-  color: var(--warn);
+  background: var(--accent-bg);
+  color: var(--accent);
 }
 .restart-choice .seg:hover {
-  background: var(--warn);
-  color: #fff;
+  background: var(--accent);
+  color: var(--accent-text);
 }
 .restart-choice:has(#restartTimeBtn:hover) #restartPuzzleBtn {
-  background: var(--warn);
-  color: #fff;
+  background: var(--accent);
+  color: var(--accent-text);
 }
 .restart-choice .seg.armed {
   background: var(--danger);
