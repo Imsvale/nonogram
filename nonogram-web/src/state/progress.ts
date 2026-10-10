@@ -117,6 +117,11 @@ export function specFor(p: Puzzle): string {
 
 /** Share of cells that are no longer Unknown, for the recent-puzzles list. */
 export function progressFraction(e: ProgressEntry): number {
+  // A completed puzzle can legitimately leave cells Unknown — a clue reads as fulfilled once
+  // its runs are placed and bounded, with no need to also cross out every last blank square
+  // (see isPuzzleSolved/checkLineFulfilled) — so counting marked cells alone would show a
+  // completed puzzle's bar as partial. everSolved is the authority here, not the grid.
+  if (e.everSolved) return 1;
   let n = 0;
   for (const ch of e.grid) if (ch !== "U") n++;
   return e.grid.length ? n / e.grid.length : 0;

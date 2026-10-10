@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { Game } from "../src/state/game";
-import { deleteProgress, resumeCandidate, saveProgress, setLastOpen } from "../src/state/progress";
+import { deleteProgress, progressFraction, resumeCandidate, saveProgress, setLastOpen } from "../src/state/progress";
 import type { Puzzle } from "../src/core/types";
 
 // Minimal in-memory localStorage for the node test environment.
@@ -62,6 +62,32 @@ describe("resume candidate", () => {
     open(plus, (g) => stroke(g, 0, 1));
     open(other, () => {}); // last opened, but untouched
     expect(resumeCandidate()).toBeNull();
+  });
+});
+
+describe("progress fraction", () => {
+  beforeEach(() => store.clear());
+
+  it("tracks marked cells for an unfinished puzzle", () => {
+    const g = open(plus, (game) => stroke(game, 0, 1));
+    expect(progressFraction(g.toProgress())).toBeCloseTo(1 / 9);
+  });
+
+  it("reads as full once solved, even with cells left Unknown", () => {
+    // The plus's four corners never get crossed out here — a clue reads as fulfilled once its
+    // runs are placed and bounded, not once every cell is marked (see isPuzzleSolved) — so a
+    // completed puzzle can legitimately still have Unknown cells in its saved grid.
+    const g = open(plus, (game) => {
+      stroke(game, 0, 1);
+      stroke(game, 1, 0);
+      stroke(game, 1, 1);
+      stroke(game, 1, 2);
+      stroke(game, 2, 1);
+    });
+    const entry = g.toProgress();
+    expect(entry.everSolved).toBe(true);
+    expect(entry.grid).toContain("U"); // corners still blank
+    expect(progressFraction(entry)).toBe(1);
   });
 });
 
