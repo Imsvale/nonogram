@@ -13,3 +13,12 @@ nonogram-graph-search = { path = "../nonogram-graph-search" }
 wasm-bindgen = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
+
+# wasm-bindgen's current codegen uses a second wasm table (for externref handling) — a
+# feature the wasm-opt binary jetli/wasm-pack-action's CI installs doesn't understand
+# ("Only 1 table definition allowed in MVP"), even though it builds fine locally with a
+# newer wasm-pack/binaryen. wasm-opt is a size optimization, not a correctness requirement,
+# so disabling it trades a somewhat larger (still gzip-served) binary for not depending on
+# CI's toolchain staying in lockstep with wasm-bindgen's.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
