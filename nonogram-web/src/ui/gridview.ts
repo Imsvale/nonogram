@@ -1,9 +1,11 @@
 import type { Game, PaintAction } from "../state/game";
-import type { Grid } from "../core/types";
+import type { Grid, Puzzle } from "../core/types";
 import { paletteFor, type ResolvedTheme, type Settings } from "../state/settings";
 import { computeLayout, fitCellSize, hitTest, viewportOk, type Hit, type Layout } from "./geometry";
 import { minimapGeometry, NO_HOVER, render, type HoverState } from "./render";
 import { EMPTY_SELECTION, selectDrag, selectPress, type SelectionState } from "./selection";
+import * as rotate from "./rotate";
+import type { Rotation } from "./rotate";
 
 export interface GridViewDeps {
   getSettings(): Settings;
@@ -69,6 +71,35 @@ export class GridView {
   /** Where the whole frame has been dragged to, relative to centered (see computeLayout). */
   private offX = 0;
   private offY = 0;
+
+  // ── Rotation ──────────────────────────────────────────────────────────────
+  // A view-only concern, exactly like pan/zoom: never touches Game, never saved. `viewPuzzle()`
+  // is what every layout/hit-test/render call below actually uses instead of `game.puzzle`.
+  private rotation: Rotation = 0;
+
+  private viewPuzzle(): Puzzle {
+    return rotate.viewPuzzle(this.game!.puzzle, this.rotation);
+  }
+
+  rotateCW(): void {
+    this.setRotation(rotate.rotateCW(this.rotation));
+  }
+  rotateCCW(): void {
+    this.setRotation(rotate.rotateCCW(this.rotation));
+  }
+
+  private setRotation(next: Rotation): void {
+    if (!this.game || next === this.rotation) return;
+    this.rotation = next;
+    this.setHover(NO_HOVER);
+    this.clearSelection();
+    this.panX = this.panY = 0;
+    this.offX = this.offY = 0;
+    this.autoFit = true;
+    this.C = fitCellSize(this.viewPuzzle(), this.W, this.H, undefined, undefined, this.showSums, this.majorWidth);
+    this.requestRender();
+    this.onViewChange();
+  }
 
   private hover: HoverState = NO_HOVER;
   private hoverKey = "";
@@ -169,13 +200,14 @@ export class GridView {
     this.panX = this.panY = 0;
     this.offX = this.offY = 0;
     this.autoFit = true;
+    this.rotation = 0;
     this.clearSelection();
     // A stale preview sized for the old puzzle must not survive a puzzle swap.
     this.previewGrid = null;
     this.previewHighlight = null;
     if (game) {
       this.unsub = game.subscribe(() => this.requestRender());
-      this.C = fitCellSize(game.puzzle, this.W, this.H, undefined, undefined, this.showSums, this.majorWidth);
+      this.C = fitCellSize(this.viewPuzzle(), this.W, this.H, undefined, undefined, this.showSums, this.majorWidth);
     }
     this.requestRender();
     this.onViewChange();
@@ -190,10 +222,10 @@ export class GridView {
     // Showing/hiding the sums changes the frame's size: re-fit if the view is tracking the window.
     const sums = this.showSums;
     if (this.lastSums !== null && this.lastSums !== sums && this.autoFit) {
-      this.C = fitCellSize(this.game.puzzle, this.W, this.H, undefined, undefined, sums, this.majorWidth);
+      this.C = fitCellSize(this.viewPuzzle(), this.W, this.H, undefined, undefined, sums, this.majorWidth);
     }
     this.lastSums = sums;
-    const L = computeLayout(this.game.puzzle, this.C, this.W, this.H, this.panX, this.panY, this.offX, this.offY, sums, this.majorWidth);
+    const L = computeLayout(this.viewPuzzle(), this.C, this.W, this.H, this.panX, this.panY, this.offX, this.offY, sums, this.majorWidth);
     this.panX = L.panX;
     this.panY = L.panY;
     this.offX = L.offX;
@@ -225,7 +257,7 @@ export class GridView {
     this.canvas.height = Math.round(this.H * this.dpr);
     this.canvas.style.width = `${this.W}px`;
     this.canvas.style.height = `${this.H}px`;
-    if (this.game && this.autoFit) this.C = fitCellSize(this.game.puzzle, this.W, this.H, undefined, undefined, this.showSums, this.majorWidth);
+    if (this.game && this.autoFit) this.C = fitCellSize(this.viewPuzzle(), this.W, this.H, undefined, undefined, this.showSums, this.majorWidth);
     this.requestRender();
     this.onViewChange();
   }
@@ -245,19 +277,24 @@ export class GridView {
     const L = this.layout()!;
     this.onLayout(L);
     const previewing = this.previewGrid !== null;
+    const vp = this.viewPuzzle();
+    const rw = game.puzzle.width;
+    const rh = game.puzzle.height;
+    const dims = rotate.viewDimSets(game.dimRows, game.dimCols, game.puzzle, this.rotation);
+    const derived = !previewing && (settings.assist.autoDim || settings.assist.clueSumsExcludeCompleted) ? game.derived() : null;
     render({
       ctx: this.ctx,
       dpr: this.dpr,
       layout: L,
-      puzzle: game.puzzle,
-      grid: this.previewGrid ?? game.displayGrid(),
+      puzzle: vp,
+      grid: rotate.viewGrid(this.previewGrid ?? game.displayGrid(), rw, rh, this.rotation),
       // No trial tiering for a preview grid — the viewer's trace predates (and knows
       // nothing about) any trial the real grid might be mid-way through.
-      tierMap: previewing ? new Uint8Array(game.puzzle.width * game.puzzle.height) : game.tierMap(),
+      tierMap: previewing ? new Uint8Array(vp.width * vp.height) : rotate.viewGrid(game.tierMap(), rw, rh, this.rotation),
       trial: previewing ? [] : game.trial,
-      derived: !previewing && (settings.assist.autoDim || settings.assist.clueSumsExcludeCompleted) ? game.derived() : null,
-      dimRows: game.dimRows,
-      dimCols: game.dimCols,
+      derived: derived ? rotate.viewDerived(derived, game.puzzle, this.rotation) : null,
+      dimRows: dims.dimRows,
+      dimCols: dims.dimCols,
       settings,
       theme,
       palette: paletteFor(settings, theme),
@@ -265,7 +302,10 @@ export class GridView {
       // painting (which hover normally tracks) is blocked anyway while previewing.
       hover: previewing ? NO_HOVER : this.hover,
       selection: previewing ? [] : this.selState.rects,
-      stepHighlight: this.previewHighlight,
+      stepHighlight: this.previewHighlight && {
+        current: rotate.viewIndexSet(this.previewHighlight.current, rw, rh, this.rotation),
+        previous: rotate.viewIndexSet(this.previewHighlight.previous, rw, rh, this.rotation),
+      },
     });
   }
 
@@ -274,7 +314,7 @@ export class GridView {
   fit(): void {
     if (!this.game) return;
     this.autoFit = true;
-    this.C = fitCellSize(this.game.puzzle, this.W, this.H, undefined, undefined, this.showSums, this.majorWidth);
+    this.C = fitCellSize(this.viewPuzzle(), this.W, this.H, undefined, undefined, this.showSums, this.majorWidth);
     this.panX = this.panY = 0;
     this.offX = this.offY = 0;
     this.requestRender();
@@ -292,7 +332,7 @@ export class GridView {
   get maxCellSize(): number {
     if (!this.game) return MAX_CELL;
     let c = MAX_CELL;
-    while (c > this.C && !viewportOk(this.game.puzzle, c, this.W, this.H, this.showSums)) c--;
+    while (c > this.C && !viewportOk(this.viewPuzzle(), c, this.W, this.H, this.showSums)) c--;
     return c;
   }
 
@@ -324,14 +364,14 @@ export class GridView {
     next = Math.min(MAX_CELL, Math.max(MIN_CELL, next));
     if (!this.game) return next;
     // Only zoom-in is restricted; never trap the user at a size they can't leave.
-    while (next > this.C && !viewportOk(this.game.puzzle, next, this.W, this.H, this.showSums, this.majorWidth)) next--;
+    while (next > this.C && !viewportOk(this.viewPuzzle(), next, this.W, this.H, this.showSums, this.majorWidth)) next--;
     return next;
   }
 
   private setCellSizeKeeping(next: number, wx: number, wy: number, px: number, py: number): void {
     if (!this.game) return;
     this.C = next;
-    const L1 = computeLayout(this.game.puzzle, next, this.W, this.H, 0, 0, this.offX, this.offY, this.showSums, this.majorWidth);
+    const L1 = computeLayout(this.viewPuzzle(), next, this.W, this.H, 0, 0, this.offX, this.offY, this.showSums, this.majorWidth);
     this.panX = wx * next - (px - L1.ox);
     this.panY = wy * next - (py - L1.oy);
     this.requestRender();
@@ -377,7 +417,8 @@ export class GridView {
 
     this.canvas.setPointerCapture(e.pointerId);
     const L = this.layout()!;
-    const hit = hitTest(L, game.puzzle, pt.x, pt.y);
+    const vp = this.viewPuzzle();
+    const hit = hitTest(L, vp, pt.x, pt.y);
     this.lastPointer = pt;
 
     if (e.button === 1 || (e.button === 0 && this.spaceHeld)) {
@@ -393,7 +434,8 @@ export class GridView {
           this.beginSelectDrag(hit.r, hit.c, e);
         } else {
           const settings = this.deps.getSettings();
-          game.startStroke(hit.r, hit.c, this.paintAction(e), settings.assist.axisLock);
+          const [r, c] = rotate.toReal(this.rotation, game.puzzle.width, game.puzzle.height, hit.r, hit.c);
+          game.startStroke(r, c, this.paintAction(e), settings.assist.axisLock);
           this.drag = "stroke";
         }
         this.setHover(this.hoverFor(hit));
@@ -412,12 +454,14 @@ export class GridView {
           const click =
             hit.kind === "colClue"
               ? () => {
-                  game.toggleDim(true, hit.c, hit.i);
+                  const addr = rotate.realDimAddress(this.rotation, game.puzzle, true, hit.c, hit.i);
+                  game.toggleDim(addr.isCol, addr.line, addr.idx);
                   this.onUserChange();
                 }
               : hit.kind === "rowClue"
                 ? () => {
-                    game.toggleDim(false, hit.r, hit.i);
+                    const addr = rotate.realDimAddress(this.rotation, game.puzzle, false, hit.r, hit.i);
+                    game.toggleDim(addr.isCol, addr.line, addr.idx);
                     this.onUserChange();
                   }
                 : hit.kind === "sumToggle"
@@ -451,7 +495,8 @@ export class GridView {
       case "stroke": {
         const L = this.layout()!;
         const [r, c] = this.clampedCell(L, pt.x, pt.y);
-        game.strokeTo(r, c);
+        const [rr, rc] = rotate.toReal(this.rotation, game.puzzle.width, game.puzzle.height, r, c);
+        game.strokeTo(rr, rc);
         this.setHover({ ...NO_HOVER, cell: [r, c] });
         this.maybeAutoScroll();
         return;
@@ -479,7 +524,7 @@ export class GridView {
 
     if (e.pointerType === "touch") return;
     const L = this.layout()!;
-    const hit = hitTest(L, game.puzzle, pt.x, pt.y);
+    const hit = hitTest(L, this.viewPuzzle(), pt.x, pt.y);
     this.setHover(this.hoverFor(hit));
     this.updateCursor(hit);
     this.canvas.title = HINTS[hit.kind] ?? "";
@@ -548,7 +593,7 @@ export class GridView {
   }
 
   private clampedCell(L: Layout, x: number, y: number): [number, number] {
-    const p = this.game!.puzzle;
+    const p = this.viewPuzzle();
     const c = Math.floor((x - L.ox + L.panX) / L.m.C);
     const r = Math.floor((y - L.oy + L.panY) / L.m.C);
     return [Math.min(p.height - 1, Math.max(0, r)), Math.min(p.width - 1, Math.max(0, c))];
@@ -596,7 +641,7 @@ export class GridView {
   private minimapJump(mx: number, my: number): void {
     const L = this.layout();
     if (!L || !this.game) return;
-    const g = minimapGeometry(L, this.game.puzzle);
+    const g = minimapGeometry(L, this.viewPuzzle());
     const wx = ((mx - g.px) / g.mw) * L.fullW;
     const wy = ((my - g.py) / g.mh) * L.fullH;
     this.panX = wx - L.cw / 2;
@@ -619,7 +664,8 @@ export class GridView {
       this.panBy(dx ? speed(dx) : 0, dy ? speed(dy) : 0);
       const L2 = this.layout()!;
       const [r, c] = this.clampedCell(L2, x, y);
-      this.game.strokeTo(r, c);
+      const [rr, rc] = rotate.toReal(this.rotation, this.game.puzzle.width, this.game.puzzle.height, r, c);
+      this.game.strokeTo(rr, rc);
       this.autoScrollId = requestAnimationFrame(tick);
     };
     this.autoScrollId = requestAnimationFrame(tick);

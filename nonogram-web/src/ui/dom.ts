@@ -61,6 +61,8 @@ const ICONS: Record<string, string> = {
   skipStart: '<path d="M6 5v14"/><path d="M18 6 9 12l9 6V6z" fill="currentColor"/>',
   skipEnd: '<path d="M18 5v14"/><path d="M6 6l9 6-9 6V6z" fill="currentColor"/>',
   checkCircle: '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/>',
+  rotateCcw: '<path d="M4 10a8 8 0 1 1 2 5.3"/><path d="M4 5v5h5"/>',
+  rotateCw: '<path d="M20 10a8 8 0 1 0-2 5.3"/><path d="M20 5v5h-5"/>',
 };
 
 /** Inline SVG icon (stroke-based, inherits `currentColor`). */

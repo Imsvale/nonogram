@@ -90,6 +90,8 @@ export function startApp(root: HTMLElement): AppHandle {
   const zoomIn = iconButton("plus", "Zoom in (+)", () => gridView.zoomIn());
   const zoomFit = iconButton("fit", "Fit the puzzle to the window (0)", () => gridView.fit());
   const zoomReadout = h("button", { class: "zoom-readout", type: "button" });
+  const rotateCcwBtn = iconButton("rotateCcw", "Rotate counter-clockwise ([)", () => gridView.rotateCCW());
+  const rotateCwBtn = iconButton("rotateCw", "Rotate clockwise (])", () => gridView.rotateCW());
   const shareMenu = h("div", { class: "menu", hidden: true, role: "menu" });
   const shareBtn = h("button", { class: "btn hd-collapsible", type: "button", "aria-haspopup": "menu" }, icon("share", 16), h("span", {}, "Share"), icon("chevron", 14));
   const importBtn = h("button", { class: "btn hd-collapsible", type: "button", title: "Open a puzzle from a link, text or file" }, icon("import", 16), h("span", {}, "Open"));
@@ -131,6 +133,7 @@ export function startApp(root: HTMLElement): AppHandle {
       { class: "hd-right" },
       analyzeBtn,
       h("div", { class: "pill zoom" }, zoomOut, zoomReadout, zoomIn, zoomFit),
+      h("div", { class: "pill" }, rotateCcwBtn, rotateCwBtn),
       importBtn,
       h("div", { class: "menu-wrap" }, shareBtn, shareMenu),
       settingsBtn,
@@ -1173,6 +1176,12 @@ export function startApp(root: HTMLElement): AppHandle {
         break;
       case "0":
         gridView.fit();
+        break;
+      case "[":
+        gridView.rotateCCW();
+        break;
+      case "]":
+        gridView.rotateCW();
         break;
       default:
         return;
