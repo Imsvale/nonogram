@@ -40,6 +40,10 @@ from a Web Worker rather than the main thread if you don't want to block the pag
 [`nonogram-web`'s own usage](../nonogram-web/src/wasm/) (`analyze.ts` +
 `analyzeWorker.ts`) is a complete, working reference for that pattern.
 
+For a plain static page with no build step (e.g. a GitHub Pages site), see
+[STATIC_SITE.md](STATIC_SITE.md): a step-by-step walkthrough, including a timeout for
+runaway searches.
+
 ## Cell encoding
 
 Every grid in this API — input solutions, output grids, step deltas — is a flat,
