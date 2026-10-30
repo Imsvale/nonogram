@@ -201,6 +201,16 @@ describe("assistance", () => {
     stroke(g, [[0, 4], [0, 5]]);
     expect(g.derived().rowIndiv[0]).toEqual([false, true]); // the "3" is still wide open; the "2" is anchored
   });
+
+  it("derivedOf() reads the given grid, not the live one", () => {
+    const g = new Game(plus);
+    const solved = Uint8Array.from([EMPTY, FILLED, EMPTY, FILLED, FILLED, FILLED, EMPTY, FILLED, EMPTY]);
+    const d = g.derivedOf(solved);
+    expect(d.rowFulfilled).toEqual([true, true, true]);
+    expect(d.colFulfilled).toEqual([true, true, true]);
+    expect(g.derived().rowFulfilled).toEqual([false, false, false]); // live grid is still blank
+    expect(g.derivedOf(solved)).toBe(d);
+  });
 });
 
 describe("solving", () => {

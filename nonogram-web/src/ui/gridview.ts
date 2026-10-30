@@ -281,7 +281,9 @@ export class GridView {
     const rw = game.puzzle.width;
     const rh = game.puzzle.height;
     const dims = rotate.viewDimSets(game.dimRows, game.dimCols, game.puzzle, this.rotation);
-    const derived = !previewing && (settings.assist.autoDim || settings.assist.clueSumsExcludeCompleted) ? game.derived() : null;
+    const derived = settings.assist.autoDim || settings.assist.clueSumsExcludeCompleted
+      ? (this.previewGrid ? game.derivedOf(this.previewGrid) : game.derived())
+      : null;
     render({
       ctx: this.ctx,
       dpr: this.dpr,
@@ -298,15 +300,20 @@ export class GridView {
       settings,
       theme,
       palette: paletteFor(settings, theme),
-      // Crosshair/hover-run tint would compete visually with the step highlight, and
-      // painting (which hover normally tracks) is blocked anyway while previewing.
-      hover: previewing ? NO_HOVER : this.hover,
+      hover: previewing ? this.crosshairOnlyHover() : this.hover,
       selection: previewing ? [] : this.selState.rects,
       stepHighlight: this.previewHighlight && {
         current: rotate.viewIndexSet(this.previewHighlight.current, rw, rh, this.rotation),
         previous: rotate.viewIndexSet(this.previewHighlight.previous, rw, rh, this.rotation),
       },
     });
+  }
+
+  /** The hovered line(s) as heads, not a cell: the renderer draws the crosshair and header
+   *  highlight for those, but no hover-run tint or run-length labels. */
+  private crosshairOnlyHover(): HoverState {
+    const { cell, rowHead, colHead } = this.hover;
+    return { ...NO_HOVER, rowHead: cell ? cell[0] : rowHead, colHead: cell ? cell[1] : colHead };
   }
 
   // ── View control ──────────────────────────────────────────────────────────
@@ -526,8 +533,9 @@ export class GridView {
     const L = this.layout()!;
     const hit = hitTest(L, this.viewPuzzle(), pt.x, pt.y);
     this.setHover(this.hoverFor(hit));
-    this.updateCursor(hit);
-    this.canvas.title = HINTS[hit.kind] ?? "";
+    // Clicks do nothing while previewing, so don't advertise them.
+    this.updateCursor(this.previewGrid ? undefined : hit);
+    this.canvas.title = this.previewGrid ? "" : HINTS[hit.kind] ?? "";
   }
 
   private onPointerUp(e: PointerEvent): void {

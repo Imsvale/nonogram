@@ -112,6 +112,7 @@ export class Game {
   private startedAt: number | null = null;
   private listeners = new Set<() => void>();
   private derivedCache: { version: number; guess: boolean; value: Derived } | null = null;
+  private foreignDerivedCache: { grid: Grid; guess: boolean; value: Derived } | null = null;
   private tierCache: { version: number; value: Uint8Array } | null = null;
   private readonly solvable: boolean;
 
@@ -163,25 +164,39 @@ export class Game {
   derived(): Derived {
     const guess = this.assist.autoDim && this.assist.autoDimGuess;
     if (this.derivedCache?.version === this.version && this.derivedCache.guess === guess) return this.derivedCache.value;
+    const value = this.computeDerived(this.grid, guess);
+    this.derivedCache = { version: this.version, guess, value };
+    return value;
+  }
+
+  /** `derived()` for a grid other than the live one. Cached by identity, so `grid` must not be
+   *  mutated after being passed here. */
+  derivedOf(grid: Grid): Derived {
+    const guess = this.assist.autoDim && this.assist.autoDimGuess;
+    if (this.foreignDerivedCache?.grid === grid && this.foreignDerivedCache.guess === guess) return this.foreignDerivedCache.value;
+    const value = this.computeDerived(grid, guess);
+    this.foreignDerivedCache = { grid, guess, value };
+    return value;
+  }
+
+  private computeDerived(grid: Grid, guess: boolean): Derived {
     const { width: w, height: h, rowClues, colClues } = this.puzzle;
     const opts = { allowUndelimited: guess };
     const rowFulfilled: boolean[] = [];
     const rowIndiv: boolean[][] = [];
     for (let r = 0; r < h; r++) {
-      const row = getRow(this.grid, w, r);
+      const row = getRow(grid, w, r);
       rowFulfilled.push(checkLineFulfilled(rowClues[r], row));
       rowIndiv.push(resolveLine(rowClues[r], row, opts).dim);
     }
     const colFulfilled: boolean[] = [];
     const colIndiv: boolean[][] = [];
     for (let c = 0; c < w; c++) {
-      const col = getCol(this.grid, w, h, c);
+      const col = getCol(grid, w, h, c);
       colFulfilled.push(checkLineFulfilled(colClues[c], col));
       colIndiv.push(resolveLine(colClues[c], col, opts).dim);
     }
-    const value = { rowFulfilled, colFulfilled, rowIndiv, colIndiv };
-    this.derivedCache = { version: this.version, guess, value };
-    return value;
+    return { rowFulfilled, colFulfilled, rowIndiv, colIndiv };
   }
 
   /** Per cell: 0 = not part of a trial, n = painted during trial tier n. */
