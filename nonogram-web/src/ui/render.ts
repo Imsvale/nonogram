@@ -206,6 +206,8 @@ class Draw {
     // 3. Hover-run tint
     const hc = inp.hover.cell;
     const runs = hc ? computeHoverRuns(grid, w, h, hc[0], hc[1]) : { h: null, v: null };
+    // Off in the solution viewer: a tint would compete with the step highlight. Labels stay.
+    const showTint = !inp.stepHighlight;
     const tint = (r: number, c: number) => {
       const bg = this.stateColor(grid[r * w + c], tierMap[r * w + c]);
       ctx.fillStyle = luminance(bg) > 0.5 ? HOVER_RUN_TINT.onLight : HOVER_RUN_TINT.onDark;
@@ -214,10 +216,10 @@ class Draw {
     // The blank-run tint would compete with the crosshair (same row and column), so the
     // crosshair wins; filled runs keep their tint regardless.
     const blankTint = !this.s.crosshair.enabled && this.s.runLength.highlightEmptyRuns;
-    if (runs.h && (runs.h.filled || blankTint) && runs.h.fixed >= this.r0 && runs.h.fixed <= this.r1) {
+    if (showTint && runs.h && (runs.h.filled || blankTint) && runs.h.fixed >= this.r0 && runs.h.fixed <= this.r1) {
       for (let c = Math.max(runs.h.start, this.c0); c <= Math.min(runs.h.end, this.c1); c++) tint(runs.h.fixed, c);
     }
-    if (runs.v && (runs.v.filled || blankTint) && runs.v.fixed >= this.c0 && runs.v.fixed <= this.c1) {
+    if (showTint && runs.v && (runs.v.filled || blankTint) && runs.v.fixed >= this.c0 && runs.v.fixed <= this.c1) {
       for (let r = Math.max(runs.v.start, this.r0); r <= Math.min(runs.v.end, this.r1); r++) tint(r, runs.v.fixed);
     }
 

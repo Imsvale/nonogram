@@ -280,7 +280,10 @@ export class GridView {
     const vp = this.viewPuzzle();
     const rw = game.puzzle.width;
     const rh = game.puzzle.height;
-    const dims = rotate.viewDimSets(game.dimRows, game.dimCols, game.puzzle, this.rotation);
+    // Manual dims belong to the player's own solve, not to the solution being shown.
+    const dims = previewing
+      ? { dimRows: new Set<string>(), dimCols: new Set<string>() }
+      : rotate.viewDimSets(game.dimRows, game.dimCols, game.puzzle, this.rotation);
     const derived = settings.assist.autoDim || settings.assist.clueSumsExcludeCompleted
       ? (this.previewGrid ? game.derivedOf(this.previewGrid) : game.derived())
       : null;
@@ -300,20 +303,14 @@ export class GridView {
       settings,
       theme,
       palette: paletteFor(settings, theme),
-      hover: previewing ? this.crosshairOnlyHover() : this.hover,
+      // No clue or sum-corner hover shade: neither is clickable while previewing.
+      hover: previewing ? { ...this.hover, clue: null, sumToggle: false } : this.hover,
       selection: previewing ? [] : this.selState.rects,
       stepHighlight: this.previewHighlight && {
         current: rotate.viewIndexSet(this.previewHighlight.current, rw, rh, this.rotation),
         previous: rotate.viewIndexSet(this.previewHighlight.previous, rw, rh, this.rotation),
       },
     });
-  }
-
-  /** The hovered line(s) as heads, not a cell: the renderer draws the crosshair and header
-   *  highlight for those, but no hover-run tint or run-length labels. */
-  private crosshairOnlyHover(): HoverState {
-    const { cell, rowHead, colHead } = this.hover;
-    return { ...NO_HOVER, rowHead: cell ? cell[0] : rowHead, colHead: cell ? cell[1] : colHead };
   }
 
   // ── View control ──────────────────────────────────────────────────────────
